@@ -1,6 +1,8 @@
+using CPS_API.Helpers;
 using CPS_API.Repositories;
 using CPS_API.Services;
 using Microsoft.AspNetCore.Http.Features;
+using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +43,7 @@ app.UseAuthorization();
 // Add MSAL
 
 // Add MSGraphCLient
+await GraphHelper.SignInUserAndInitializeGraphUsingMSAL();
 
 app.MapControllers();
 
