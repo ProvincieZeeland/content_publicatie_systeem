@@ -2,8 +2,8 @@
 using CPS_API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
-using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
+using static CPS_API.Helpers.GraphHelper;
 
 namespace CPS_API.Controllers
 {
@@ -15,16 +15,29 @@ namespace CPS_API.Controllers
         [HttpPut]
         public async Task<IActionResult> CreateId([FromBody] ContentIds ids)
         {
-            // Configuratie bepalen.
-            var builder = new ConfigurationBuilder()
-            .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
-            .AddJsonFile("appsettings.json");
-            var configuration = builder.Build();
+            // Drive bepalen.
+            Drive? drive;
+            DriveItem? driveItem;
+            try
+            {
+                drive = await GraphHelper.GetDriveAsync(ids.SiteId.ToString());
+                driveItem = await GraphHelper.GetDriveItemAsync(ids.SiteId.ToString(), ids.ListId.ToString(), ids.ListItemId.ToString());
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedException)
+            {
+                return StatusCode(401);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500);
+            }
 
             // Storageaccount definiëren.
-            var connectionString = configuration.GetConnectionString("CloudStorageAccount");
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
-            var tableClient = storageAccount.CreateCloudTableClient();
+            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
+            if (tableClient == null)
+            {
+                return StatusCode(500);
+            }
 
             // Huidig volgnummer ophalen uit settings
             var settingsTable = tableClient.GetTableReference("settings");
@@ -42,77 +55,27 @@ namespace CPS_API.Controllers
             var insertop = TableOperation.InsertOrReplace(newSetting);
             await settingsTable.ExecuteAsync(insertop);
 
-            // Drive bepalen.
-            Drive? drive;
-            DriveItem? driveItem;
+            // Id's opslaan in documents
+            string? contentId;
             try
             {
-                drive = await GraphHelper.GetDriveAsync(ids.SiteId.ToString());
-                driveItem = await GraphHelper.GetDriveItemAsync(ids.SiteId.ToString(), ids.ListId.ToString(), ids.ListItemId.ToString());
+                contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
+                var document = new DocumentsEntity(contentId, drive, driveItem, ids);
+                insertop = TableOperation.InsertOrReplace(document);
+                var documentsTable = tableClient.GetTableReference("documents");
+                await documentsTable.ExecuteAsync(insertop);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                // Volgnummer terugdraaien.
+                insertop = TableOperation.InsertOrReplace(currentSetting);
+                await settingsTable.ExecuteAsync(insertop);
+
                 return StatusCode(500);
             }
 
-            // Id's opslaan in documents
-            var contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
-            var document = new DocumentsEntity(contentId, drive, driveItem, ids);
-            insertop = TableOperation.InsertOrReplace(document);
-            var documentsTable = tableClient.GetTableReference("documents");
-            await documentsTable.ExecuteAsync(insertop);
-
             // Klaar
             return Ok(contentId);
-        }
-    }
-
-    public class SettingsEntity : TableEntity
-    {
-        public long Sequence { get; set; }
-
-        public SettingsEntity()
-        {
-
-        }
-
-        public SettingsEntity(long Sequence)
-        {
-            this.PartitionKey = "0";
-            this.RowKey = "0";
-            this.Sequence = Sequence;
-        }
-    }
-
-    public class DocumentsEntity : TableEntity
-    {
-        public Guid SiteId { get; set; }
-
-        public Guid WebId { get; set; }
-
-        public Guid ListId { get; set; }
-
-        public int ListItemId { get; set; }
-
-        public string DriveId { get; set; }
-
-        public string DriveItemId { get; set; }
-
-        public DocumentsEntity()
-        {
-
-        }
-
-        public DocumentsEntity(string contentId, Drive? drive, DriveItem? driveItem, ContentIds ids)
-        {
-            this.PartitionKey = contentId;
-            this.RowKey = contentId;
-            this.SiteId = ids.SiteId;
-            this.WebId = ids.WebId;
-            this.ListId = ids.ListId;
-            this.ListItemId = ids.ListItemId;
-            this.DriveId = drive == null ? ids.DriveId.ToString() : drive.Id;
-            this.DriveItemId = driveItem == null ? ids.DriveItemId.ToString() : driveItem.Id;
         }
     }
 }

@@ -1,13 +1,9 @@
-﻿using CPS_API.Models;
-using CPS_API.Services;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Net.Http.Headers;
-using System.Net;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.WindowsAzure.Storage.Table;
+using System.Text.Json;
 
 namespace CPS_API.Controllers
 {
@@ -21,7 +17,29 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/content")]
         public async Task<IActionResult> GetFileURL(string contentId)
         {
-            throw new NotImplementedException();
+            // Storageaccount definiëren.
+            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
+            if (tableClient == null)
+            {
+                return StatusCode(500);
+            }
+
+            // Sharepoint id's bepalen.
+            var documentsEntity = await this.getDocumentsEntity(tableClient, contentId);
+            if (documentsEntity == null)
+            {
+                return NotFound();
+            }
+
+            // Bestand ophalen.
+            var fileUrl = await GraphHelper.GetFileUrlAsync(documentsEntity.SiteId.ToString(), documentsEntity.DriveItemId);
+            if (fileUrl.IsNullOrEmpty())
+            {
+                return NotFound();
+            }
+
+            // Klaar
+            return Ok(fileUrl);
         }
 
         [HttpGet]
@@ -29,9 +47,47 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
-            throw new NotImplementedException();
+            // Storageaccount definiëren.
+            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
+            if (tableClient == null)
+            {
+                return StatusCode(500);
+            }
+
+            // Sharepoint id's bepalen.
+            var documentsEntity = await this.getDocumentsEntity(tableClient, contentId);
+            if (documentsEntity == null)
+            {
+                return NotFound();
+            }
+
+            // Listitem ophalen.
+            var listItem = await GraphHelper.GetLisItemAsync(documentsEntity.SiteId.ToString(), documentsEntity.ListId.ToString(), documentsEntity.ListItemId.ToString());
+            if (listItem == null)
+            {
+                return NotFound();
+            }
+
+            // Metadata mappen.
+            var metadata = listItem.Fields as MetadataFieldValueSet;
+            if (metadata == null)
+            {
+                return NotFound();
+            }
+            var json = JsonSerializer.Serialize<MetadataFieldValueSet>(metadata);
+
+            // Klaar
+            return Ok(json);
         }
 
+        private async Task<DocumentsEntity?> getDocumentsEntity(CloudTableClient? tableClient, string contentId)
+        {
+            var documentsTable = tableClient.GetTableReference("documents");
+            var retrieveOperation = TableOperation.Retrieve<DocumentsEntity>(contentId, contentId);
+            var result = await documentsTable.ExecuteAsync(retrieveOperation);
+            var documentsEntity = result.Result as DocumentsEntity;
+            return documentsEntity;
+        }
 
         // PUT
         [HttpPut]

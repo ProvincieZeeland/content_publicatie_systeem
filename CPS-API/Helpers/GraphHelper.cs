@@ -62,7 +62,16 @@ namespace CPS_API.Helpers
             var graphClient = new GraphServiceClient("https://graph.microsoft.com/v1.0/",
                 new DelegateAuthenticationProvider(async (requestMessage) =>
                 {
-                    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", await SignInUserAndGetTokenUsingMSAL(configuration, scopes));
+                    string? accessToken;
+                    try
+                    {
+                        accessToken = await SignInUserAndGetTokenUsingMSAL(configuration, scopes);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new UnauthorizedException("Error while getting access token");
+                    }
+                    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", accessToken);
                 }));
 
             return await Task.FromResult(graphClient);
@@ -80,6 +89,37 @@ namespace CPS_API.Helpers
             _ = _graphClient ?? throw new NullReferenceException("Graph has not been initialized");
 
             return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().GetAsync();
+        }
+
+        public static async Task<string> GetFileUrlAsync(string siteId, string driveItemId)
+        {
+            _ = _graphClient ?? throw new NullReferenceException("Graph has not been initialized");
+
+            var permission = await _graphClient.Sites[siteId].Drive.Items[driveItemId].CreateLink("view").Request().PostAsync();
+            if (permission == null)
+            {
+                return null;
+            }
+            return permission.Link.WebUrl;
+        }
+
+        public static async Task<ListItem?> GetLisItemAsync(string siteId, string listId, string listItemId)
+        {
+            _ = _graphClient ?? throw new NullReferenceException("Graph has not been initialized");
+
+            var queryOptions = new List<QueryOption>()
+            {
+                new QueryOption("expand", "fields")
+            };
+            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].Request(queryOptions).GetAsync();
+        }
+
+        public class UnauthorizedException : Exception
+        {
+            public UnauthorizedException(string message)
+               : base(message)
+            {
+            }
         }
     }
 }

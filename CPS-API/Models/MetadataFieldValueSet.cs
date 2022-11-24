@@ -1,7 +1,8 @@
-﻿namespace CPS_API.Models
-{
+﻿using Microsoft.Graph;
 
-    public class FileInformation
+namespace CPS_API.Models
+{
+    public class MetadataFieldValueSet : FieldValueSet
     {
         public ContentIds Ids { get; set; }
 
