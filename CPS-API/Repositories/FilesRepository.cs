@@ -6,7 +6,7 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetAsync(string contentId);
 
-        Task<bool> CreateAsync(CpsFile file);
+        Task<ContentIds> CreateAsync(CpsFile file);
 
         Task<bool> UpdateContentAsync(CpsFile file);
 
@@ -15,9 +15,11 @@ namespace CPS_API.Repositories
 
     public class FilesRepository : IFilesRepository
     {
-        public Task<bool> CreateAsync(CpsFile file)
+        public Task<ContentIds> CreateAsync(CpsFile file)
         {
             // Create new file in fileStorage with filename + content in specified location (using site/web/list or drive ids)
+            // Find all missing ids and return them
+
             throw new NotImplementedException();
         }
 

@@ -5,11 +5,11 @@ namespace CPS_API.Models
 {
     public class DocumentsEntity : TableEntity
     {
-        public Guid SiteId { get; set; }
+        public string SiteId { get; set; }
 
-        public Guid WebId { get; set; }
+        public string WebId { get; set; }
 
-        public Guid ListId { get; set; }
+        public string ListId { get; set; }
 
         public int ListItemId { get; set; }
 

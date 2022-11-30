@@ -4,12 +4,12 @@
     {
         public string ContentId { get; set; }
 
-        public Guid SiteId { get; set; }
-        public Guid WebId { get; set; }
-        public Guid ListId { get; set; }        
+        public string SiteId { get; set; }
+        public string WebId { get; set; }
+        public string ListId { get; set; }        
         public int ListItemId { get; set; }
 
-        public Guid DriveId { get; set; }
-        public Guid DriveItemId { get; set; }
+        public string DriveId { get; set; }
+        public string DriveItemId { get; set; }
     }
 }
