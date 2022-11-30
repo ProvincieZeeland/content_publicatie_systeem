@@ -11,7 +11,7 @@ namespace CPS_API.Models
 
         public string ListId { get; set; }
 
-        public int ListItemId { get; set; }
+        public string ListItemId { get; set; }
 
         public string DriveId { get; set; }
 
@@ -29,7 +29,7 @@ namespace CPS_API.Models
             this.SiteId = ids.SiteId;
             this.WebId = ids.WebId;
             this.ListId = ids.ListId;
-            this.ListItemId = ids.ListItemId;
+            this.ListItemId = ids.ListItemId.ToString();
             this.DriveId = drive == null ? ids.DriveId.ToString() : drive.Id;
             this.DriveItemId = driveItem == null ? ids.DriveItemId.ToString() : driveItem.Id;
         }

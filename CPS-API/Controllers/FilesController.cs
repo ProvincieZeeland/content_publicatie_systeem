@@ -7,9 +7,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
-using System.Net;
 using System.Text.Json;
-using static CPS_API.Helpers.GraphHelper;
 
 namespace CPS_API.Controllers
 {
@@ -19,15 +17,12 @@ namespace CPS_API.Controllers
     {
         private readonly IFilesRepository _filesRepository;
         private readonly IContentIdRepository _contentIdRepository;
-        private readonly IDocumentsRepository _documentsRepository;
 
         public FilesController(IFilesRepository filesRepository,
-                               IContentIdRepository contentIdRepository,
-                               IDocumentsRepository documentsRepository)
+                               IContentIdRepository contentIdRepository)
         {
             _filesRepository = filesRepository;
             _contentIdRepository = contentIdRepository;
-            _documentsRepository = documentsRepository;
         }
 
         // GET
@@ -36,20 +31,12 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/content")]
         public async Task<IActionResult> GetFileURL(string contentId)
         {
-            // Get SharepPoint ids.
-            var documentsEntity = await this._documentsRepository.GetContentIdsAsync(contentId);
-            if (documentsEntity == null)
-            {
-                return NotFound();
-            }
-
-            // Get File
             string fileUrl;
             try
             {
-                fileUrl = await GraphHelper.GetFileUrlAsync(documentsEntity.SiteId.ToString(), documentsEntity.DriveItemId);
+                fileUrl = await _filesRepository.GetUrlAsync(contentId);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedException)
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401);
             }
@@ -72,19 +59,19 @@ namespace CPS_API.Controllers
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
             // Get SharePoint ids
-            var documentsEntity = await this._documentsRepository.GetContentIdsAsync(contentId);
+            var documentsEntity = await this._contentIdRepository.GetSharePointIdsAsync(contentId);
             if (documentsEntity == null)
             {
                 return NotFound();
             }
 
             // Get Listitem
-            ListItem listItem;
+            ListItem listItem = null;
             try
             {
-                listItem = await GraphHelper.GetLisItemAsync(documentsEntity.SiteId.ToString(), documentsEntity.ListId.ToString(), documentsEntity.ListItemId.ToString());
+                //listItem = await GraphHelper.GetLisItemAsync(documentsEntity.SiteId.ToString(), documentsEntity.ListId.ToString(), documentsEntity.ListItemId.ToString());
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedException)
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401);
             }
@@ -118,7 +105,7 @@ namespace CPS_API.Controllers
 
             // Add new file in SharePoint with Graph
             // Failed? Log error in App Insights
-            DriveItem? driveItem;
+            DriveItem? driveItem = null;
             try
             {
                 using (var ms = new MemoryStream())
@@ -126,10 +113,10 @@ namespace CPS_API.Controllers
                     await Request.Body.CopyToAsync(ms);
                     ms.Position = 0;
 
-                    driveItem = await GraphHelper.PutFileAsync(file.Metadata.Ids.SiteId.ToString(), file.Metadata.Ids.DriveItemId.ToString(), ms);
+                    //driveItem = await GraphHelper.PutFileAsync(file.Metadata.Ids.SiteId.ToString(), file.Metadata.Ids.DriveItemId.ToString(), ms);
                 }
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedException)
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401);
             }
@@ -154,18 +141,18 @@ namespace CPS_API.Controllers
             string? contentId;
             try
             {
-                contentId = this.createId(file.Metadata.Ids);
+                contentId = await _contentIdRepository.GenerateContentIdAsync(file.Metadata.Ids);
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
+                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
             if (contentId.IsNullOrEmpty())
             {
                 // Remove file from Sharepoint
-                GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
+                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
 
@@ -182,7 +169,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
+                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
 
@@ -190,25 +177,25 @@ namespace CPS_API.Controllers
             return Ok(contentId);
         }
 
-        private string? createId(ContentIds ids)
-        {
-            var baseUrl = "https://localhost:7159/";
-            var httpWebRequest = (HttpWebRequest)WebRequest.Create(baseUrl + "files/contentid/");
-            httpWebRequest.ContentType = "application/json";
-            httpWebRequest.Method = "PUT";
+        //private string? createId(ContentIds ids)
+        //{
+        //    var baseUrl = "https://localhost:7159/";
+        //    var httpWebRequest = (HttpWebRequest)WebRequest.Create(baseUrl + "files/contentid/");
+        //    httpWebRequest.ContentType = "application/json";
+        //    httpWebRequest.Method = "PUT";
 
-            using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
-            {
-                var json = JsonSerializer.Serialize<ContentIds>(ids);
-                streamWriter.Write(json);
-            }
+        //    using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
+        //    {
+        //        var json = JsonSerializer.Serialize<ContentIds>(ids);
+        //        streamWriter.Write(json);
+        //    }
 
-            var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
-            using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
-            {
-                return streamReader.ReadToEnd();
-            }
-        }
+        //    var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+        //    using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+        //    {
+        //        return streamReader.ReadToEnd();
+        //    }
+        //}
 
 
         private static readonly FormOptions _defaultFormOptions = new FormOptions();

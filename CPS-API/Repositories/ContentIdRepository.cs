@@ -1,4 +1,7 @@
-﻿using CPS_API.Models;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
+using Microsoft.Graph;
+using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
 {
@@ -6,21 +9,25 @@ namespace CPS_API.Repositories
     {
         Task<string> GetContentIdAsync(ContentIds sharePointIds);
 
+        Task<DocumentsEntity?> GetSharePointIdsAsync(string contentId);
+
+        Task<bool> SaveContentIdsAsync(string contentId, Drive? drive, DriveItem? driveItem, ContentIds contentIds);
+
         Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
     }
 
     public class ContentIdRepository : IContentIdRepository
     {
         private readonly ISettingsRepository _settingsRepository;
+        private readonly StorageTableService _storageTableService;
+        private readonly GraphServiceClient _graphService;
 
-        private readonly IDocumentsRepository _documentsRepository;
-
-        //private readonly GraphService _graphService;
-
-        public ContentIdRepository(ISettingsRepository settingsRepository, IDocumentsRepository documentsRepository)
+        public ContentIdRepository(ISettingsRepository settingsRepository,
+            StorageTableService storageTableService, GraphServiceClient graphService)
         {
             this._settingsRepository = settingsRepository;
-            this._documentsRepository = documentsRepository;
+            _storageTableService = storageTableService;
+            _graphService = graphService;
         }
 
         public Task<string> GenerateContentIdAsync(ContentIds sharePointIds)
@@ -90,6 +97,38 @@ namespace CPS_API.Repositories
             //}
 
             throw new NotImplementedException();
+        }
+
+
+        private CloudTable? GetDocumentsTable()
+        {
+            var table = this._storageTableService.GetTable("documents");
+            return table;
+        }
+
+        public async Task<DocumentsEntity?> GetSharePointIdsAsync(string contentId)
+        {
+            var documentsTable = this.GetDocumentsTable();
+            if (documentsTable == null)
+            {
+                return null;
+            }
+
+            var documentsEntity = await this._storageTableService.GetAsync<DocumentsEntity>(contentId, contentId, documentsTable);
+            return documentsEntity;
+        }
+
+        public async Task<bool> SaveContentIdsAsync(string contentId, Drive? drive, DriveItem? driveItem, ContentIds contentIds)
+        {
+            var documentsTable = this.GetDocumentsTable();
+            if (documentsTable == null)
+            {
+                return false;
+            }
+
+            var document = new DocumentsEntity(contentId, drive, driveItem, contentIds);
+            await this._storageTableService.SaveAsync(documentsTable, document);
+            return true;
         }
 
         public Task<string> GetContentIdAsync(ContentIds sharePointIds)

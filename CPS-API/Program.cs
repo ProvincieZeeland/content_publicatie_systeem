@@ -1,8 +1,12 @@
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Graph;
 using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
+using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +20,6 @@ builder.Services.AddSingleton<IFilesRepository, FilesRepository>();
 builder.Services.AddSingleton<IContentIdRepository, ContentIdRepository>();
 builder.Services.AddSingleton<IDriveRepository, DriveRepository>();
 builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
-builder.Services.AddSingleton<IDocumentsRepository, DocumentsRepository>();
 
 // Add Custom Services
 builder.Services.AddSingleton<FileStorageService, FileStorageService>();
@@ -31,10 +34,25 @@ builder.Services.Configure<FormOptions>(opt =>
 // Application Insights
 builder.Services.AddApplicationInsightsTelemetry();
 
+
 // Add GlobalSettings
-builder.Services.AddOptions();
 var globalSettings = builder.Configuration.GetSection("GlobalSettings");
 builder.Services.Configure<GlobalSettings>(globalSettings);
+
+// Set up authentication for Graph
+builder.Services.AddAuthorization(options =>
+{
+    options.DefaultPolicy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApi(builder.Configuration)
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    .AddMicrosoftGraphAppOnly(authenticationProvider => new GraphServiceClient(authenticationProvider))
+    .AddInMemoryTokenCaches();
 
 var app = builder.Build();
 
@@ -47,12 +65,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
-
-// Add MSAL
-
-// Add MSGraphCLient
-await GraphHelper.SignInUserAndInitializeGraphUsingMSAL();
 
 app.MapControllers();
 

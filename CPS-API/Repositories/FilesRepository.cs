@@ -1,10 +1,14 @@
-﻿using CPS_API.Models;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
+using Microsoft.Graph;
 
 namespace CPS_API.Repositories
 {
     public interface IFilesRepository
     {
         Task<CpsFile> GetAsync(string contentId);
+
+        Task<string> GetUrlAsync(string contentId);
 
         Task<ContentIds> CreateAsync(CpsFile file);
 
@@ -15,6 +19,15 @@ namespace CPS_API.Repositories
 
     public class FilesRepository : IFilesRepository
     {
+        private readonly GraphServiceClient _graphClient;
+        private readonly IContentIdRepository _contentIdRepository;
+
+        public FilesRepository(GraphServiceClient graphClient, IContentIdRepository contentIdRepository)
+        {
+            _graphClient = graphClient;
+            _contentIdRepository = contentIdRepository;
+        }
+
         public Task<ContentIds> CreateAsync(CpsFile file)
         {
             // Create new file in fileStorage with filename + content in specified location (using site/web/list or drive ids)
@@ -30,6 +43,28 @@ namespace CPS_API.Repositories
             // create object with sharepoint fields metadata + url to item
 
             throw new NotImplementedException();
+        }
+
+        public async Task<string> GetUrlAsync(string contentId)
+        {
+            // Sharepoint id's bepalen.
+            var sharepointIDs = await _contentIdRepository.GetSharePointIdsAsync(contentId);
+            if (sharepointIDs == null)
+            {
+                throw new FileNotFoundException();
+            }
+
+            // Consider different error messages
+            if (sharepointIDs.SiteId == null) throw new Exception("Site cannot be found");
+            if (sharepointIDs.ListId == null) throw new Exception("List cannot be fount");
+            if (sharepointIDs.ListItemId == null) throw new Exception("Item cannot be found");
+
+            var item = await _graphClient.Sites[sharepointIDs.SiteId].Lists[sharepointIDs.ListId].Drive.Items[sharepointIDs.ListItemId].CreateLink("view").Request().PostAsync();
+            if (item == null)
+            {
+                return null;
+            }
+            return item.Link.WebUrl;
         }
 
         public Task<bool> UpdateContentAsync(CpsFile file)
