@@ -103,7 +103,7 @@ namespace CPS_API.Controllers
         [HttpPut]
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
-            // Content tijdelijk opslaan in geheugen van App Service
+            // Content tijdelijk opslaan in geheugen van App Service; let op, check bestandsformaat voor opslaan > te groot? foutmelding
             // Opslaan mislukt? Dan loggen in App Insights
 
             // Nieuw bestand aanmaken in Sharepoint m.b.v. Graph
