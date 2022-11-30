@@ -1,6 +1,5 @@
 using CPS_API.Helpers;
 using CPS_API.Repositories;
-using CPS_API.Services;
 using Microsoft.AspNetCore.Http.Features;
 using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
 
@@ -17,6 +16,7 @@ builder.Services.AddSingleton<IContentIdRepository, ContentIdRepository>();
 
 // Add Custom Services
 builder.Services.AddSingleton<FileStorageService, FileStorageService>();
+builder.Services.AddSingleton<StorageTableService, StorageTableService>();
 
 // Configure for large file uploads
 builder.Services.Configure<FormOptions>(opt =>
