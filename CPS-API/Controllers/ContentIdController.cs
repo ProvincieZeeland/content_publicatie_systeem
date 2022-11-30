@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using static CPS_API.Helpers.GraphHelper;
@@ -10,17 +11,20 @@ namespace CPS_API.Controllers
     [ApiController]
     public class ContentIdController : Controller
     {
-        private readonly StorageTableService _storageTableService;
+        private readonly ISettingsRepository _settingsRepository;
 
-        public ContentIdController(StorageTableService storageTableService)
+        private readonly IDocumentsRepository _documentsRepository;
+
+        public ContentIdController(ISettingsRepository settingsRepository, IDocumentsRepository documentsRepository)
         {
-            this._storageTableService = storageTableService;
+            this._settingsRepository = settingsRepository;
+            this._documentsRepository = documentsRepository;
         }
 
         [HttpPut]
         public async Task<IActionResult> CreateId([FromBody] ContentIds ids)
         {
-            // Drive bepalen.
+            // Get drive ids.
             Drive? drive;
             DriveItem? driveItem;
             try
@@ -37,45 +41,45 @@ namespace CPS_API.Controllers
                 return StatusCode(500);
             }
 
-            // Huidig volgnummer ophalen uit settings
-            var currentSetting = await this._storageTableService.GetCurrentSettingAsync();
+            // Get current sequence from settings
+            var currentSetting = await this._settingsRepository.GetCurrentSettingAsync();
             if (currentSetting == null || currentSetting.Sequence < 0)
             {
                 return StatusCode(500);
             }
 
-            // Nieuwe volgnummer opslaan in settings
+            // Save new sequence in settings
             var sequence = currentSetting.Sequence + 1;
             var newSetting = new SettingsEntity(sequence);
-            var succeeded = await this._storageTableService.SaveSettingAsync(newSetting);
+            var succeeded = await this._settingsRepository.SaveSettingAsync(newSetting);
             if (!succeeded)
             {
                 return StatusCode(500);
             }
 
-            // Id's opslaan in documents
+            // Save Ids in documents
             string? contentId;
             try
             {
                 contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
-                succeeded = await this._storageTableService.SaveContentIdsAsync(contentId, drive, driveItem, ids);
+                succeeded = await this._documentsRepository.SaveContentIdsAsync(contentId, drive, driveItem, ids);
                 if (!succeeded)
                 {
-                    // Volgnummer terugdraaien.
-                    await this._storageTableService.SaveSettingAsync(currentSetting);
+                    // Undo sequence change
+                    await this._settingsRepository.SaveSettingAsync(currentSetting);
 
                     return StatusCode(500);
                 }
             }
             catch (Exception)
             {
-                // Volgnummer terugdraaien.
-                await this._storageTableService.SaveSettingAsync(currentSetting);
+                // Undo sequence change
+                await this._settingsRepository.SaveSettingAsync(currentSetting);
 
                 return StatusCode(500);
             }
 
-            // Klaar
+            // Done
             return Ok(contentId);
         }
     }

@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
@@ -13,11 +14,11 @@ namespace CPS_API.Controllers
     [ApiController]
     public class FilesController : ControllerBase
     {
-        private readonly StorageTableService _storageTableService;
+        private readonly IDocumentsRepository _documentsRepository;
 
-        public FilesController(StorageTableService storageTableService)
+        public FilesController(IDocumentsRepository documentsRepository)
         {
-            this._storageTableService = storageTableService;
+            this._documentsRepository = documentsRepository;
         }
 
         // GET
@@ -26,14 +27,14 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/content")]
         public async Task<IActionResult> GetFileURL(string contentId)
         {
-            // Sharepoint id's bepalen.
-            var documentsEntity = await this._storageTableService.GetContentIdsAsync(contentId);
+            // Get SharepPoint ids.
+            var documentsEntity = await this._documentsRepository.GetContentIdsAsync(contentId);
             if (documentsEntity == null)
             {
                 return NotFound();
             }
 
-            // Bestand ophalen.
+            // Get File
             string fileUrl;
             try
             {
@@ -52,7 +53,7 @@ namespace CPS_API.Controllers
                 return NotFound();
             }
 
-            // Klaar
+            // Done
             return Ok(fileUrl);
         }
 
@@ -61,14 +62,14 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
-            // Sharepoint id's bepalen.
-            var documentsEntity = await this._storageTableService.GetContentIdsAsync(contentId);
+            // Get SharePoint ids
+            var documentsEntity = await this._documentsRepository.GetContentIdsAsync(contentId);
             if (documentsEntity == null)
             {
                 return NotFound();
             }
 
-            // Listitem ophalen.
+            // Get Listitem
             ListItem listItem;
             try
             {
@@ -87,7 +88,7 @@ namespace CPS_API.Controllers
                 return NotFound();
             }
 
-            // Metadata mappen.
+            // Map metadata
             var metadata = listItem.Fields as MetadataFieldValueSet;
             if (metadata == null)
             {
@@ -95,7 +96,7 @@ namespace CPS_API.Controllers
             }
             var json = JsonSerializer.Serialize<MetadataFieldValueSet>(metadata);
 
-            // Klaar
+            // Done
             return Ok(json);
         }
 
@@ -103,11 +104,11 @@ namespace CPS_API.Controllers
         [HttpPut]
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
-            // Content tijdelijk opslaan in geheugen van App Service
-            // Opslaan mislukt? Dan loggen in App Insights
+            // Save content temporary in App Service memory.
+            // Failed? Log error in App Insights
 
-            // Nieuw bestand aanmaken in Sharepoint m.b.v. Graph
-            // Aanmaak mislukt? Dan loggen in App Insights
+            // Add new file in SharePoint with Graph
+            // Failed? Log error in App Insights
             DriveItem? driveItem;
             try
             {
@@ -132,15 +133,15 @@ namespace CPS_API.Controllers
                 return StatusCode(500);
             }
 
-            // Metadata mappen naar Sharepoint kolommen
-            // Mapping mislukt? 
-            //  - loggen in App Insights
-            //  - bestand verwijderen uit Sharepoint
+            // Map metadata to Sharepoint columns
+            // Failed?
+            //  - log error in App Insights
+            //  - remove file from Sharepoint
 
-            // ContentId genereren
-            // Genereren mislukt?
-            //  - loggen in App Insights
-            //  - bestand verwijderen uit Sharepoint
+            // Generate ContentId
+            // Failed?
+            //  - log error in App Insights
+            //  - remove file from Sharepoint
             string? contentId;
             try
             {
@@ -148,35 +149,35 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                // Bestand verwijderen uit Sharepoint
+                // Remove file from Sharepoint
                 GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
             if (contentId.IsNullOrEmpty())
             {
-                // Bestand verwijderen uit Sharepoint
+                // Remove file from Sharepoint
                 GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
 
-            // ContentId en metadata bijwerken in Sharepoint m.b.v. Graph
-            // Bijwerken mislukt? 
-            //  - loggen in App Insights
-            //  - bestand verwijderen uit Sharepoint
-            //  - contendIds verwijderen uit Azure Storage Account
-            //  - volgnummer verlagen
+            // Update ContentId and metadata in Sharepoint with Graph
+            // Failed?
+            //  - log error in App Insights
+            //  - remove file from Sharepoint
+            //  - remove contendIds from Azure Storage Account
+            //  - decrease sequence
             try
             {
 
             }
             catch (Exception ex)
             {
-                // Bestand verwijderen uit Sharepoint
+                // Remove file from Sharepoint
                 GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
                 return StatusCode(500);
             }
 
-            // Klaar
+            // Done
             return Ok(contentId);
         }
 

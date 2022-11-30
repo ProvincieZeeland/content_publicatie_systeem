@@ -14,6 +14,8 @@ builder.Services.AddSwaggerGen();
 // Add Repos
 builder.Services.AddSingleton<IFilesRepository, FilesRepository>();
 builder.Services.AddSingleton<IContentIdRepository, ContentIdRepository>();
+builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
+builder.Services.AddSingleton<IDocumentsRepository, DocumentsRepository>();
 
 // Add Custom Services
 builder.Services.AddSingleton<FileStorageService, FileStorageService>();
