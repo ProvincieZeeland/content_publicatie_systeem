@@ -1,4 +1,5 @@
 using CPS_API.Helpers;
+using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Http.Features;
 using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
@@ -26,6 +27,11 @@ builder.Services.Configure<FormOptions>(opt =>
 
 // Application Insights
 builder.Services.AddApplicationInsightsTelemetry();
+
+// Add GlobalSettings
+builder.Services.AddOptions();
+var globalSettings = builder.Configuration.GetSection("GlobalSettings");
+builder.Services.Configure<GlobalSettings>(globalSettings);
 
 var app = builder.Build();
 

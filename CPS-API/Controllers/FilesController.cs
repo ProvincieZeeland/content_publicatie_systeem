@@ -3,7 +3,6 @@ using CPS_API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.WindowsAzure.Storage.Table;
 using System.Net;
 using System.Text.Json;
 using static CPS_API.Helpers.GraphHelper;
@@ -14,21 +13,21 @@ namespace CPS_API.Controllers
     [ApiController]
     public class FilesController : ControllerBase
     {
+        private readonly StorageTableService _storageTableService;
+
+        public FilesController(StorageTableService storageTableService)
+        {
+            this._storageTableService = storageTableService;
+        }
+
         // GET
         [HttpGet]
         [Route("content/{contentId}")]
         //[Route("{contentId}/content")]
         public async Task<IActionResult> GetFileURL(string contentId)
         {
-            // Storageaccount definiëren.
-            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
-            if (tableClient == null)
-            {
-                return StatusCode(500);
-            }
-
             // Sharepoint id's bepalen.
-            var documentsEntity = await this.getDocumentsEntity(tableClient, contentId);
+            var documentsEntity = await this._storageTableService.GetContentIdsAsync(contentId);
             if (documentsEntity == null)
             {
                 return NotFound();
@@ -62,15 +61,8 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
-            // Storageaccount definiëren.
-            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
-            if (tableClient == null)
-            {
-                return StatusCode(500);
-            }
-
             // Sharepoint id's bepalen.
-            var documentsEntity = await this.getDocumentsEntity(tableClient, contentId);
+            var documentsEntity = await this._storageTableService.GetContentIdsAsync(contentId);
             if (documentsEntity == null)
             {
                 return NotFound();
@@ -105,15 +97,6 @@ namespace CPS_API.Controllers
 
             // Klaar
             return Ok(json);
-        }
-
-        private async Task<DocumentsEntity?> getDocumentsEntity(CloudTableClient? tableClient, string contentId)
-        {
-            var documentsTable = tableClient.GetTableReference("documents");
-            var retrieveOperation = TableOperation.Retrieve<DocumentsEntity>(contentId, contentId);
-            var result = await documentsTable.ExecuteAsync(retrieveOperation);
-            var documentsEntity = result.Result as DocumentsEntity;
-            return documentsEntity;
         }
 
         // PUT

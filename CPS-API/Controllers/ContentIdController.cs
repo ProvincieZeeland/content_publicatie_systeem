@@ -2,7 +2,6 @@
 using CPS_API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
-using Microsoft.WindowsAzure.Storage.Table;
 using static CPS_API.Helpers.GraphHelper;
 
 namespace CPS_API.Controllers
@@ -11,6 +10,12 @@ namespace CPS_API.Controllers
     [ApiController]
     public class ContentIdController : Controller
     {
+        private readonly StorageTableService _storageTableService;
+
+        public ContentIdController(StorageTableService storageTableService)
+        {
+            this._storageTableService = storageTableService;
+        }
 
         [HttpPut]
         public async Task<IActionResult> CreateId([FromBody] ContentIds ids)
@@ -32,18 +37,8 @@ namespace CPS_API.Controllers
                 return StatusCode(500);
             }
 
-            // Storageaccount definiëren.
-            var tableClient = ApiHelper.getCloudTableClientFromStorageAccount();
-            if (tableClient == null)
-            {
-                return StatusCode(500);
-            }
-
             // Huidig volgnummer ophalen uit settings
-            var settingsTable = tableClient.GetTableReference("settings");
-            var retrieveOperation = TableOperation.Retrieve<SettingsEntity>("0", "0");
-            var result = await settingsTable.ExecuteAsync(retrieveOperation);
-            var currentSetting = result.Result as SettingsEntity;
+            var currentSetting = await this._storageTableService.GetCurrentSettingAsync();
             if (currentSetting == null || currentSetting.Sequence < 0)
             {
                 return StatusCode(500);
@@ -52,24 +47,30 @@ namespace CPS_API.Controllers
             // Nieuwe volgnummer opslaan in settings
             var sequence = currentSetting.Sequence + 1;
             var newSetting = new SettingsEntity(sequence);
-            var insertop = TableOperation.InsertOrReplace(newSetting);
-            await settingsTable.ExecuteAsync(insertop);
+            var succeeded = await this._storageTableService.SaveSettingAsync(newSetting);
+            if (!succeeded)
+            {
+                return StatusCode(500);
+            }
 
             // Id's opslaan in documents
             string? contentId;
             try
             {
                 contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
-                var document = new DocumentsEntity(contentId, drive, driveItem, ids);
-                insertop = TableOperation.InsertOrReplace(document);
-                var documentsTable = tableClient.GetTableReference("documents");
-                await documentsTable.ExecuteAsync(insertop);
+                succeeded = await this._storageTableService.SaveContentIdsAsync(contentId, drive, driveItem, ids);
+                if (!succeeded)
+                {
+                    // Volgnummer terugdraaien.
+                    await this._storageTableService.SaveSettingAsync(currentSetting);
+
+                    return StatusCode(500);
+                }
             }
             catch (Exception)
             {
                 // Volgnummer terugdraaien.
-                insertop = TableOperation.InsertOrReplace(currentSetting);
-                await settingsTable.ExecuteAsync(insertop);
+                await this._storageTableService.SaveSettingAsync(currentSetting);
 
                 return StatusCode(500);
             }
