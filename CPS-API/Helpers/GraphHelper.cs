@@ -114,6 +114,20 @@ namespace CPS_API.Helpers
             return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].Request(queryOptions).GetAsync();
         }
 
+        public static async Task<DriveItem?> PutFileAsync(string siteId, string driveItemId, MemoryStream stream)
+        {
+            _ = _graphClient ?? throw new NullReferenceException("Graph has not been initialized");
+
+            return await _graphClient.Sites[siteId].Drive.Items[driveItemId].Content.Request().PutAsync<DriveItem>(stream);
+        }
+
+        public static async void DeleteFileAsync(string siteId, string driveItemId)
+        {
+            _ = _graphClient ?? throw new NullReferenceException("Graph has not been initialized");
+
+            await _graphClient.Sites[siteId].Drive.Items[driveItemId].Request().DeleteAsync();
+        }
+
         public class UnauthorizedException : Exception
         {
             public UnauthorizedException(string message)
