@@ -1,8 +1,6 @@
-﻿using CPS_API.Helpers;
-using CPS_API.Models;
+﻿using CPS_API.Models;
+using CPS_API.Repositories;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Graph;
-using static CPS_API.Helpers.GraphHelper;
 
 namespace CPS_API.Controllers
 {
@@ -10,25 +8,22 @@ namespace CPS_API.Controllers
     [ApiController]
     public class ContentIdController : Controller
     {
-        private readonly StorageTableService _storageTableService;
+        private readonly IContentIdRepository _contentIdRepository;
 
-        public ContentIdController(StorageTableService storageTableService)
+        public ContentIdController(IContentIdRepository contentIdRepository)
         {
-            this._storageTableService = storageTableService;
+            _contentIdRepository = contentIdRepository;
         }
 
         [HttpPut]
         public async Task<IActionResult> CreateId([FromBody] ContentIds ids)
         {
-            // Drive bepalen.
-            Drive? drive;
-            DriveItem? driveItem;
             try
             {
-                drive = await GraphHelper.GetDriveAsync(ids.SiteId.ToString());
-                driveItem = await GraphHelper.GetDriveItemAsync(ids.SiteId.ToString(), ids.ListId.ToString(), ids.ListItemId.ToString());
+                string contentId = await _contentIdRepository.GenerateContentIdAsync(ids);
+                return Ok(contentId);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedException)
+            catch (UnauthorizedAccessException ex)
             {
                 return StatusCode(401);
             }
@@ -36,47 +31,6 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500);
             }
-
-            // Huidig volgnummer ophalen uit settings
-            var currentSetting = await this._storageTableService.GetCurrentSettingAsync();
-            if (currentSetting == null || currentSetting.Sequence < 0)
-            {
-                return StatusCode(500);
-            }
-
-            // Nieuwe volgnummer opslaan in settings
-            var sequence = currentSetting.Sequence + 1;
-            var newSetting = new SettingsEntity(sequence);
-            var succeeded = await this._storageTableService.SaveSettingAsync(newSetting);
-            if (!succeeded)
-            {
-                return StatusCode(500);
-            }
-
-            // Id's opslaan in documents
-            string? contentId;
-            try
-            {
-                contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
-                succeeded = await this._storageTableService.SaveContentIdsAsync(contentId, drive, driveItem, ids);
-                if (!succeeded)
-                {
-                    // Volgnummer terugdraaien.
-                    await this._storageTableService.SaveSettingAsync(currentSetting);
-
-                    return StatusCode(500);
-                }
-            }
-            catch (Exception)
-            {
-                // Volgnummer terugdraaien.
-                await this._storageTableService.SaveSettingAsync(currentSetting);
-
-                return StatusCode(500);
-            }
-
-            // Klaar
-            return Ok(contentId);
         }
     }
 }
