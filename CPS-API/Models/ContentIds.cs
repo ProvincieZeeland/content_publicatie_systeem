@@ -7,7 +7,7 @@
         public string SiteId { get; set; }
         public string WebId { get; set; }
         public string ListId { get; set; }        
-        public int ListItemId { get; set; }
+        public string ListItemId { get; set; }
 
         public string DriveId { get; set; }
         public string DriveItemId { get; set; }

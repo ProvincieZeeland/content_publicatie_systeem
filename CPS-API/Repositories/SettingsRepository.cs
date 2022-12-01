@@ -22,7 +22,7 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetSettingsTable()
         {
-            var table = this._storageTableService.GetTable("settings");
+            var table = this._storageTableService.GetTable(Constants.SettingsTableName);
             return table;
         }
 
@@ -34,7 +34,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>("0", "0", settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsRowKey, settingsTable);
             return currentSetting;
         }
 

@@ -9,9 +9,9 @@ namespace CPS_API.Repositories
     {
         Task<string> GetContentIdAsync(ContentIds sharePointIds);
 
-        Task<DocumentsEntity?> GetSharePointIdsAsync(string contentId);
+        Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId);
 
-        Task<bool> SaveContentIdsAsync(string contentId, Drive? drive, DriveItem? driveItem, ContentIds contentIds);
+        Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds);
 
         Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
     }
@@ -102,11 +102,11 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetDocumentsTable()
         {
-            var table = this._storageTableService.GetTable("documents");
+            var table = this._storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
             return table;
         }
 
-        public async Task<DocumentsEntity?> GetSharePointIdsAsync(string contentId)
+        public async Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId)
         {
             var documentsTable = this.GetDocumentsTable();
             if (documentsTable == null)
@@ -114,11 +114,11 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var documentsEntity = await this._storageTableService.GetAsync<DocumentsEntity>(contentId, contentId, documentsTable);
+            var documentsEntity = await this._storageTableService.GetAsync<DocumentIdsEntity>(contentId, contentId, documentsTable);
             return documentsEntity;
         }
 
-        public async Task<bool> SaveContentIdsAsync(string contentId, Drive? drive, DriveItem? driveItem, ContentIds contentIds)
+        public async Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds)
         {
             var documentsTable = this.GetDocumentsTable();
             if (documentsTable == null)
@@ -126,7 +126,7 @@ namespace CPS_API.Repositories
                 return false;
             }
 
-            var document = new DocumentsEntity(contentId, drive, driveItem, contentIds);
+            var document = new DocumentIdsEntity(contentId, contentIds);
             await this._storageTableService.SaveAsync(documentsTable, document);
             return true;
         }

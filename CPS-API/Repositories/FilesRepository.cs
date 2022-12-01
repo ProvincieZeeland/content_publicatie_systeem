@@ -55,11 +55,9 @@ namespace CPS_API.Repositories
             }
 
             // Consider different error messages
-            if (sharepointIDs.SiteId == null) throw new Exception("Site cannot be found");
-            if (sharepointIDs.ListId == null) throw new Exception("List cannot be fount");
-            if (sharepointIDs.ListItemId == null) throw new Exception("Item cannot be found");
+            if (sharepointIDs.ContentIds == null) throw new Exception("Item cannot be found");
 
-            var item = await _graphClient.Sites[sharepointIDs.SiteId].Lists[sharepointIDs.ListId].Drive.Items[sharepointIDs.ListItemId].CreateLink("view").Request().PostAsync();
+            var item = await _graphClient.Sites[sharepointIDs.ContentIds.SiteId].Lists[sharepointIDs.ContentIds.ListId].Drive.Items[sharepointIDs.ContentIds.ListItemId].CreateLink("view").Request().PostAsync();
             if (item == null)
             {
                 return null;
