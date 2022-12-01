@@ -59,8 +59,8 @@ namespace CPS_API.Controllers
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
             // Get SharePoint ids
-            var documentsEntity = await this._contentIdRepository.GetSharePointIdsAsync(contentId);
-            if (documentsEntity == null)
+            var documentIdsEntity = await this._contentIdRepository.GetSharePointIdsAsync(contentId);
+            if (documentIdsEntity == null)
             {
                 return NotFound();
             }
@@ -69,7 +69,7 @@ namespace CPS_API.Controllers
             ListItem listItem = null;
             try
             {
-                //listItem = await GraphHelper.GetLisItemAsync(documentsEntity.SiteId.ToString(), documentsEntity.ListId.ToString(), documentsEntity.ListItemId.ToString());
+                //listItem = await GraphHelper.GetLisItemAsync(documentIdsEntity.SiteId.ToString(), documentIdsEntity.ListId.ToString(), documentIdsEntity.ListItemId.ToString());
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {

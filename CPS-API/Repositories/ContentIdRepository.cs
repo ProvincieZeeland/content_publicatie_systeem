@@ -7,13 +7,13 @@ namespace CPS_API.Repositories
 {
     public interface IContentIdRepository
     {
-        Task<string> GetContentIdAsync(ContentIds sharePointIds);
+        Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
 
         Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId);
 
-        Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds);
+        Task<string?> GetContentIdAsync(ContentIds sharePointIds);
 
-        Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
+        Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds);
     }
 
     public class ContentIdRepository : IContentIdRepository
@@ -67,7 +67,7 @@ namespace CPS_API.Repositories
                 var driveItem = await _graphClient.Sites[sharePointIds.SiteId].Lists[sharePointIds.ListId].Items[sharePointIds.ListItemId].DriveItem.Request().GetAsync();
                 sharePointIds.DriveItemId = driveItem.Id;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw new Exception("Error while getting driveId + driveItemId");
             }
@@ -89,15 +89,15 @@ namespace CPS_API.Repositories
             return contentId;
         }
 
-        private CloudTable? GetDocumentsTable()
+        private CloudTable? GetDocumentIdsTable()
         {
             return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
         }
 
         public async Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId)
         {
-            var documentsTable = GetDocumentsTable();
-            if (documentsTable == null)
+            var documentIdsTable = GetDocumentIdsTable();
+            if (documentIdsTable == null)
             {
                 return null;
             }
@@ -105,14 +105,14 @@ namespace CPS_API.Repositories
             var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, contentId);
             var query = new TableQuery<DocumentIdsEntity>().Where(filter);
 
-            var result = await documentsTable.ExecuteQuerySegmentedAsync(query, null);
+            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
             return result.Results?.FirstOrDefault();
         }
 
         public async Task<string?> GetContentIdAsync(ContentIds sharePointIds)
         {
-            var documentsTable = GetDocumentsTable();
-            if (documentsTable == null)
+            var documentIdsTable = GetDocumentIdsTable();
+            if (documentIdsTable == null)
             {
                 return null;
             }
@@ -121,28 +121,21 @@ namespace CPS_API.Repositories
             var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
             var query = new TableQuery<DocumentIdsEntity>().Where(filter);
 
-            try
-            {
-                var result = await documentsTable.ExecuteQuerySegmentedAsync(query, null);
-                var documentIdsEntity = result.Results?.FirstOrDefault();
-                return documentIdsEntity?.PartitionKey;
-            }
-            catch
-            {
-                return null;
-            }
+            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
+            var documentIdsEntity = result.Results?.FirstOrDefault();
+            return documentIdsEntity?.PartitionKey;
         }
 
         public async Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds)
         {
-            var documentsTable = GetDocumentsTable();
-            if (documentsTable == null)
+            var documentIdsTable = GetDocumentIdsTable();
+            if (documentIdsTable == null)
             {
                 return false;
             }
 
             var document = new DocumentIdsEntity(contentId, contentIds);
-            await _storageTableService.SaveAsync(documentsTable, document);
+            await _storageTableService.SaveAsync(documentIdsTable, document);
             return true;
         }
     }

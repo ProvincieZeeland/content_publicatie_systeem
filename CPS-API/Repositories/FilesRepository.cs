@@ -1,5 +1,4 @@
-﻿using CPS_API.Helpers;
-using CPS_API.Models;
+﻿using CPS_API.Models;
 using Microsoft.Graph;
 
 namespace CPS_API.Repositories
@@ -50,7 +49,8 @@ namespace CPS_API.Repositories
                 new QueryOption("expand", "fields")
             };
 
-            var file = await _graphClient.Sites[documentIds.ContentIds.SiteId].Lists[documentIds.ContentIds.ListId].Items[documentIds.ContentIds.ListItemId].Request(queryOptions).GetAsync();
+            var contentIds = documentIds.GetContentIds();
+            var file = await _graphClient.Sites[contentIds.SiteId].Lists[contentIds.ListId].Items[contentIds.ListItemId].Request(queryOptions).GetAsync();
             return file;
         }
 
@@ -124,7 +124,8 @@ namespace CPS_API.Repositories
             // Consider different error messages
             if (sharepointIDs.ContentIds == null) throw new FileNotFoundException("Item cannot be found");
 
-            var item = await _graphClient.Drives[sharepointIDs.ContentIds.DriveId].Items[sharepointIDs.ContentIds.DriveItemId].CreateLink("view").Request().PostAsync();
+            var contentIds = sharepointIDs.GetContentIds();
+            var item = await _graphClient.Drives[contentIds.DriveId].Items[contentIds.DriveItemId].CreateLink("view").Request().PostAsync();
             if (item == null)
             {
                 return null;
