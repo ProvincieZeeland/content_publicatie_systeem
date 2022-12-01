@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
-using System.Text.Json;
 
 namespace CPS_API.Controllers
 {
@@ -58,39 +57,23 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
-            // Get SharePoint ids
-            var documentIdsEntity = await this._contentIdRepository.GetSharePointIdsAsync(contentId);
-            if (documentIdsEntity == null)
-            {
-                return NotFound();
-            }
-
-            // Get Listitem
-            ListItem listItem = null;
+            string json;
             try
             {
-                //listItem = await GraphHelper.GetLisItemAsync(documentIdsEntity.SiteId.ToString(), documentIdsEntity.ListId.ToString(), documentIdsEntity.ListItemId.ToString());
+                json = await _filesRepository.GetFileMetadataAsync(contentId);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                return StatusCode(401);
+                return StatusCode(401, ex.Message);
             }
             catch (Exception ex)
             {
-                return StatusCode(500);
+                return StatusCode(500, ex.Message);
             }
-            if (listItem == null)
+            if (json.IsNullOrEmpty())
             {
-                return NotFound();
+                return NotFound("Metadata not found");
             }
-
-            // Map metadata
-            var metadata = listItem.Fields as MetadataFieldValueSet;
-            if (metadata == null)
-            {
-                return NotFound();
-            }
-            var json = JsonSerializer.Serialize<MetadataFieldValueSet>(metadata);
 
             // Done
             return Ok(json);

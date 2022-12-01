@@ -1,5 +1,6 @@
 ﻿using CPS_API.Models;
 using Microsoft.Graph;
+using System.Text.Json;
 
 namespace CPS_API.Repositories
 {
@@ -14,6 +15,8 @@ namespace CPS_API.Repositories
         Task<bool> UpdateContentAsync(CpsFile file);
 
         Task<bool> UpdateMetadataAsync(CpsFile file);
+
+        Task<string> GetFileMetadataAsync(string contentId);
     }
 
     public class FilesRepository : IFilesRepository
@@ -142,6 +145,30 @@ namespace CPS_API.Repositories
             {
                 throw new Exception("Error while getting url");
             }
+        }
+
+        public async Task<string> GetFileMetadataAsync(string contentId)
+        {
+            // Get Listitem
+            ListItem? file;
+            try
+            {
+                file = await getListItem(contentId);
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                throw new UnauthorizedAccessException();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while getting listItem");
+            }
+            if (file == null) throw new FileNotFoundException();
+
+            // Map metadata
+            var metadata = file.Fields as MetadataFieldValueSet;
+            if (metadata == null) throw new FileNotFoundException();
+            return JsonSerializer.Serialize<MetadataFieldValueSet>(metadata);
         }
 
         public Task<bool> UpdateContentAsync(CpsFile file)
