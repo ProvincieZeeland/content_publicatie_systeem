@@ -115,22 +115,33 @@ namespace CPS_API.Repositories
         public async Task<string> GetUrlAsync(string contentId)
         {
             // Sharepoint id's bepalen.
-            var sharepointIDs = await _contentIdRepository.GetSharePointIdsAsync(contentId);
-            if (sharepointIDs == null)
+            var sharePointIds = await _contentIdRepository.GetSharePointIdsAsync(contentId);
+            if (sharePointIds == null)
             {
                 throw new FileNotFoundException();
             }
 
             // Consider different error messages
-            if (sharepointIDs.ContentIds == null) throw new FileNotFoundException("Item cannot be found");
+            if (sharePointIds.ContentIds == null) throw new FileNotFoundException("Item cannot be found");
 
-            var contentIds = sharepointIDs.GetContentIds();
-            var item = await _graphClient.Drives[contentIds.DriveId].Items[contentIds.DriveItemId].CreateLink("view").Request().PostAsync();
-            if (item == null)
+            var contentIds = sharePointIds.GetContentIds();
+            try
             {
-                return null;
+                var item = await _graphClient.Drives[contentIds.DriveId].Items[contentIds.DriveItemId].CreateLink("view", "organization").Request().PostAsync();
+                if (item == null)
+                {
+                    return null;
+                }
+                return item.Link.WebUrl;
             }
-            return item.Link.WebUrl;
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new UnauthorizedAccessException();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while getting url");
+            }
         }
 
         public Task<bool> UpdateContentAsync(CpsFile file)

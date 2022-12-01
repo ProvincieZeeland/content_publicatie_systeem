@@ -58,6 +58,7 @@ namespace CPS_API.Repositories
 
             // Create new contentId
             var contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
+            sharePointIds.ContentId = contentId;
 
             // Find driveID + driveItemID for object
             try

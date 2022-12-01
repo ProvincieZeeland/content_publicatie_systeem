@@ -38,15 +38,15 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                return StatusCode(401);
+                return StatusCode(401, ex.Message);
             }
             catch (Exception ex)
             {
-                return StatusCode(500);
+                return StatusCode(500, ex.Message);
             }
             if (fileUrl.IsNullOrEmpty())
             {
-                return NotFound();
+                return NotFound("Url not found");
             }
 
             // Done
