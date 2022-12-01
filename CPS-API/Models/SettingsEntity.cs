@@ -1,21 +1,22 @@
-﻿using Microsoft.WindowsAzure.Storage.Table;
+﻿using CPS_API.Helpers;
+using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Models
 {
     public class SettingsEntity : TableEntity
     {
-        public long Sequence { get; set; }
+        public long SequenceNumber { get; set; }
 
         public SettingsEntity()
         {
 
         }
 
-        public SettingsEntity(long Sequence)
+        public SettingsEntity(long sequenceNumber)
         {
-            this.PartitionKey = "0";
-            this.RowKey = "0";
-            this.Sequence = Sequence;
+            this.PartitionKey = Constants.SettingsPartitionKey;
+            this.RowKey = Constants.SettingsRowKey;
+            this.SequenceNumber = sequenceNumber;
         }
     }
 }

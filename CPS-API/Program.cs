@@ -1,12 +1,12 @@
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Graph;
-using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
 using Microsoft.Identity.Web;
+using WebApplication = Microsoft.AspNetCore.Builder.WebApplication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,9 +16,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Add Repos
-builder.Services.AddSingleton<IFilesRepository, FilesRepository>();
-builder.Services.AddSingleton<IContentIdRepository, ContentIdRepository>();
-builder.Services.AddSingleton<IDriveRepository, DriveRepository>();
+builder.Services.AddScoped<IFilesRepository, FilesRepository>();
+builder.Services.AddScoped<IContentIdRepository, ContentIdRepository>();
+builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
 
 // Add Custom Services

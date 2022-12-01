@@ -177,27 +177,6 @@ namespace CPS_API.Controllers
             return Ok(contentId);
         }
 
-        //private string? createId(ContentIds ids)
-        //{
-        //    var baseUrl = "https://localhost:7159/";
-        //    var httpWebRequest = (HttpWebRequest)WebRequest.Create(baseUrl + "files/contentid/");
-        //    httpWebRequest.ContentType = "application/json";
-        //    httpWebRequest.Method = "PUT";
-
-        //    using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
-        //    {
-        //        var json = JsonSerializer.Serialize<ContentIds>(ids);
-        //        streamWriter.Write(json);
-        //    }
-
-        //    var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
-        //    using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
-        //    {
-        //        return streamReader.ReadToEnd();
-        //    }
-        //}
-
-
         private static readonly FormOptions _defaultFormOptions = new FormOptions();
 
         [HttpPut]

@@ -31,20 +31,13 @@ namespace CPS_API.Helpers
         {
             var connectionString = this.GetConnectionstring();
             var storageAccount = CloudStorageAccount.Parse(connectionString);
-
-            var tableClient = storageAccount.CreateCloudTableClient();
-            return tableClient;
+            return storageAccount.CreateCloudTableClient();
         }
 
         public CloudTable? GetTable(string tableName)
         {
             var tableClient = this.GetCloudTableClient();
-            if (tableClient == null)
-            {
-                return null;
-            }
-            var table = tableClient.GetTableReference(tableName);
-            return table;
+            return tableClient?.GetTableReference(tableName);
         }
 
         public async Task<T?> GetAsync<T>(string partitionKey, string rowKey, CloudTable table) where T : ITableEntity
