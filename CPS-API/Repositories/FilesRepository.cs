@@ -24,12 +24,14 @@ namespace CPS_API.Repositories
         private readonly GraphServiceClient _graphClient;
         private readonly IContentIdRepository _contentIdRepository;
         private readonly GlobalSettings _globalSettings;
+        private readonly IDriveRepository _driveRepository;
 
-        public FilesRepository(GraphServiceClient graphClient, IContentIdRepository contentIdRepository, Microsoft.Extensions.Options.IOptions<GlobalSettings> settings)
+        public FilesRepository(GraphServiceClient graphClient, IContentIdRepository contentIdRepository, Microsoft.Extensions.Options.IOptions<GlobalSettings> settings, IDriveRepository driveRepository)
         {
             _graphClient = graphClient;
             _contentIdRepository = contentIdRepository;
             _globalSettings = settings.Value;
+            _driveRepository = driveRepository;
         }
 
         public Task<ContentIds> CreateAsync(CpsFile file)
@@ -43,8 +45,8 @@ namespace CPS_API.Repositories
         private async Task<ListItem?> getListItem(string contentId)
         {
             // Find file info in documents table by contentid
-            var documentIds = await _contentIdRepository.GetSharePointIdsAsync(contentId);
-            if (documentIds == null) throw new FileNotFoundException("ContentId not found");
+            var sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (conentId = {contentId}) does not exist!");
 
             // Find file in SharePoint using ids
             var queryOptions = new List<QueryOption>()
@@ -52,8 +54,7 @@ namespace CPS_API.Repositories
                 new QueryOption("expand", "fields")
             };
 
-            var contentIds = documentIds.GetContentIds();
-            var file = await _graphClient.Sites[contentIds.SiteId].Lists[contentIds.ListId].Items[contentIds.ListItemId].Request(queryOptions).GetAsync();
+            var file = await _graphClient.Sites[sharepointIds.SiteId].Lists[sharepointIds.ListId].Items[sharepointIds.ListItemId].Request(queryOptions).GetAsync();
             return file;
         }
 
@@ -115,35 +116,36 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<string> GetUrlAsync(string contentId)
+        public async Task<string?> GetUrlAsync(string contentId)
         {
-            // Sharepoint id's bepalen.
-            var sharePointIds = await _contentIdRepository.GetSharePointIdsAsync(contentId);
-            if (sharePointIds == null)
-            {
-                throw new FileNotFoundException();
-            }
+            // Get Listitem
+            var driveItem = await GetDriveItemAsync(contentId);
+            if (driveItem == null) throw new FileNotFoundException($"DriveItem (contentId = {contentId}) does not exist!");
 
-            // Consider different error messages
-            if (sharePointIds.ContentIds == null) throw new FileNotFoundException("Item cannot be found");
+            // Get url
+            return driveItem.WebUrl;
+        }
 
-            var contentIds = sharePointIds.GetContentIds();
+        private async Task<DriveItem> GetDriveItemAsync(string contentId)
+        {
+            ContentIds? sharepointIds;
             try
             {
-                var item = await _graphClient.Drives[contentIds.DriveId].Items[contentIds.DriveItemId].CreateLink("view", "organization").Request().PostAsync();
-                if (item == null)
-                {
-                    return null;
-                }
-                return item.Link.WebUrl;
+                sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
             }
-            catch (UnauthorizedAccessException ex)
+            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex is not FileNotFoundException)
             {
-                throw new UnauthorizedAccessException();
+                throw new Exception("Error while getting sharePointIds");
             }
-            catch (Exception ex)
+            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (contentId = {contentId}) does not exist!");
+
+            try
             {
-                throw new Exception("Error while getting url");
+                return await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+            }
+            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException)
+            {
+                throw new Exception("Error while getting driveItem");
             }
         }
 

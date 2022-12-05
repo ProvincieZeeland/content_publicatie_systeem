@@ -5,9 +5,9 @@ namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
-        Task<Drive> GetDriveAsync(string siteId, string webId, string listId);
+        Task<Drive> GetDriveAsync(string siteId);
 
-        Task<DriveItem> GetDriveItemAsync(string siteId, string webId, string listId, string listItemId);
+        Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId);
 
         Task<IEnumerable<string>> GetKnownDrivesAsync();
 
@@ -20,20 +20,21 @@ namespace CPS_API.Repositories
 
     public class DriveRepository : IDriveRepository
     {
-        public DriveRepository() { }
+        private readonly GraphServiceClient _graphClient;
 
-        public async Task<Drive> GetDriveAsync(string siteId, string webId, string listId)
+        public DriveRepository(GraphServiceClient graphClient)
         {
-            // Find site, find web, find list; if all exist, return drive for requested list
-
-            throw new NotImplementedException();
+            _graphClient = graphClient;
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string siteId, string webId, string listId, string listItemId)
+        public async Task<Drive> GetDriveAsync(string siteId)
         {
-            // Find site, find web, find list, find item in list; if all exist, return driveitem
+            return await _graphClient.Sites[siteId].Drive.Request().GetAsync();
+        }
 
-            throw new NotImplementedException();
+        public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId)
+        {
+            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().GetAsync();
         }
 
         public Task<IEnumerable<string>> GetKnownDrivesAsync()

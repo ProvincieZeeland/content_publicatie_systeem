@@ -1,6 +1,5 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
-using Microsoft.Graph;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
@@ -9,7 +8,7 @@ namespace CPS_API.Repositories
     {
         Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
 
-        Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId);
+        Task<ContentIds?> GetSharepointIdsAsync(string contentId);
 
         Task<string?> GetContentIdAsync(ContentIds sharePointIds);
 
@@ -20,15 +19,15 @@ namespace CPS_API.Repositories
     {
         private readonly ISettingsRepository _settingsRepository;
         private readonly StorageTableService _storageTableService;
-        private readonly GraphServiceClient _graphClient;
+        private readonly IDriveRepository _driveRepository;
 
         public ContentIdRepository(ISettingsRepository settingsRepository,
                                    StorageTableService storageTableService,
-                                   GraphServiceClient graphClient)
+                                   IDriveRepository driveRepository)
         {
             _settingsRepository = settingsRepository;
             _storageTableService = storageTableService;
-            _graphClient = graphClient;
+            _driveRepository = driveRepository;
         }
 
         public async Task<string> GenerateContentIdAsync(ContentIds sharePointIds)
@@ -63,9 +62,9 @@ namespace CPS_API.Repositories
             // Find driveID + driveItemID for object
             try
             {
-                var drive = await _graphClient.Sites[sharePointIds.SiteId].Drive.Request().GetAsync();
+                var drive = await _driveRepository.GetDriveAsync(sharePointIds.SiteId);
                 sharePointIds.DriveId = drive.Id;
-                var driveItem = await _graphClient.Sites[sharePointIds.SiteId].Lists[sharePointIds.ListId].Items[sharePointIds.ListItemId].DriveItem.Request().GetAsync();
+                var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.SiteId, sharePointIds.ListId, sharePointIds.ListItemId);
                 sharePointIds.DriveItemId = driveItem.Id;
             }
             catch (Exception)
@@ -95,7 +94,15 @@ namespace CPS_API.Repositories
             return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
         }
 
-        public async Task<DocumentIdsEntity?> GetSharePointIdsAsync(string contentId)
+        public async Task<ContentIds?> GetSharepointIdsAsync(string contentId)
+        {
+            var documentIdsEntity = await GetDocumentIdsEntityAsync(contentId);
+            if (documentIdsEntity == null) throw new FileNotFoundException($"DocumentIdsEntity (contentId = {contentId}) does not exist!");
+
+            return documentIdsEntity.GetContentIds();
+        }
+
+        private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string contentId)
         {
             var documentIdsTable = GetDocumentIdsTable();
             if (documentIdsTable == null)
