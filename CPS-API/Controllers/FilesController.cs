@@ -30,7 +30,7 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/content")]
         public async Task<IActionResult> GetFileURL(string contentId)
         {
-            string fileUrl;
+            string? fileUrl;
             try
             {
                 fileUrl = await _filesRepository.GetUrlAsync(contentId);
@@ -47,10 +47,7 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (fileUrl.IsNullOrEmpty())
-            {
-                return NotFound("Url not found");
-            }
+            if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
 
             // Done
             return Ok(fileUrl);
@@ -61,26 +58,27 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string contentId)
         {
-            string json;
+            FileInformation metadata;
             try
             {
-                json = await _filesRepository.GetFileMetadataAsync(contentId);
+                metadata = await _filesRepository.GetFileMetadataAsync(contentId);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                return StatusCode(401, ex.Message);
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? "Url not found!");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (json.IsNullOrEmpty())
-            {
-                return NotFound("Metadata not found");
-            }
+            if (metadata == null) return NotFound("Metadata not found");
 
             // Done
-            return Ok(json);
+            return Ok(metadata);
         }
 
         // PUT

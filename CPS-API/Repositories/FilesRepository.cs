@@ -1,6 +1,7 @@
 ﻿using CPS_API.Models;
 using Microsoft.Graph;
-using System.Text.Json;
+using Microsoft.IdentityModel.Tokens;
+using System.Globalization;
 
 namespace CPS_API.Repositories
 {
@@ -8,15 +9,15 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetAsync(string contentId);
 
-        Task<string> GetUrlAsync(string contentId);
+        Task<FileInformation> GetFileMetadataAsync(string contentId);
+
+        Task<string?> GetUrlAsync(string contentId);
 
         Task<ContentIds> CreateAsync(CpsFile file);
 
         Task<bool> UpdateContentAsync(CpsFile file);
 
         Task<bool> UpdateMetadataAsync(CpsFile file);
-
-        Task<string> GetFileMetadataAsync(string contentId);
     }
 
     public class FilesRepository : IFilesRepository
@@ -46,7 +47,7 @@ namespace CPS_API.Repositories
         {
             // Find file info in documents table by contentid
             var sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
-            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (conentId = {contentId}) does not exist!");
+            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (contentId = {contentId}) does not exist!");
 
             // Find file in SharePoint using ids
             var queryOptions = new List<QueryOption>()
@@ -58,17 +59,67 @@ namespace CPS_API.Repositories
             return file;
         }
 
+        private async Task<DriveItem?> getDriveItem(string contentId)
+        {
+            // Find file info in documents table by contentid
+            var sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (contentId = {contentId}) does not exist!");
+
+            return await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+        }
+
         public async Task<CpsFile> GetAsync(string contentId)
         {
-            ListItem? file = await getListItem(contentId);
-            if (file == null) throw new FileNotFoundException();
+            FileInformation metadata;
+            try
+            {
+                metadata = await GetFileMetadataAsync(contentId);
+            }
+            catch (Exception)
+            {
+                throw new Exception("Error while getting metadata");
+            }
+            if (metadata == null) throw new FileNotFoundException($"Metadata (contentId = {contentId}) does not exist!");
+
+            return new CpsFile
+            {
+                Metadata = metadata
+            };
+        }
+
+        public async Task<FileInformation> GetFileMetadataAsync(string contentId)
+        {
+            ListItem? file;
+            try
+            {
+                file = await getListItem(contentId);
+            }
+            catch (Exception)
+            {
+                throw new Exception("Error while getting listItem");
+            }
+            if (file == null) throw new FileNotFoundException($"LisItem (contentId = {contentId}) does not exist!");
+
+            DriveItem? driveItem;
+            try
+            {
+                driveItem = await getDriveItem(contentId);
+            }
+            catch (Exception)
+            {
+                throw new Exception("Error while getting driveItem");
+            }
+            if (driveItem == null) throw new FileNotFoundException($"DriveItem (contentId = {contentId}) does not exist!");
+
+            var fileName = file.Name.IsNullOrEmpty() ? driveItem.Name : file.Name;
 
             FileInformation metadata = new FileInformation();
-            metadata.FileName = file.Name;
+            metadata.MimeType = driveItem.File?.MimeType ?? string.Empty;
+            metadata.FileName = fileName;
             metadata.AdditionalMetadata = new FileMetadata();
 
-            if (!string.IsNullOrEmpty(file.Name) && file.Name.Contains('.'))
-                metadata.FileExtension = file.Name.Split('.')[1];
+            if (!fileName.IsNullOrEmpty() && fileName.Contains('.'))
+                metadata.FileExtension = fileName.Split('.')[1];
 
             if (file.CreatedDateTime.HasValue)
                 metadata.CreatedOn = file.CreatedDateTime.Value.DateTime;
@@ -89,31 +140,46 @@ namespace CPS_API.Repositories
             foreach (var fieldMapping in _globalSettings.MetadataSettings)
             {
                 // create object with sharepoint fields metadata + url to item
-                try
+                file.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
+                if (value == null)
                 {
-                    var value = file.Fields.AdditionalData[fieldMapping.SpoColumnName];
-                    if (fieldMapping.FieldName.Equals(nameof(FileInformation.ExternalApplication), StringComparison.InvariantCultureIgnoreCase))
+                    // log warning to insights?
+                    // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
+                }
+                else
+                {
+                    var stringValue = value.ToString();
+                    if (fieldMapping.FieldName.Equals(nameof(FileMetadata.Classification), StringComparison.InvariantCultureIgnoreCase))
                     {
-                        metadata.ExternalApplication = (string)value;
+                        if (stringValue != null)
+                        {
+                            Enum.TryParse<Classification>(stringValue, out var enumValue);
+                            metadata.AdditionalMetadata[fieldMapping.FieldName] = enumValue;
+                        }
+                    }
+                    else if (fieldMapping.FieldName.Equals(nameof(FileMetadata.RetentionPeriod), StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                        if (decimalValue % 1 == 0)
+                        {
+                            metadata.AdditionalMetadata[fieldMapping.FieldName] = (int)decimalValue;
+                        }
+                    }
+                    else if (
+                        fieldMapping.FieldName.Equals(nameof(FileMetadata.PublicationDate), StringComparison.InvariantCultureIgnoreCase)
+                        || fieldMapping.FieldName.Equals(nameof(FileMetadata.ArchiveDate), StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        DateTime.TryParse(stringValue, out var dateValue);
+                        metadata.AdditionalMetadata[fieldMapping.FieldName] = dateValue;
                     }
                     else
                     {
-                        metadata.AdditionalMetadata[fieldMapping.FieldName] = value;
+                        metadata.AdditionalMetadata[fieldMapping.FieldName] = stringValue;
                     }
-
-                }
-                catch
-                {
-                    metadata.AdditionalMetadata[fieldMapping.FieldName] = null;
-                    // log warning to insights?
                 }
             }
 
-
-            return new CpsFile
-            {
-                Metadata = metadata
-            };
+            return metadata;
         }
 
         public async Task<string?> GetUrlAsync(string contentId)
@@ -149,30 +215,6 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task<string> GetFileMetadataAsync(string contentId)
-        {
-            // Get Listitem
-            ListItem? file;
-            try
-            {
-                file = await getListItem(contentId);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                throw new UnauthorizedAccessException();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while getting listItem");
-            }
-            if (file == null) throw new FileNotFoundException();
-
-            // Map metadata
-            var metadata = file.Fields as MetadataFieldValueSet;
-            if (metadata == null) throw new FileNotFoundException();
-            return JsonSerializer.Serialize<MetadataFieldValueSet>(metadata);
-        }
-
         public Task<bool> UpdateContentAsync(CpsFile file)
         {
             // Find file info in documents table by contentid
@@ -196,15 +238,15 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    object? value;
-                    if (fieldMapping.FieldName.Equals(nameof(FileInformation.ExternalApplication), StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        value = file.Metadata.ExternalApplication;
-                    }
-                    else
-                    {
-                        value = file.Metadata.AdditionalMetadata[fieldMapping.FieldName];
-                    }
+                    //object? value;
+                    //if (fieldMapping.FieldName.Equals(nameof(FileInformation.ExternalApplication), StringComparison.InvariantCultureIgnoreCase))
+                    //{
+                    //    value = file.Metadata.ExternalApplication;
+                    //}
+                    //else
+                    //{
+                    var value = file.Metadata.AdditionalMetadata[fieldMapping.FieldName];
+                    //}
 
                     item.Fields.AdditionalData[fieldMapping.SpoColumnName] = value;
                 }

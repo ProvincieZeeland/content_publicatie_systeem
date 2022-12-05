@@ -1,8 +1,11 @@
-﻿namespace CPS_API.Models
+﻿using System.Text.Json.Serialization;
+
+namespace CPS_API.Models
 {
 
     public class FileInformation
     {
+        [JsonIgnore]
         public ContentIds Ids { get; set; }
 
         public string MimeType { get; set; } = string.Empty;
@@ -21,10 +24,6 @@
 
         public FileMetadata? AdditionalMetadata { get; set; }
 
-        public string ExternalApplication { get; set; } = string.Empty;
-
-        public string ExternalReference { get; set; } = string.Empty;
-
-        public ExternalReferenceType ExternalReferenceType { get; set; }
+        public List<ExternalReferences> ExternalReferences { get; set; } = new List<ExternalReferences>();
     }
 }

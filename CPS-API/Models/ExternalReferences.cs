@@ -2,26 +2,14 @@
 
 namespace CPS_API.Models
 {
-    public class FileMetadata
+    public class ExternalReferences
     {
-        public string Author { get; set; } = string.Empty;
+        public string ExternalApplication { get; set; } = string.Empty;
 
-        public string Title { get; set; } = string.Empty;
-
-        public string DocumentType { get; set; } = string.Empty;
-
-        public string ZeesterReference { get; set; } = string.Empty;
+        public string ExternalReference { get; set; } = string.Empty;
 
         [JsonConverter(typeof(JsonStringEnumConverter))]
-        public Classification Classification { get; set; }
-
-        public int RetentionPeriod { get; set; } = 0;
-
-        public DateTime PublicationDate { get; set; } = DateTime.MinValue;
-
-        public DateTime ArchiveDate { get; set; } = DateTime.MinValue;
-
-        public string Source { get; set; } = string.Empty;
+        public ExternalReferenceType ExternalReferenceType { get; set; }
 
         [JsonIgnore]
         public object? this[string fieldname]
