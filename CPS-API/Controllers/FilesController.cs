@@ -49,7 +49,6 @@ namespace CPS_API.Controllers
             }
             if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
 
-            // Done
             return Ok(fileUrl);
         }
 
@@ -61,7 +60,7 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetFileMetadataAsync(contentId);
+                metadata = await _filesRepository.GetMetadataAsync(contentId);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -77,7 +76,6 @@ namespace CPS_API.Controllers
             }
             if (metadata == null) return NotFound("Metadata not found");
 
-            // Done
             return Ok(metadata);
         }
 
@@ -85,80 +83,25 @@ namespace CPS_API.Controllers
         [HttpPut]
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
-            // Save content temporary in App Service memory.
-            // Failed? Log error in App Insights
-
-            // Add new file in SharePoint with Graph
-            // Failed? Log error in App Insights
-            DriveItem? driveItem = null;
-            try
-            {
-                using (var ms = new MemoryStream())
-                {
-                    await Request.Body.CopyToAsync(ms);
-                    ms.Position = 0;
-
-                    //driveItem = await GraphHelper.PutFileAsync(file.Metadata.Ids.SiteId.ToString(), file.Metadata.Ids.DriveItemId.ToString(), ms);
-                }
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return StatusCode(401);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500);
-            }
-            if (driveItem == null)
-            {
-                return StatusCode(500);
-            }
-
-            // Map metadata to Sharepoint columns
-            // Failed?
-            //  - log error in App Insights
-            //  - remove file from Sharepoint
-
-            // Generate ContentId
-            // Failed?
-            //  - log error in App Insights
-            //  - remove file from Sharepoint
             string? contentId;
             try
             {
-                contentId = await _contentIdRepository.GenerateContentIdAsync(file.Metadata.Ids);
+                contentId = await _filesRepository.CreateFileAsync(Request, file);
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? "Url not found!");
             }
             catch (Exception ex)
             {
-                // Remove file from Sharepoint
-                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
-                return StatusCode(500);
+                return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (contentId.IsNullOrEmpty())
-            {
-                // Remove file from Sharepoint
-                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
-                return StatusCode(500);
-            }
+            if (contentId.IsNullOrEmpty()) return NotFound("ContentId not found");
 
-            // Update ContentId and metadata in Sharepoint with Graph
-            // Failed?
-            //  - log error in App Insights
-            //  - remove file from Sharepoint
-            //  - remove contendIds from Azure Storage Account
-            //  - decrease sequence
-            try
-            {
-
-            }
-            catch (Exception ex)
-            {
-                // Remove file from Sharepoint
-                //GraphHelper.DeleteFileAsync(file.Metadata.Ids.SiteId.ToString(), driveItem.Id);
-                return StatusCode(500);
-            }
-
-            // Done
             return Ok(contentId);
         }
 
@@ -273,7 +216,6 @@ namespace CPS_API.Controllers
             return Ok(contentId);
         }
 
-
         // POST
         [HttpPut]
         [Route("content/{contentId}")]
@@ -288,7 +230,28 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/metadata")]
         public async Task<IActionResult> UpdateFileMetadata(string contentId, [FromBody] FileInformation fileInfo)
         {
-            throw new NotImplementedException();
+            fileInfo.Ids.ContentId = contentId;
+
+            ListItem? listItem;
+            try
+            {
+                listItem = await _filesRepository.UpdateMetadataAsync(fileInfo);
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? "Url not found!");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message ?? "Error while getting metadata");
+            }
+            if (listItem == null) return NotFound("ListItem not found");
+
+            return Ok();
         }
     }
 }

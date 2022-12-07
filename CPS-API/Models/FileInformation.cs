@@ -1,11 +1,8 @@
-﻿using System.Text.Json.Serialization;
-
-namespace CPS_API.Models
+﻿namespace CPS_API.Models
 {
 
     public class FileInformation
     {
-        [JsonIgnore]
         public ContentIds Ids { get; set; }
 
         public string MimeType { get; set; } = string.Empty;

@@ -9,15 +9,21 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetAsync(string contentId);
 
-        Task<FileInformation> GetFileMetadataAsync(string contentId);
-
         Task<string?> GetUrlAsync(string contentId);
+
+        Task<string?> CreateFileAsync(HttpRequest Request, CpsFile file);
 
         Task<ContentIds> CreateAsync(CpsFile file);
 
+        Task<DriveItem?> PutFileAsync(string siteId, string fileName, MemoryStream stream);
+
         Task<bool> UpdateContentAsync(CpsFile file);
 
-        Task<bool> UpdateMetadataAsync(CpsFile file);
+        Task DeleteFileAsync(string siteId, string driveItemId);
+
+        Task<FileInformation> GetMetadataAsync(string contentId);
+
+        Task<ListItem?> UpdateMetadataAsync(FileInformation metadata);
     }
 
     public class FilesRepository : IFilesRepository
@@ -73,7 +79,7 @@ namespace CPS_API.Repositories
             FileInformation metadata;
             try
             {
-                metadata = await GetFileMetadataAsync(contentId);
+                metadata = await GetMetadataAsync(contentId);
             }
             catch (Exception)
             {
@@ -87,7 +93,174 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<FileInformation> GetFileMetadataAsync(string contentId)
+        public async Task<string?> GetUrlAsync(string contentId)
+        {
+            // Get Listitem
+            var driveItem = await GetDriveItemAsync(contentId);
+            if (driveItem == null) throw new FileNotFoundException($"DriveItem (contentId = {contentId}) does not exist!");
+
+            // Get url
+            return driveItem.WebUrl;
+        }
+
+        private async Task<DriveItem> GetDriveItemAsync(string contentId)
+        {
+            ContentIds? sharepointIds;
+            try
+            {
+                sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            }
+            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex is not FileNotFoundException)
+            {
+                throw new Exception("Error while getting sharePointIds");
+            }
+            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (contentId = {contentId}) does not exist!");
+
+            try
+            {
+                return await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+            }
+            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException)
+            {
+                throw new Exception("Error while getting driveItem");
+            }
+        }
+
+        public async Task<string?> CreateFileAsync(HttpRequest Request, CpsFile file)
+        {
+            // Save content temporary in App Service memory.
+            // Failed? Log error in App Insights
+
+            // Add new file in SharePoint
+            DriveItem? driveItem;
+            try
+            {
+                driveItem = await PutFileAsync(Request, file);
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                // TODO: Log error in App Insights
+                throw ex;
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+                throw new Exception("Error while adding new file");
+            }
+            if (driveItem == null)
+            {
+                // TODO: Log error in App Insights
+                throw new Exception("Error while adding new file");
+            }
+
+            // Get sharepointIds
+            ContentIds sharepointIds;
+            try
+            {
+                sharepointIds = await GetSharepointIds(file, driveItem);
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+
+                throw new Exception("Error while getting SharepointIds");
+            }
+
+            // Generate contentId
+            string? contentId;
+            try
+            {
+                contentId = await _contentIdRepository.GenerateContentIdAsync(sharepointIds);
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+
+                throw new Exception("Error while generating contentId");
+            }
+            if (contentId.IsNullOrEmpty())
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+
+                throw new Exception("Error while generating contentId");
+            }
+
+            // Update ContentId and metadata in Sharepoint with Graph
+            try
+            {
+                await UpdateMetadataAsync(file.Metadata);
+            }
+            catch (Exception ex)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+
+                throw new Exception("Error while updating metadata");
+            }
+
+            // Done
+            return contentId;
+        }
+
+        private async Task<DriveItem?> PutFileAsync(HttpRequest Request, CpsFile file)
+        {
+            using (var ms = new MemoryStream())
+            {
+                await Request.Body.CopyToAsync(ms);
+                ms.Position = 0;
+
+                return await PutFileAsync(file.Metadata.Ids.SiteId, file.Metadata.FileName, ms);
+            }
+        }
+
+        private async Task<ContentIds> GetSharepointIds(CpsFile file, DriveItem driveItem)
+        {
+            var sharepointIds = file.Metadata.Ids;
+            sharepointIds.DriveItemId = driveItem.Id;
+            if (driveItem.SharepointIds == null)
+            {
+                var driveItemWithIds = await _graphClient.Drives[file.Metadata.Ids.DriveId].Items[driveItem.Id].Request().Select("sharepointids").GetAsync();
+                driveItem.SharepointIds = driveItemWithIds.SharepointIds;
+            }
+            sharepointIds.WebId = driveItem.SharepointIds.WebId;
+            sharepointIds.ListId = driveItem.SharepointIds.ListId;
+            sharepointIds.ListItemId = driveItem.SharepointIds.ListItemId;
+            return sharepointIds;
+        }
+
+        public async Task<DriveItem?> PutFileAsync(string siteId, string fileName, MemoryStream stream)
+        {
+            return await _graphClient.Sites[siteId].Drive.Root.ItemWithPath(fileName).Content.Request().PutAsync<DriveItem>(stream);
+        }
+
+        public Task<bool> UpdateContentAsync(CpsFile file)
+        {
+            // Find file info in documents table by contentid
+            // Find file in SharePoint using ids
+            // create new version of document in sharepoint and upload content
+
+            throw new NotImplementedException();
+        }
+
+        public async Task DeleteFileAsync(string siteId, string driveItemId)
+        {
+            await _graphClient.Sites[siteId].Drive.Items[driveItemId].Request().DeleteAsync();
+        }
+
+        #region Metadata
+
+        public async Task<FileInformation> GetMetadataAsync(string contentId)
         {
             ListItem? file;
             try
@@ -182,85 +355,39 @@ namespace CPS_API.Repositories
             return metadata;
         }
 
-        public async Task<string?> GetUrlAsync(string contentId)
+        public async Task<ListItem?> UpdateMetadataAsync(FileInformation metadata)
         {
-            // Get Listitem
-            var driveItem = await GetDriveItemAsync(contentId);
-            if (driveItem == null) throw new FileNotFoundException($"DriveItem (contentId = {contentId}) does not exist!");
+            if (metadata == null) throw new ArgumentNullException("metadata");
+            if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
-            // Get url
-            return driveItem.WebUrl;
-        }
-
-        private async Task<DriveItem> GetDriveItemAsync(string contentId)
-        {
-            ContentIds? sharepointIds;
-            try
-            {
-                sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
-            }
-            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex is not FileNotFoundException)
-            {
-                throw new Exception("Error while getting sharePointIds");
-            }
-            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (contentId = {contentId}) does not exist!");
-
-            try
-            {
-                return await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
-            }
-            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException)
-            {
-                throw new Exception("Error while getting driveItem");
-            }
-        }
-
-        public Task<bool> UpdateContentAsync(CpsFile file)
-        {
-            // Find file info in documents table by contentid
-            // Find file in SharePoint using ids
-            // create new version of document in sharepoint and upload content
-
-            throw new NotImplementedException();
-        }
-
-        public async Task<bool> UpdateMetadataAsync(CpsFile file)
-        {
-            if (file.Metadata == null) throw new ArgumentNullException("file.Metadata");
-            if (file.Metadata.AdditionalMetadata == null) throw new ArgumentNullException("file.Metadata.AdditionalMetadata");
-            if (file.Metadata.Ids == null) throw new ArgumentNullException("file.Metadata.Ids");
-
-            ListItem? item = await getListItem(file.Metadata.Ids.ContentId);
-            if (item == null) throw new FileNotFoundException();
+            ListItem? listItem = await getListItem(metadata.Ids.ContentId);
+            if (listItem == null) throw new FileNotFoundException();
 
             // map received metadata to SPO object
+            mapMetadata(metadata, ref listItem);
+
+            // update sharepoint fields with metadata
+            return await _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Request().PutAsync(listItem);
+        }
+
+        private void mapMetadata(FileInformation metadata, ref ListItem listItem)
+        {
+            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
+
             foreach (var fieldMapping in _globalSettings.MetadataSettings)
             {
                 try
                 {
-                    //object? value;
-                    //if (fieldMapping.FieldName.Equals(nameof(FileInformation.ExternalApplication), StringComparison.InvariantCultureIgnoreCase))
-                    //{
-                    //    value = file.Metadata.ExternalApplication;
-                    //}
-                    //else
-                    //{
-                    var value = file.Metadata.AdditionalMetadata[fieldMapping.FieldName];
-                    //}
-
-                    item.Fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                    var value = metadata.AdditionalMetadata[fieldMapping.FieldName];
+                    listItem.Fields.AdditionalData[fieldMapping.SpoColumnName] = value;
                 }
                 catch
                 {
-                    throw new ArgumentException("Cannot parse received input to valid SharePoint field data", fieldMapping.FieldName);
+                    throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                 }
             }
-
-            // update sharepoint fields with metadata
-            var updatedItem = await _graphClient.Sites[file.Metadata.Ids.SiteId].Lists[file.Metadata.Ids.ListId].Items[file.Metadata.Ids.ListItemId].Request().PutAsync(item);
-            if (updatedItem != null) return true;
-
-            return false;
         }
+
+        #endregion
     }
 }
