@@ -127,7 +127,7 @@ namespace CPS_API.Repositories
             ContentIds sharepointIds;
             try
             {
-                sharepointIds = await GetSharepointIds(file, driveItem);
+                sharepointIds = await GetSharepointIdsAsync(file, driveItem);
             }
             catch (Exception)
             {
@@ -194,13 +194,14 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task<ContentIds> GetSharepointIds(CpsFile file, DriveItem driveItem)
+        private async Task<ContentIds?> GetSharepointIdsAsync(CpsFile file, DriveItem driveItem)
         {
             var sharepointIds = file.Metadata.Ids;
             sharepointIds.DriveItemId = driveItem.Id;
             if (driveItem.SharepointIds == null)
             {
                 var driveItemWithIds = await _graphClient.Drives[file.Metadata.Ids.DriveId].Items[driveItem.Id].Request().Select("sharepointids").GetAsync();
+                if (driveItemWithIds == null) return null;
                 driveItem.SharepointIds = driveItemWithIds.SharepointIds;
             }
             sharepointIds.WebId = driveItem.SharepointIds.WebId;
@@ -320,6 +321,12 @@ namespace CPS_API.Repositories
                         metadata.AdditionalMetadata[fieldMapping.FieldName] = stringValue;
                     }
                 }
+            }
+
+            metadata.Ids = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            if (metadata.Ids == null)
+            {
+                throw new Exception("Error while getting sharepointIds");
             }
 
             return metadata;
