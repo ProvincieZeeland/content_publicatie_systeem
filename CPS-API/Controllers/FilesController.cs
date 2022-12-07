@@ -210,7 +210,7 @@ namespace CPS_API.Controllers
             };
 
             // save to repo
-            ContentIds newSharePointIds = await _filesRepository.CreateAsync(file);
+            ContentIds newSharePointIds = await _filesRepository.CreateFileAsync(file);
             string contentId = await _contentIdRepository.GenerateContentIdAsync(newSharePointIds);
 
             return Ok(contentId);
