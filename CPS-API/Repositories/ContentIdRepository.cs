@@ -59,17 +59,35 @@ namespace CPS_API.Repositories
             var contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
             sharePointIds.ContentId = contentId;
 
-            // Find driveID + driveItemID for object
-            try
+            if (sharePointIds.DriveId == null || sharePointIds.DriveItemId == null)
             {
-                var drive = await _driveRepository.GetDriveAsync(sharePointIds.SiteId);
-                sharePointIds.DriveId = drive.Id;
-                var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.SiteId, sharePointIds.ListId, sharePointIds.ListItemId);
-                sharePointIds.DriveItemId = driveItem.Id;
+                // Find driveID + driveItemID for object
+                try
+                {
+                    var drive = await _driveRepository.GetDriveAsync(sharePointIds.SiteId, sharePointIds.ListId);
+                    sharePointIds.DriveId = drive.Id;
+                    var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.SiteId, sharePointIds.ListId, sharePointIds.ListItemId);
+                    sharePointIds.DriveItemId = driveItem.Id;
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error while getting driveId + driveItemId", ex);
+                }
             }
-            catch (Exception)
+            else if (sharePointIds.SiteId == null || sharePointIds.ListId == null || sharePointIds.ListItemId == null)
             {
-                throw new Exception("Error while getting driveId + driveItemId");
+                // Find sharepoint Ids from drive
+                try
+                {
+                    var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.DriveId, sharePointIds.DriveItemId);
+                    sharePointIds.SiteId = driveItem.SharepointIds.SiteId;
+                    sharePointIds.ListId = driveItem.SharepointIds.ListId;
+                    sharePointIds.ListItemId = driveItem.SharepointIds.ListItemId;
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error while getting SharePoint Ids", ex);
+                }
             }
 
             // Store contentId + backend ids in table
@@ -81,9 +99,9 @@ namespace CPS_API.Repositories
                     throw new Exception("Error while saving SharePoint ids");
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw new Exception("Error while saving SharePoint ids");
+                throw new Exception("Error while saving SharePoint ids", ex);
             }
 
             return contentId;
