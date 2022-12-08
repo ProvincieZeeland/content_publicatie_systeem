@@ -59,6 +59,28 @@ namespace CPS_API.Repositories
             var contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
             sharePointIds.ContentId = contentId;
 
+            // Add any missing location IDs
+            sharePointIds = await FindMissingIds(sharePointIds);
+
+            // Store contentId + backend ids in table
+            try
+            {
+                succeeded = await SaveContentIdsAsync(contentId, sharePointIds);
+                if (!succeeded)
+                {
+                    throw new Exception("Error while saving SharePoint ids");
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while saving SharePoint ids", ex);
+            }
+
+            return contentId;
+        }
+
+        private async Task<ContentIds> FindMissingIds(ContentIds sharePointIds)
+        {
             if (sharePointIds.DriveId == null || sharePointIds.DriveItemId == null)
             {
                 // Find driveID + driveItemID for object
@@ -79,7 +101,7 @@ namespace CPS_API.Repositories
                 // Find sharepoint Ids from drive
                 try
                 {
-                    var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.DriveId, sharePointIds.DriveItemId);
+                    var driveItem = await _driveRepository.GetDriveItemIdsAsync(sharePointIds.DriveId, sharePointIds.DriveItemId);
                     sharePointIds.SiteId = driveItem.SharepointIds.SiteId;
                     sharePointIds.ListId = driveItem.SharepointIds.ListId;
                     sharePointIds.ListItemId = driveItem.SharepointIds.ListItemId;
@@ -90,21 +112,7 @@ namespace CPS_API.Repositories
                 }
             }
 
-            // Store contentId + backend ids in table
-            try
-            {
-                succeeded = await SaveContentIdsAsync(contentId, sharePointIds);
-                if (!succeeded)
-                {
-                    throw new Exception("Error while saving SharePoint ids");
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while saving SharePoint ids", ex);
-            }
-
-            return contentId;
+            return sharePointIds;
         }
 
         private CloudTable? GetDocumentIdsTable()
