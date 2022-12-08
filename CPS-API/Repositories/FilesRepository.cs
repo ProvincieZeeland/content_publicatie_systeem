@@ -17,7 +17,7 @@ namespace CPS_API.Repositories
 
         Task<DriveItem?> PutFileAsync(string siteId, string fileName, MemoryStream stream);
 
-        Task<bool> UpdateContentAsync(CpsFile file);
+        Task<bool> UpdateContentAsync(HttpRequest Request, string contentId, byte[] content);
 
         Task DeleteFileAsync(string siteId, string driveItemId);
 
@@ -215,13 +215,55 @@ namespace CPS_API.Repositories
             return await _graphClient.Sites[siteId].Drive.Root.ItemWithPath(fileName).Content.Request().PutAsync<DriveItem>(stream);
         }
 
-        public Task<bool> UpdateContentAsync(CpsFile file)
+        public async Task<bool> UpdateContentAsync(HttpRequest Request, string contentId, byte[] content)
         {
-            // Find file info in documents table by contentid
-            // Find file in SharePoint using ids
-            // create new version of document in sharepoint and upload content
+            // Get SharepointIds
+            ContentIds? sharepointIds;
+            try
+            {
+                sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
 
-            throw new NotImplementedException();
+                throw new Exception("Error while getting SharepointIds");
+            }
+            if (sharepointIds == null) throw new FileNotFoundException("SharepointIds not found");
+
+            // Get DriveItem
+            DriveItem? driveItem;
+            try
+            {
+                driveItem = await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+
+                throw new Exception("Error while getting DriveItem");
+            }
+            if (driveItem == null) throw new FileNotFoundException("DriveItem not found");
+
+            // Create new version
+            try
+            {
+                using (var ms = new MemoryStream())
+                {
+                    await Request.Body.CopyToAsync(ms);
+                    ms.Position = 0;
+
+                    await _graphClient.Me.Drive.Items[driveItem.Id].Request().UpdateAsync(driveItem);
+                }
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+
+                throw new Exception("Error while updating DriveItem");
+            }
+
+            return true;
         }
 
         public async Task DeleteFileAsync(string siteId, string driveItemId)

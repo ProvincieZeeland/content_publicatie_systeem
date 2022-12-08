@@ -222,7 +222,26 @@ namespace CPS_API.Controllers
         //[Route("{contentId}/content")]
         public async Task<IActionResult> UpdateFileContent(string contentId, [FromBody] byte[] content)
         {
-            throw new NotImplementedException();
+            bool succeeded;
+            try
+            {
+                succeeded = await _filesRepository.UpdateContentAsync(Request, contentId, content);
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? "Url not found!");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message ?? "Error while updating content");
+            }
+            if (!succeeded) return NotFound("Error while updating content");
+
+            return Ok();
         }
 
         [HttpPut]
