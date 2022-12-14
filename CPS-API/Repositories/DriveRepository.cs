@@ -16,6 +16,8 @@ namespace CPS_API.Repositories
 
         Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId);
 
+        Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId);
+
         Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream);
 
         Task DeleteFileAsync(string driveId, string driveItemId);
@@ -54,12 +56,17 @@ namespace CPS_API.Repositories
 
         public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId)
         {
-            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().GetAsync();
+            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().Select("*").GetAsync();
         }
 
         public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId)
         {
             return await _graphClient.Drives[driveId].Items[driveItemId].Request().GetAsync();
+        }
+
+        public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId)
+        {
+            return await _graphClient.Drives[driveId].Items[driveItemId].Request().Select("sharepointids").GetAsync();
         }
 
         public Task<IEnumerable<string>> GetKnownDrivesAsync()

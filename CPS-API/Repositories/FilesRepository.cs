@@ -1,4 +1,5 @@
 ﻿using CPS_API.Models;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using System.Globalization;
@@ -9,17 +10,13 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetFileAsync(string contentId);
 
-        Task<string?> GetUrlAsync(string contentId);
-
-        Task<string?> CreateFileAsync(HttpRequest Request, CpsFile file);
+        Task<string> GetUrlAsync(string contentId);
 
         Task<ContentIds> CreateFileAsync(CpsFile file);
 
-        Task<DriveItem?> PutFileAsync(string siteId, string fileName, MemoryStream stream);
+        Task<ContentIds> CreateFileAsync(CpsFile file, IFormFile formFile);
 
         Task<bool> UpdateContentAsync(HttpRequest Request, string contentId, byte[] content);
-
-        Task DeleteFileAsync(string siteId, string driveItemId);
 
         Task<FileInformation> GetMetadataAsync(string contentId);
 
@@ -41,15 +38,7 @@ namespace CPS_API.Repositories
             _driveRepository = driveRepository;
         }
 
-        public Task<ContentIds> CreateFileAsync(CpsFile file)
-        {
-            // Create new file in fileStorage with filename + content in specified location (using site/web/list or drive ids)
-            // Find all missing ids and return them
-
-            throw new NotImplementedException();
-        }
-
-        public async Task<string?> GetUrlAsync(string contentId)
+        public async Task<string> GetUrlAsync(string contentId)
         {
             DocumentIdsEntity? sharepointIds;
             try
@@ -96,70 +85,88 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<string?> CreateFileAsync(HttpRequest Request, CpsFile file)
+        public async Task<ContentIds> CreateFileAsync(CpsFile file)
         {
-            // Save content temporary in App Service memory.
-            // Failed? Log error in App Insights
+            return await CreateFileAsync(file, null);
+        }
 
-            // Add new file in SharePoint
-            DriveItem? driveItem;
+        public async Task<ContentIds> CreateFileAsync(CpsFile file, IFormFile formFile)
+        {
+            // Find wanted storage location depending on classification
+            // todo: get driveid or site matching classification & source
+            ContentIds locationIds = new ContentIds
+            {
+                DriveId = ""
+            };
+
+            // Add new file to SharePoint
+            DriveItem driveItem;
             try
             {
-                driveItem = await PutFileAsync(Request, file);
+                if (formFile != null)
+                {
+                    using (var fileStream = formFile.OpenReadStream())
+                    {
+                        if (fileStream.Length > 0)
+                        {
+                            driveItem = await _driveRepository.CreateAsync(locationIds.DriveId, file.Metadata.FileName, fileStream);
+                        }
+                        else
+                        {
+                            throw new Exception("File cannot be empty");
+                        }
+                    }
+                }
+                else
+                {
+                    using (var memorstream = new MemoryStream(file.Content))
+                    {
+                        if (memorstream.Length > 0)
+                        {
+                            memorstream.Position = 0;
+                            driveItem = await _driveRepository.CreateAsync(locationIds.DriveId, file.Metadata.FileName, memorstream);
+                        }
+                        else
+                        {
+                            throw new Exception("File cannot be empty");
+                        }
+                    }
+                }
+
+                if (driveItem == null)
+                {
+                    throw new Exception("Error while adding new file");
+                }
+
+                locationIds.DriveItemId = driveItem.Id;
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 // TODO: Log error in App Insights
-                throw ex;
+                throw;
             }
+            // todo: handle file exists exception
             catch (Exception)
             {
                 // TODO: Log error in App Insights
                 throw new Exception("Error while adding new file");
-            }
-            if (driveItem == null)
-            {
-                // TODO: Log error in App Insights
-                throw new Exception("Error while adding new file");
-            }
-
-            // Get sharepointIds
-            ContentIds sharepointIds;
-            try
-            {
-                sharepointIds = await GetSharepointIdsAsync(file, driveItem);
-            }
-            catch (Exception)
-            {
-                // TODO: Log error in App Insights
-
-                // Remove file from Sharepoint
-                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
-
-                throw new Exception("Error while getting SharepointIds");
             }
 
             // Generate contentId
-            string? contentId;
+            string contentId;
             try
             {
-                contentId = await _contentIdRepository.GenerateContentIdAsync(sharepointIds);
+                contentId = await _contentIdRepository.GenerateContentIdAsync(locationIds);
+                if (contentId.IsNullOrEmpty()) throw new Exception("ContentID is empty");
+
+                locationIds.ContentId = contentId;
             }
             catch (Exception)
             {
                 // TODO: Log error in App Insights
 
                 // Remove file from Sharepoint
-                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
-
-                throw new Exception("Error while generating contentId");
-            }
-            if (contentId.IsNullOrEmpty())
-            {
-                // TODO: Log error in App Insights
-
-                // Remove file from Sharepoint
-                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(locationIds.DriveId, driveItem.Id);
 
                 throw new Exception("Error while generating contentId");
             }
@@ -174,45 +181,13 @@ namespace CPS_API.Repositories
                 // TODO: Log error in App Insights
 
                 // Remove file from Sharepoint
-                await DeleteFileAsync(file.Metadata.Ids.SiteId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(locationIds.DriveId, driveItem.Id);
 
                 throw new Exception("Error while updating metadata");
             }
 
             // Done
-            return contentId;
-        }
-
-        private async Task<DriveItem?> PutFileAsync(HttpRequest Request, CpsFile file)
-        {
-            using (var ms = new MemoryStream())
-            {
-                await Request.Body.CopyToAsync(ms);
-                ms.Position = 0;
-
-                return await PutFileAsync(file.Metadata.Ids.SiteId, file.Metadata.FileName, ms);
-            }
-        }
-
-        private async Task<ContentIds?> GetSharepointIdsAsync(CpsFile file, DriveItem driveItem)
-        {
-            var sharepointIds = file.Metadata.Ids;
-            sharepointIds.DriveItemId = driveItem.Id;
-            if (driveItem.SharepointIds == null)
-            {
-                var driveItemWithIds = await _graphClient.Drives[file.Metadata.Ids.DriveId].Items[driveItem.Id].Request().Select("sharepointids").GetAsync();
-                if (driveItemWithIds == null) return null;
-                driveItem.SharepointIds = driveItemWithIds.SharepointIds;
-            }
-            sharepointIds.WebId = driveItem.SharepointIds.WebId;
-            sharepointIds.ListId = driveItem.SharepointIds.ListId;
-            sharepointIds.ListItemId = driveItem.SharepointIds.ListItemId;
-            return sharepointIds;
-        }
-
-        public async Task<DriveItem?> PutFileAsync(string siteId, string fileName, MemoryStream stream)
-        {
-            return await _graphClient.Sites[siteId].Drive.Root.ItemWithPath(fileName).Content.Request().PutAsync<DriveItem>(stream);
+            return locationIds;
         }
 
         public async Task<bool> UpdateContentAsync(HttpRequest Request, string contentId, byte[] content)
@@ -264,11 +239,6 @@ namespace CPS_API.Repositories
             }
 
             return true;
-        }
-
-        public async Task DeleteFileAsync(string siteId, string driveItemId)
-        {
-            await _graphClient.Sites[siteId].Drive.Items[driveItemId].Request().DeleteAsync();
         }
 
         #region Metadata
