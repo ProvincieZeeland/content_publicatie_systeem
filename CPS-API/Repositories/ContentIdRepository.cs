@@ -8,7 +8,7 @@ namespace CPS_API.Repositories
     {
         Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
 
-        Task<ContentIds?> GetSharepointIdsAsync(string contentId);
+        Task<DocumentIdsEntity?> GetSharepointIdsAsync(string contentId);
 
         Task<string?> GetContentIdAsync(ContentIds sharePointIds);
 
@@ -40,14 +40,14 @@ namespace CPS_API.Repositories
             }
 
             // Get sequencenr for contentid from table
-            var currentSetting = await _settingsRepository.GetCurrentSettingAsync();
-            if (currentSetting == null || currentSetting.SequenceNumber < 0)
+            var currentSequenceNumber = await _settingsRepository.GetSequenceNumberAsync();
+            if (currentSequenceNumber == null)
             {
                 throw new Exception("Current sequence not found");
             }
 
             // Increase sequencenr and store in table
-            var sequence = currentSetting.SequenceNumber + 1;
+            var sequence = currentSequenceNumber.Value + 1;
             var newSetting = new SettingsEntity(sequence);
             var succeeded = await _settingsRepository.SaveSettingAsync(newSetting);
             if (!succeeded)
@@ -112,12 +112,12 @@ namespace CPS_API.Repositories
             return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
         }
 
-        public async Task<ContentIds?> GetSharepointIdsAsync(string contentId)
+        public async Task<DocumentIdsEntity?> GetSharepointIdsAsync(string contentId)
         {
             var documentIdsEntity = await GetDocumentIdsEntityAsync(contentId);
             if (documentIdsEntity == null) throw new FileNotFoundException($"DocumentIdsEntity (contentId = {contentId}) does not exist!");
 
-            return documentIdsEntity.GetContentIds();
+            return documentIdsEntity;
         }
 
         private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string contentId)

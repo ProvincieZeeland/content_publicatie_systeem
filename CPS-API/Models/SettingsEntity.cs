@@ -7,6 +7,8 @@ namespace CPS_API.Models
     {
         public long SequenceNumber { get; set; }
 
+        public DateTime LastSynchronisation { get; set; }
+
         public SettingsEntity()
         {
 
@@ -15,8 +17,15 @@ namespace CPS_API.Models
         public SettingsEntity(long sequenceNumber)
         {
             this.PartitionKey = Constants.SettingsPartitionKey;
-            this.RowKey = Constants.SettingsRowKey;
+            this.RowKey = Constants.SettingsSequenceRowKey;
             this.SequenceNumber = sequenceNumber;
+        }
+
+        public SettingsEntity(DateTime lastSynchronisation)
+        {
+            this.PartitionKey = Constants.SettingsPartitionKey;
+            this.RowKey = Constants.SettingsLastSynchronisationRowKey;
+            this.LastSynchronisation = lastSynchronisation;
         }
     }
 }

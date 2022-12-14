@@ -11,6 +11,8 @@ namespace CPS_API.Helpers
         Task<T?> GetAsync<T>(string partitionKey, string rowKey, CloudTable table) where T : ITableEntity;
 
         Task SaveAsync(CloudTable table, ITableEntity entity);
+
+        Task DeleteAsync(CloudTable table, List<ITableEntity> entities);
     }
 
     public class StorageTableService : IStorageTableService
@@ -55,6 +57,13 @@ namespace CPS_API.Helpers
         {
             var insertop = TableOperation.InsertOrReplace(entity);
             await table.ExecuteAsync(insertop);
+        }
+
+        public async Task DeleteAsync(CloudTable table, List<ITableEntity> entities)
+        {
+            TableBatchOperation tableBatchOperation = new TableBatchOperation();
+            entities.ForEach(entity => tableBatchOperation.Add(TableOperation.Delete(entity)));
+            await table.ExecuteBatchAsync(tableBatchOperation);
         }
     }
 }

@@ -6,7 +6,9 @@ namespace CPS_API.Repositories
 {
     public interface ISettingsRepository
     {
-        Task<SettingsEntity?> GetCurrentSettingAsync();
+        Task<long?> GetSequenceNumberAsync();
+
+        Task<DateTime?> GetLastSynchronisationAsync();
 
         Task<bool> SaveSettingAsync(SettingsEntity setting);
     }
@@ -26,7 +28,7 @@ namespace CPS_API.Repositories
             return table;
         }
 
-        public async Task<SettingsEntity?> GetCurrentSettingAsync()
+        public async Task<long?> GetSequenceNumberAsync()
         {
             var settingsTable = this.GetSettingsTable();
             if (settingsTable == null)
@@ -34,8 +36,22 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsRowKey, settingsTable);
-            return currentSetting;
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsSequenceRowKey, settingsTable);
+            if (currentSetting == null) throw new Exception("Error while getting SequenceNumber");
+            return currentSetting.SequenceNumber;
+        }
+
+        public async Task<DateTime?> GetLastSynchronisationAsync()
+        {
+            var settingsTable = this.GetSettingsTable();
+            if (settingsTable == null)
+            {
+                return null;
+            }
+
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationRowKey, settingsTable);
+            if (currentSetting == null) throw new Exception("Error while getting LastSynchronisation");
+            return currentSetting.LastSynchronisation;
         }
 
         public async Task<bool> SaveSettingAsync(SettingsEntity setting)

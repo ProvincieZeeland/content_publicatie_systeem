@@ -51,7 +51,7 @@ namespace CPS_API.Repositories
 
         public async Task<string?> GetUrlAsync(string contentId)
         {
-            ContentIds? sharepointIds;
+            DocumentIdsEntity? sharepointIds;
             try
             {
                 sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
@@ -218,7 +218,7 @@ namespace CPS_API.Repositories
         public async Task<bool> UpdateContentAsync(HttpRequest Request, string contentId, byte[] content)
         {
             // Get SharepointIds
-            ContentIds? sharepointIds;
+            DocumentIdsEntity? sharepointIds;
             try
             {
                 sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
@@ -365,12 +365,13 @@ namespace CPS_API.Repositories
                 }
             }
 
-            metadata.Ids = await _contentIdRepository.GetSharepointIdsAsync(contentId);
-            if (metadata.Ids == null)
+            var sharepointIds = await _contentIdRepository.GetSharepointIdsAsync(contentId);
+            if (sharepointIds == null)
             {
                 throw new Exception("Error while getting sharepointIds");
             }
 
+            metadata.Ids = new ContentIds(sharepointIds);
             return metadata;
         }
 

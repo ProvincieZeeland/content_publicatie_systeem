@@ -1,27 +1,39 @@
 ﻿using Microsoft.WindowsAzure.Storage.Table;
-using System.Text.Json;
 
 namespace CPS_API.Models
 {
     public class DocumentIdsEntity : TableEntity
     {
-        public string ContentIds { get; set; }
+        public string ContentId { get; set; }
+
+        public string SiteId { get; set; }
+
+        public string WebId { get; set; }
+
+        public string ListId { get; set; }
+
+        public string ListItemId { get; set; }
+
+        public string DriveId { get; set; }
+
+        public string DriveItemId { get; set; }
 
         public DocumentIdsEntity()
         {
 
         }
 
-        public ContentIds GetContentIds()
-        {
-            return JsonSerializer.Deserialize<ContentIds>(ContentIds);
-        }
-
         public DocumentIdsEntity(string contentId, ContentIds ids)
         {
-            this.PartitionKey = contentId;
-            this.RowKey = ids.SiteId + ids.WebId + ids.ListId + ids.ListItemId;
-            this.ContentIds = JsonSerializer.Serialize(ids);
+            PartitionKey = contentId;
+            RowKey = ids.SiteId + ids.WebId + ids.ListId + ids.ListItemId;
+            ContentId = contentId;
+            SiteId = ids.SiteId;
+            WebId = ids.WebId;
+            ListId = ids.ListId;
+            ListItemId = ids.ListItemId;
+            DriveId = ids.DriveId;
+            DriveItemId = ids.DriveItemId;
         }
     }
 }

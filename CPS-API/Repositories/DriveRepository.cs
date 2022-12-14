@@ -1,6 +1,8 @@
-﻿using CPS_API.Models;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
 using Microsoft.Graph;
-using Newtonsoft.Json;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
 {
@@ -20,20 +22,24 @@ namespace CPS_API.Repositories
 
         Task<IEnumerable<string>> GetKnownDrivesAsync();
 
-        Task<IEnumerable<ContentIds>> GetNewItems(DateTime startDate);
+        Task<List<DriveItem>> GetNewItems(DateTime startDate);
 
-        Task<IEnumerable<ContentIds>> GetUpdatedItems(DateTime startDate);
+        Task<List<DriveItem>> GetUpdatedItems(DateTime startDate);
 
-        Task<IEnumerable<ContentIds>> GetDeletedItems(DateTime startDate);
+        Task<List<DriveItem>> GetDeletedItems(DateTime startDate);
     }
 
     public class DriveRepository : IDriveRepository
     {
         private readonly GraphServiceClient _graphClient;
 
-        public DriveRepository(GraphServiceClient graphClient)
+        private readonly StorageTableService _storageTableService;
+
+        public DriveRepository(GraphServiceClient graphClient,
+                               StorageTableService storageTableService)
         {
             _graphClient = graphClient;
+            _storageTableService = storageTableService;
         }
 
         public async Task<Drive> GetDriveAsync(string siteId, string listId)
@@ -55,7 +61,6 @@ namespace CPS_API.Repositories
         {
             return await _graphClient.Drives[driveId].Items[driveItemId].Request().GetAsync();
         }
-
 
         public Task<IEnumerable<string>> GetKnownDrivesAsync()
         {
@@ -118,7 +123,7 @@ namespace CPS_API.Repositories
             await _graphClient.Drives[driveId].Items[driveItemId].Request().DeleteAsync();
         }
 
-        public Task<IEnumerable<ContentIds>> GetNewItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetNewItems(DateTime startDate)
         {
             // Get known drives
 
@@ -126,35 +131,90 @@ namespace CPS_API.Repositories
             // Call graph delta and get changed items since time
             // https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0&tabs=http#example-4-retrieving-delta-results-using-a-timestamp
             // https://learn.microsoft.com/en-us/onedrive/developer/rest-api/concepts/scan-guidance?view=odsp-graph-online#recommended-calling-pattern
+            var driveItems = await GetDeltaAsync(startDate);
+            var newItems = driveItems.Where(item => item.Deleted == null).ToList();
 
             // Make list of all new items
             // include at least driveitemid + driveid > can find rest in documents table if other data is not available
             throw new NotImplementedException();
         }
 
-        public Task<IEnumerable<ContentIds>> GetUpdatedItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate)
         {
             // Get known drives
 
-            // For each drive:
-            // Call graph delta and get changed items since time
+            var driveItems = await GetDeltaAsync(startDate);
+            var updatedItems = driveItems.Where(item => item.Deleted == null).ToList();
 
             // Make list of all updated items
             // include at least driveitemid + driveid > can find rest in documents table if other data is not available
             throw new NotImplementedException();
         }
 
-        public Task<IEnumerable<ContentIds>> GetDeletedItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate)
         {
             // Get known drives
 
             // For each drive:
             // Call graph delta and get changed items since time
+            var driveItems = await GetDeltaAsync(startDate);
+            var removedItems = driveItems.Where(item => item.Deleted != null).ToList();
 
             // Make list of all deleted items
             // include at least driveitemid + driveid > can find rest in documents table if other data is not available
 
             throw new NotImplementedException();
+        }
+
+        private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate)
+        {
+            var driveIds = await getDriveIdsAsync();
+
+            if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
+
+            var driveItems = new List<DriveItem>();
+            foreach (var driveId in driveIds)
+            {
+                var queryOptions = new List<QueryOption>()
+                {
+                    new QueryOption("token", startDate.ToString("yyyy-MM-ddTHH:mm:ss.fffffff"))
+                };
+
+                IDriveItemDeltaCollectionPage delta;
+                try
+                {
+                    delta = await _graphClient.Drives[driveId].Root.Delta().Request(queryOptions).GetAsync();
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error while getting changed driveItems with delta");
+                }
+                driveItems.AddRange(delta.CurrentPage);
+            }
+            return driveItems;
+        }
+
+        private async Task<List<string>?> getDriveIdsAsync()
+        {
+            var documentIdsTable = GetDocumentIdsTable();
+            if (documentIdsTable == null)
+            {
+                return null;
+            }
+
+            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(new TableQuery<DocumentIdsEntity>(), null);
+            var documentIdsEntities = result.Results;
+            if (documentIdsEntities == null)
+            {
+                return null;
+            }
+
+            return documentIdsEntities.Select(item => item.DriveId).Distinct().ToList();
+        }
+
+        private CloudTable? GetDocumentIdsTable()
+        {
+            return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
         }
     }
 }
