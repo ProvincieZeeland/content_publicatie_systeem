@@ -12,8 +12,8 @@ namespace CPS_API.Helpers
 
         Task<byte[]> GetContentAsync(string containerName, string filename);
 
-
         Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype);
+
         Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype);
 
         Task<bool> DeleteAsync(string sourceContainer, string targetContainer, string filename);

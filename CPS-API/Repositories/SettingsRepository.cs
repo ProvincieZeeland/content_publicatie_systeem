@@ -50,7 +50,7 @@ namespace CPS_API.Repositories
             }
 
             var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationRowKey, settingsTable);
-            if (currentSetting == null) throw new Exception("Error while getting LastSynchronisation");
+            if (currentSetting == null) return null;
             return currentSetting.LastSynchronisation;
         }
 

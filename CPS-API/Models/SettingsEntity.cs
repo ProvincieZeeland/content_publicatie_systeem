@@ -5,9 +5,9 @@ namespace CPS_API.Models
 {
     public class SettingsEntity : TableEntity
     {
-        public long SequenceNumber { get; set; }
+        public long? SequenceNumber { get; set; }
 
-        public DateTime LastSynchronisation { get; set; }
+        public DateTime? LastSynchronisation { get; set; }
 
         public SettingsEntity()
         {

@@ -49,7 +49,15 @@ namespace CPS_API.Repositories
             // Increase sequencenr and store in table
             var sequence = currentSequenceNumber.Value + 1;
             var newSetting = new SettingsEntity(sequence);
-            var succeeded = await _settingsRepository.SaveSettingAsync(newSetting);
+            bool succeeded;
+            try
+            {
+                succeeded = await _settingsRepository.SaveSettingAsync(newSetting);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error while saving new sequence {sequence}");
+            }
             if (!succeeded)
             {
                 throw new Exception($"Error while saving new sequence {sequence}");

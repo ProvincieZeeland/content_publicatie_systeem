@@ -29,6 +29,8 @@ namespace CPS_API.Repositories
         Task<List<DriveItem>> GetUpdatedItems(DateTime startDate);
 
         Task<List<DriveItem>> GetDeletedItems(DateTime startDate);
+
+        Task<Stream> DownloadAsync(string driveId, string driveItemId);
     }
 
     public class DriveRepository : IDriveRepository
@@ -132,53 +134,33 @@ namespace CPS_API.Repositories
 
         public async Task<List<DriveItem>> GetNewItems(DateTime startDate)
         {
-            // Get known drives
-
-            // For each drive:
-            // Call graph delta and get changed items since time
-            // https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0&tabs=http#example-4-retrieving-delta-results-using-a-timestamp
-            // https://learn.microsoft.com/en-us/onedrive/developer/rest-api/concepts/scan-guidance?view=odsp-graph-online#recommended-calling-pattern
             var driveItems = await GetDeltaAsync(startDate);
-            var newItems = driveItems.Where(item => item.Deleted == null).ToList();
-
-            // Make list of all new items
-            // include at least driveitemid + driveid > can find rest in documents table if other data is not available
-            throw new NotImplementedException();
+            var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime <= startDate).ToList();
+            return newItems.Where(item => item.Folder == null).ToList();
         }
 
         public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate)
         {
-            // Get known drives
-
             var driveItems = await GetDeltaAsync(startDate);
-            var updatedItems = driveItems.Where(item => item.Deleted == null).ToList();
-
-            // Make list of all updated items
-            // include at least driveitemid + driveid > can find rest in documents table if other data is not available
-            throw new NotImplementedException();
+            var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime > startDate).ToList();
+            return updatedItems.Where(item => item.Folder == null).ToList();
         }
 
         public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate)
         {
-            // Get known drives
-
-            // For each drive:
-            // Call graph delta and get changed items since time
             var driveItems = await GetDeltaAsync(startDate);
-            var removedItems = driveItems.Where(item => item.Deleted != null).ToList();
-
-            // Make list of all deleted items
-            // include at least driveitemid + driveid > can find rest in documents table if other data is not available
-
-            throw new NotImplementedException();
+            var deletedItems = driveItems.Where(item => item.Deleted != null).ToList();
+            return deletedItems.Where(item => item.Folder == null).ToList();
         }
 
         private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate)
         {
+            // Get known drives
             var driveIds = await getDriveIdsAsync();
-
             if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
 
+            // For each drive:
+            // Call graph delta and get changed items since time
             var driveItems = new List<DriveItem>();
             foreach (var driveId in driveIds)
             {
@@ -216,12 +198,17 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            return documentIdsEntities.Select(item => item.DriveId).Distinct().ToList();
+            return documentIdsEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
         private CloudTable? GetDocumentIdsTable()
         {
             return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
+        }
+
+        public async Task<Stream> DownloadAsync(string driveId, string driveItemId)
+        {
+            return await _graphClient.Drives[driveId].Items[driveItemId].Content.Request().GetAsync();
         }
     }
 }

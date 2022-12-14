@@ -9,6 +9,7 @@
         public const string SettingsSequenceRowKey = "SequenceNumber";
         public const string SettingsLastSynchronisationRowKey = "LastSynchronisation";
 
-        public const string ContentTableName = "Content";
+        public const string ContentContainerName = "content";
+        public const string MetadataContainerName = "metadata";
     }
 }
