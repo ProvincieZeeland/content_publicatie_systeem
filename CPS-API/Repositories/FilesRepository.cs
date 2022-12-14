@@ -1,8 +1,6 @@
 ﻿using CPS_API.Models;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
-using System.Globalization;
 
 namespace CPS_API.Repositories
 {
@@ -304,34 +302,7 @@ namespace CPS_API.Repositories
                 }
                 else
                 {
-                    var stringValue = value.ToString();
-                    if (fieldMapping.FieldName.Equals(nameof(FileMetadata.Classification), StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        if (stringValue != null)
-                        {
-                            Enum.TryParse<Classification>(stringValue, out var enumValue);
-                            metadata.AdditionalMetadata[fieldMapping.FieldName] = enumValue;
-                        }
-                    }
-                    else if (fieldMapping.FieldName.Equals(nameof(FileMetadata.RetentionPeriod), StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
-                        if (decimalValue % 1 == 0)
-                        {
-                            metadata.AdditionalMetadata[fieldMapping.FieldName] = (int)decimalValue;
-                        }
-                    }
-                    else if (
-                        fieldMapping.FieldName.Equals(nameof(FileMetadata.PublicationDate), StringComparison.InvariantCultureIgnoreCase)
-                        || fieldMapping.FieldName.Equals(nameof(FileMetadata.ArchiveDate), StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        DateTime.TryParse(stringValue, out var dateValue);
-                        metadata.AdditionalMetadata[fieldMapping.FieldName] = dateValue;
-                    }
-                    else
-                    {
-                        metadata.AdditionalMetadata[fieldMapping.FieldName] = stringValue;
-                    }
+                    metadata.AdditionalMetadata[fieldMapping.FieldName] = value;
                 }
             }
 
