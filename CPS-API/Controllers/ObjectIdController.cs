@@ -1,11 +1,12 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CPS_API.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [Route("/files/[controller]")]
     [ApiController]
     public class ObjectIdController : Controller

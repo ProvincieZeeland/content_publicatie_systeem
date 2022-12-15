@@ -1,5 +1,6 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [Route("[controller]")]
     [ApiController]
     public class FilesController : ControllerBase
@@ -24,59 +25,59 @@ namespace CPS_API.Controllers
         }
 
         // GET
-        [HttpGet]
-        [Route("content/{objectId}")]
-        //[Route("{objectId}/content")]
-        public async Task<IActionResult> GetFileURL(string objectId)
-        {
-            string? fileUrl;
-            try
-            {
-                fileUrl = await _filesRepository.GetUrlAsync(objectId);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ex.Message ?? "Error while getting url");
-            }
-            if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
+        //[HttpGet]
+        //[Route("content/{objectId}")]
+        ////[Route("{objectId}/content")]
+        //public async Task<IActionResult> GetFileURL(string objectId)
+        //{
+        //    string? fileUrl;
+        //    try
+        //    {
+        //        fileUrl = await _filesRepository.GetUrlAsync(objectId);
+        //    }
+        //    catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+        //    {
+        //        return StatusCode(401, ex.Message ?? "Unauthorized");
+        //    }
+        //    catch (FileNotFoundException ex)
+        //    {
+        //        return NotFound(ex.Message ?? "Url not found!");
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, ex.Message ?? "Error while getting url");
+        //    }
+        //    if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
 
-            return Ok(fileUrl);
-        }
+        //    return Ok(fileUrl);
+        //}
 
-        [HttpGet]
-        [Route("metadata/{objectId}")]
-        //[Route("{objectId}/metadata")]
-        public async Task<IActionResult> GetFileMetadata(string objectId)
-        {
-            FileInformation metadata;
-            try
-            {
-                metadata = await _filesRepository.GetMetadataAsync(objectId);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, ex.Message ?? "Error while getting metadata");
-            }
-            if (metadata == null) return NotFound("Metadata not found");
+        //[HttpGet]
+        //[Route("metadata/{objectId}")]
+        ////[Route("{objectId}/metadata")]
+        //public async Task<IActionResult> GetFileMetadata(string objectId)
+        //{
+        //    FileInformation metadata;
+        //    try
+        //    {
+        //        metadata = await _filesRepository.GetMetadataAsync(objectId);
+        //    }
+        //    catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+        //    {
+        //        return StatusCode(401, ex.Message ?? "Unauthorized");
+        //    }
+        //    catch (FileNotFoundException ex)
+        //    {
+        //        return NotFound(ex.Message ?? "Url not found!");
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, ex.Message ?? "Error while getting metadata");
+        //    }
+        //    if (metadata == null) return NotFound("Metadata not found");
 
-            return Ok(metadata);
-        }
+        //    return Ok(metadata);
+        //}
 
         // PUT
         [HttpPut]
