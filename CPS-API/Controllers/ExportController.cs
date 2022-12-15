@@ -268,7 +268,7 @@ namespace CPS_API.Controllers
                 bool succeeded;
                 try
                 {
-                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, Helpers.Constants.ContentContainerName, fileName);
+                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, fileName);
                 }
                 catch (Exception ex)
                 {
@@ -279,7 +279,7 @@ namespace CPS_API.Controllers
                 var metadataName = fileName + ".xml";
                 try
                 {
-                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.MetadataContainerName, Helpers.Constants.MetadataContainerName, metadataName);
+                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.MetadataContainerName, metadataName);
                 }
                 catch (Exception ex)
                 {

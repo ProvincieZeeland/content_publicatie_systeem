@@ -16,7 +16,7 @@ namespace CPS_API.Helpers
 
         Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype);
 
-        Task<bool> DeleteAsync(string sourceContainer, string targetContainer, string filename);
+        Task<bool> DeleteAsync(string containerName, string filename);
     }
 
     public class FileStorageService : IFileStorageService
@@ -184,9 +184,26 @@ namespace CPS_API.Helpers
             return false;
         }
 
-        public Task<bool> DeleteAsync(string sourceContainer, string targetContainer, string filename)
+        public async Task<bool> DeleteAsync(string containerName, string filename)
         {
-            throw new NotImplementedException();
+            try
+            {
+                string connectionString = GetConnectionstring();
+
+                var containerClient = new BlobContainerClient(connectionString, containerName);
+                if (!await containerClient.ExistsAsync())
+                    throw new FileNotFoundException("Container " + containerName + " does not exist!");
+
+                var blobClient = containerClient.GetBlobClient(filename);
+                await blobClient.DeleteAsync();
+                return true;
+            }
+            catch (Exception error)
+            {
+                // todo: log error to app insights
+            }
+
+            return false;
         }
     }
 }
