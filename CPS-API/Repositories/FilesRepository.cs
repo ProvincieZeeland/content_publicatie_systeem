@@ -200,9 +200,23 @@ namespace CPS_API.Repositories
             {
                 // TODO: Log error in App Insights
 
-                throw new Exception("Error while getting SharepointIds");
+                throw new Exception("Error while getting sharepointIds");
             }
             if (sharepointIds == null) throw new FileNotFoundException("SharepointIds not found");
+
+            // Get Drive
+            Drive? drive;
+            try
+            {
+                drive = await _driveRepository.GetDriveAsync(sharepointIds.SiteId, sharepointIds.ListId);
+            }
+            catch (Exception)
+            {
+                // TODO: Log error in App Insights
+
+                throw new Exception("Error while getting drive");
+            }
+            if (drive == null) throw new FileNotFoundException("Drive not found");
 
             // Get DriveItem
             DriveItem? driveItem;
@@ -214,7 +228,7 @@ namespace CPS_API.Repositories
             {
                 // TODO: Log error in App Insights
 
-                throw new Exception("Error while getting DriveItem");
+                throw new Exception("Error while getting driveItem");
             }
             if (driveItem == null) throw new FileNotFoundException("DriveItem not found");
 
@@ -226,14 +240,14 @@ namespace CPS_API.Repositories
                     await Request.Body.CopyToAsync(ms);
                     ms.Position = 0;
 
-                    await _graphClient.Me.Drive.Items[driveItem.Id].Request().UpdateAsync(driveItem);
+                    await _graphClient.Drives[drive.Id].Items[driveItem.Id].Request().UpdateAsync(driveItem);
                 }
             }
             catch (Exception)
             {
                 // TODO: Log error in App Insights
 
-                throw new Exception("Error while updating DriveItem");
+                throw new Exception("Error while updating driveItem");
             }
 
             return true;
