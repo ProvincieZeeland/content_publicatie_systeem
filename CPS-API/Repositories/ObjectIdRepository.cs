@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
@@ -89,7 +90,7 @@ namespace CPS_API.Repositories
 
         private async Task<ObjectIds> FindMissingIds(ObjectIds sharePointIds)
         {
-            if (sharePointIds.DriveId == null || sharePointIds.DriveItemId == null)
+            if (sharePointIds.DriveId.IsNullOrEmpty() || sharePointIds.DriveItemId.IsNullOrEmpty())
             {
                 // Find driveID + driveItemID for object
                 try
@@ -104,7 +105,8 @@ namespace CPS_API.Repositories
                     throw new Exception("Error while getting driveId + driveItemId", ex);
                 }
             }
-            else if (sharePointIds.SiteId == null || sharePointIds.ListId == null || sharePointIds.ListItemId == null)
+
+            if (sharePointIds.SiteId.IsNullOrEmpty() || sharePointIds.ListId.IsNullOrEmpty() || sharePointIds.ListItemId.IsNullOrEmpty())
             {
                 // Find sharepoint Ids from drive
                 try
