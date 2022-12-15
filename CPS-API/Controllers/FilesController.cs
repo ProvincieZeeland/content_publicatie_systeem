@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -10,6 +11,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace CPS_API.Controllers
 {
+    [Authorize]
     [Route("[controller]")]
     [ApiController]
     public class FilesController : ControllerBase

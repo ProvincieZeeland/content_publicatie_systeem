@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
@@ -11,6 +12,7 @@ using System.Text;
 
 namespace CPS_API.Controllers
 {
+    [Authorize]
     [Route("[controller]")]
     [ApiController]
     public class ExportController : Controller
@@ -337,7 +339,8 @@ namespace CPS_API.Controllers
 
             return $"<{propertyName}>{valueAsStr}</{propertyName}>";
         }
-        public string? FirstCharToLowerCase(string? str)
+
+        private string? FirstCharToLowerCase(string? str)
         {
             if (!string.IsNullOrEmpty(str) && char.IsUpper(str[0]))
                 return str.Length == 1 ? char.ToLower(str[0]).ToString() : char.ToLower(str[0]) + str[1..];
