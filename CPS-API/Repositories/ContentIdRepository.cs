@@ -159,7 +159,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var rowKey = sharePointIds.SiteId + sharePointIds.WebId + sharePointIds.ListId + sharePointIds.ListItemId;
+            var rowKey = sharePointIds.SiteId + sharePointIds.ListId + sharePointIds.ListItemId;
             var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
             var query = new TableQuery<DocumentIdsEntity>().Where(filter);
 
