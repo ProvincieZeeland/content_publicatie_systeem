@@ -1,12 +1,8 @@
-﻿using CPS_API.Helpers;
-using CPS_API.Models;
+﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Net.Http.Headers;
 
 namespace CPS_API.Controllers
 {
@@ -186,10 +182,10 @@ namespace CPS_API.Controllers
         {
             fileInfo.Ids.ContentId = contentId;
 
-            ListItem? listItem;
+            FieldValueSet? fields;
             try
             {
-                listItem = await _filesRepository.UpdateMetadataAsync(fileInfo);
+                fields = await _filesRepository.UpdateMetadataAsync(fileInfo);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -203,7 +199,7 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (listItem == null) return NotFound("ListItem not found");
+            if (fields == null) return NotFound("Error while updating metadata");
 
             return Ok();
         }

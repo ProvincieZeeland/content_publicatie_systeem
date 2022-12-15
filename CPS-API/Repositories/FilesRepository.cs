@@ -18,7 +18,7 @@ namespace CPS_API.Repositories
 
         Task<FileInformation> GetMetadataAsync(string contentId);
 
-        Task<ListItem?> UpdateMetadataAsync(FileInformation metadata);
+        Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata);
     }
 
     public class FilesRepository : IFilesRepository
@@ -94,7 +94,7 @@ namespace CPS_API.Repositories
             // todo: get driveid or site matching classification & source
             ContentIds locationIds = new ContentIds
             {
-                DriveId = ""
+                DriveId = file.Metadata.Ids.DriveId
             };
 
             // Add new file to SharePoint
@@ -172,6 +172,7 @@ namespace CPS_API.Repositories
             // Update ContentId and metadata in Sharepoint with Graph
             try
             {
+                file.Metadata.Ids = locationIds;
                 await UpdateMetadataAsync(file.Metadata);
             }
             catch (Exception ex)
@@ -330,37 +331,63 @@ namespace CPS_API.Repositories
             return metadata;
         }
 
-        public async Task<ListItem?> UpdateMetadataAsync(FileInformation metadata)
+        public async Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
-            ListItem? listItem = await getListItem(metadata.Ids.ContentId);
+            ListItem? listItem;
+            try
+            {
+                listItem = await getListItem(metadata.Ids.ContentId);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while getting listItem");
+            }
             if (listItem == null) throw new FileNotFoundException();
 
             // map received metadata to SPO object
-            mapMetadata(metadata, ref listItem);
+            var fields = mapMetadata(metadata);
+            if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
-            return await _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Request().PutAsync(listItem);
+            return await _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Fields.Request().UpdateAsync(fields);
         }
 
-        private void mapMetadata(FileInformation metadata, ref ListItem listItem)
+        private FieldValueSet mapMetadata(FileInformation metadata)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
+            var fields = new FieldValueSet();
+            fields.AdditionalData = new Dictionary<string, object>();
             foreach (var fieldMapping in _globalSettings.MetadataSettings)
             {
                 try
                 {
                     var value = metadata.AdditionalMetadata[fieldMapping.FieldName];
-                    listItem.Fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                    if (value is DateTime dateValue)
+                    {
+                        if (dateValue == DateTime.MinValue)
+                        {
+                            fields.AdditionalData[fieldMapping.SpoColumnName] = null;
+                        }
+                        else
+                        {
+                            fields.AdditionalData[fieldMapping.SpoColumnName] = dateValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffff");
+                        }
+                    }
+                    else
+                    {
+                        fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                    }
                 }
                 catch
                 {
                     throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                 }
             }
+            return fields;
         }
 
         #endregion
