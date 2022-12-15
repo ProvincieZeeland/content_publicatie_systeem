@@ -2,7 +2,7 @@
 
 namespace CPS_API.Models
 {
-    public class DocumentIdsEntity : TableEntity
+    public class ObjectIdentifiersEntity : TableEntity
     {
         public string ObjectId { get; set; }
 
@@ -16,12 +16,12 @@ namespace CPS_API.Models
 
         public string DriveItemId { get; set; }
 
-        public DocumentIdsEntity()
+        public ObjectIdentifiersEntity()
         {
 
         }
 
-        public DocumentIdsEntity(string objectId, ObjectIds ids)
+        public ObjectIdentifiersEntity(string objectId, ObjectIdentifiers ids)
         {
             PartitionKey = objectId;
             RowKey = ids.SiteId + ids.ListId + ids.ListItemId;

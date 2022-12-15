@@ -16,7 +16,7 @@ namespace CPS_API.Controllers
         }
 
         [HttpPut]
-        public async Task<IActionResult> CreateId([FromBody] ObjectIds ids)
+        public async Task<IActionResult> CreateId([FromBody] ObjectIdentifiers ids)
         {
             try
             {

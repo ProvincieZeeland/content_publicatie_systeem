@@ -10,9 +10,9 @@ namespace CPS_API.Repositories
 
         Task<string> GetUrlAsync(string objectId);
 
-        Task<ObjectIds> CreateFileAsync(CpsFile file);
+        Task<ObjectIdentifiers> CreateFileAsync(CpsFile file);
 
-        Task<ObjectIds> CreateFileAsync(CpsFile file, IFormFile formFile);
+        Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile);
 
         Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content);
 
@@ -38,21 +38,21 @@ namespace CPS_API.Repositories
 
         public async Task<string> GetUrlAsync(string objectId)
         {
-            DocumentIdsEntity? sharepointIds;
+            ObjectIdentifiersEntity? objectIdentifiers;
             try
             {
-                sharepointIds = await _objectIdRepository.GetSharepointIdsAsync(objectId);
+                objectIdentifiers = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
             }
             catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex is not FileNotFoundException)
             {
-                throw new Exception("Error while getting sharePointIds");
+                throw new Exception("Error while getting objectIdentifiers");
             }
-            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (objectId = {objectId}) does not exist!");
+            if (objectIdentifiers == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
             DriveItem? driveItem;
             try
             {
-                driveItem = await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+                driveItem = await _driveRepository.GetDriveItemAsync(objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId);
             }
             catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException)
             {
@@ -83,16 +83,16 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<ObjectIds> CreateFileAsync(CpsFile file)
+        public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file)
         {
             return await CreateFileAsync(file, null);
         }
 
-        public async Task<ObjectIds> CreateFileAsync(CpsFile file, IFormFile formFile)
+        public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile)
         {
             // Find wanted storage location depending on classification
             // todo: get driveid or site matching classification & source
-            ObjectIds locationIds = new ObjectIds
+            var ids = new ObjectIdentifiers
             {
                 DriveId = file.Metadata.Ids.DriveId
             };
@@ -107,7 +107,7 @@ namespace CPS_API.Repositories
                     {
                         if (fileStream.Length > 0)
                         {
-                            driveItem = await _driveRepository.CreateAsync(locationIds.DriveId, file.Metadata.FileName, fileStream);
+                            driveItem = await _driveRepository.CreateAsync(ids.DriveId, file.Metadata.FileName, fileStream);
                         }
                         else
                         {
@@ -122,7 +122,7 @@ namespace CPS_API.Repositories
                         if (memorstream.Length > 0)
                         {
                             memorstream.Position = 0;
-                            driveItem = await _driveRepository.CreateAsync(locationIds.DriveId, file.Metadata.FileName, memorstream);
+                            driveItem = await _driveRepository.CreateAsync(ids.DriveId, file.Metadata.FileName, memorstream);
                         }
                         else
                         {
@@ -136,7 +136,7 @@ namespace CPS_API.Repositories
                     throw new Exception("Error while adding new file");
                 }
 
-                locationIds.DriveItemId = driveItem.Id;
+                ids.DriveItemId = driveItem.Id;
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -154,17 +154,17 @@ namespace CPS_API.Repositories
             string objectId;
             try
             {
-                objectId = await _objectIdRepository.GenerateObjectIdAsync(locationIds);
+                objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
                 if (objectId.IsNullOrEmpty()) throw new Exception("ObjectId is empty");
 
-                locationIds.ObjectId = objectId;
+                ids.ObjectId = objectId;
             }
             catch (Exception)
             {
                 // TODO: Log error in App Insights
 
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(locationIds.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
                 throw new Exception("Error while generating ObjectId");
             }
@@ -172,7 +172,7 @@ namespace CPS_API.Repositories
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                file.Metadata.Ids = locationIds;
+                file.Metadata.Ids = ids;
                 await UpdateMetadataAsync(file.Metadata);
             }
             catch (Exception ex)
@@ -180,36 +180,36 @@ namespace CPS_API.Repositories
                 // TODO: Log error in App Insights
 
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(locationIds.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
                 throw new Exception("Error while updating metadata");
             }
 
             // Done
-            return locationIds;
+            return ids;
         }
 
         public async Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content)
         {
-            // Get SharepointIds
-            DocumentIdsEntity? sharepointIds;
+            // Get objectIdentifiers
+            ObjectIdentifiersEntity? ids;
             try
             {
-                sharepointIds = await _objectIdRepository.GetSharepointIdsAsync(objectId);
+                ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
             }
             catch (Exception)
             {
                 // TODO: Log error in App Insights
 
-                throw new Exception("Error while getting sharepointIds");
+                throw new Exception("Error while getting objectIdentifiers");
             }
-            if (sharepointIds == null) throw new FileNotFoundException("SharepointIds not found");
+            if (ids == null) throw new FileNotFoundException("ObjectIdentifiers not found");
 
             // Get Drive
             Drive? drive;
             try
             {
-                drive = await _driveRepository.GetDriveAsync(sharepointIds.SiteId, sharepointIds.ListId);
+                drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId);
             }
             catch (Exception)
             {
@@ -223,7 +223,7 @@ namespace CPS_API.Repositories
             DriveItem? driveItem;
             try
             {
-                driveItem = await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+                driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
             }
             catch (Exception)
             {
@@ -321,13 +321,13 @@ namespace CPS_API.Repositories
                 }
             }
 
-            var sharepointIds = await _objectIdRepository.GetSharepointIdsAsync(objectId);
-            if (sharepointIds == null)
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (ids == null)
             {
-                throw new Exception("Error while getting sharepointIds");
+                throw new Exception("Error while getting objectIdentifiers");
             }
 
-            metadata.Ids = new ObjectIds(sharepointIds);
+            metadata.Ids = new ObjectIdentifiers(ids);
             return metadata;
         }
 
@@ -397,8 +397,8 @@ namespace CPS_API.Repositories
         private async Task<ListItem?> getListItem(string objectId)
         {
             // Find file info in documents table by objectId
-            var sharepointIds = await _objectIdRepository.GetSharepointIdsAsync(objectId);
-            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (objectId = {objectId}) does not exist!");
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (ids == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
             // Find file in SharePoint using ids
             var queryOptions = new List<QueryOption>()
@@ -406,16 +406,16 @@ namespace CPS_API.Repositories
                 new QueryOption("expand", "fields")
             };
 
-            return await _graphClient.Sites[sharepointIds.SiteId].Lists[sharepointIds.ListId].Items[sharepointIds.ListItemId].Request(queryOptions).GetAsync();
+            return await _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Request(queryOptions).GetAsync();
         }
 
         private async Task<DriveItem?> getDriveItem(string objectId)
         {
             // Find file info in documents table by objectId
-            var sharepointIds = await _objectIdRepository.GetSharepointIdsAsync(objectId);
-            if (sharepointIds == null) throw new FileNotFoundException($"SharepointIds (objectId = {objectId}) does not exist!");
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (ids == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
-            return await _driveRepository.GetDriveItemAsync(sharepointIds.SiteId, sharepointIds.ListId, sharepointIds.ListItemId);
+            return await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
         }
 
         #endregion

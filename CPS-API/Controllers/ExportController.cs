@@ -153,21 +153,21 @@ namespace CPS_API.Controllers
 
         private async Task uploadFileAndXmlToFileStorage(DriveItem driveItem)
         {
-            DocumentIdsEntity documentIdsEntity;
+            ObjectIdentifiersEntity objectIdentifiersEntity;
             try
             {
-                documentIdsEntity = await GetDocumentIdsEntityAsync(driveItem.Id);
+                objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(driveItem.Id);
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while getting sharepointIds");
+                throw new Exception("Error while getting objectIdentifiers");
             }
-            if (documentIdsEntity == null) throw new Exception("Error while getting sharepointIds");
+            if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
 
             FileInformation? metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(documentIdsEntity.ObjectId);
+                metadata = await _filesRepository.GetMetadataAsync(objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -178,7 +178,7 @@ namespace CPS_API.Controllers
             Stream? stream;
             try
             {
-                stream = await _driveRepository.DownloadAsync(documentIdsEntity.DriveId, driveItem.Id);
+                stream = await _driveRepository.DownloadAsync(objectIdentifiersEntity.DriveId, driveItem.Id);
             }
             catch (Exception ex)
             {
@@ -186,7 +186,7 @@ namespace CPS_API.Controllers
             }
             if (stream == null) throw new Exception("Error while getting content");
 
-            var fileName = $"{documentIdsEntity.ObjectId}.{driveItem.Name}";
+            var fileName = $"{objectIdentifiersEntity.ObjectId}.{driveItem.Name}";
             bool succeeded;
             try
             {
@@ -253,18 +253,18 @@ namespace CPS_API.Controllers
             // delete xml from storage container
             foreach (var deletedItem in deletedItems)
             {
-                DocumentIdsEntity? documentIdsEntity;
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    documentIdsEntity = await GetDocumentIdsEntityAsync(deletedItem.Id);
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, "Error while getting sharepointIds");
+                    return StatusCode(500, "Error while getting objectIdentifiers");
                 }
-                if (documentIdsEntity == null) return StatusCode(500, "Error while getting sharepointIds");
+                if (objectIdentifiersEntity == null) return StatusCode(500, "Error while getting objectIdentifiers");
 
-                var fileName = $"{documentIdsEntity.ObjectId}.{deletedItem.Name}";
+                var fileName = $"{objectIdentifiersEntity.ObjectId}.{deletedItem.Name}";
                 bool succeeded;
                 try
                 {
@@ -345,20 +345,20 @@ namespace CPS_API.Controllers
             return str;
         }
 
-        private CloudTable? GetDocumentIdsTable()
+        private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
+            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
         }
 
-        private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string driveItemId)
+        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string driveItemId)
         {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null) throw new ArgumentNullException(nameof(documentIdsTable));
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (objectIdentifiersTable == null) throw new ArgumentNullException(nameof(objectIdentifiersTable));
 
             var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
-            var query = new TableQuery<DocumentIdsEntity>().Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
 
-            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
             return result.Results?.FirstOrDefault();
         }
     }

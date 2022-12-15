@@ -5,7 +5,7 @@
         public string StorageTableConnectionstring { get; set; } = string.Empty;
         public string FileStorageConnectionstring { get; set; } = string.Empty;
 
-        public string ObjectIdsTable { get; set; } = string.Empty;
+        public string ObjectIdentifiersTable { get; set; } = string.Empty;
         public string AppSettingsTable { get; set; } = string.Empty;
 
         public string CallbackUrl { get; set; } = string.Empty;

@@ -73,20 +73,20 @@ namespace CPS_API.Repositories
 
         public async Task<List<string>> GetKnownDrivesAsync()
         {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null)
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (objectIdentifiersTable == null)
             {
                 return null;
             }
 
-            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(new TableQuery<DocumentIdsEntity>(), null);
-            var documentIdsEntities = result.Results;
-            if (documentIdsEntities == null)
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(new TableQuery<ObjectIdentifiersEntity>(), null);
+            var objectIdentifiersEntities = result.Results;
+            if (objectIdentifiersEntities == null)
             {
                 return null;
             }
 
-            return documentIdsEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
+            return objectIdentifiersEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
         public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream)
@@ -194,9 +194,9 @@ namespace CPS_API.Repositories
             return driveItems;
         }
 
-        private CloudTable? GetDocumentIdsTable()
+        private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
+            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
         }
 
         public async Task<Stream> DownloadAsync(string driveId, string driveItemId)

@@ -3,7 +3,7 @@
 
     public class FileInformation
     {
-        public ObjectIds Ids { get; set; }
+        public ObjectIdentifiers Ids { get; set; }
 
         public string MimeType { get; set; } = string.Empty;
 

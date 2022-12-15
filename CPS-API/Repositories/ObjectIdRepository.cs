@@ -7,13 +7,13 @@ namespace CPS_API.Repositories
 {
     public interface IObjectIdRepository
     {
-        Task<string> GenerateObjectIdAsync(ObjectIds sharePointIds);
+        Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids);
 
-        Task<DocumentIdsEntity?> GetSharepointIdsAsync(string objectId);
+        Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId);
 
-        Task<string?> GetObjectIdAsync(ObjectIds sharePointIds);
+        Task<string?> GetObjectIdAsync(ObjectIdentifiers ids);
 
-        Task<bool> SaveObjectIdsAsync(string objectId, ObjectIds objectIds);
+        Task<bool> SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
     }
 
     public class ObjectIdRepository : IObjectIdRepository
@@ -31,10 +31,10 @@ namespace CPS_API.Repositories
             _driveRepository = driveRepository;
         }
 
-        public async Task<string> GenerateObjectIdAsync(ObjectIds sharePointIds)
+        public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids)
         {
-            // Check if sharepointIds already in table, if so; return objectId.
-            var existingObjectId = await GetObjectIdAsync(sharePointIds);
+            // Check if objectIdentifiers already in table, if so; return objectId.
+            var existingObjectId = await GetObjectIdAsync(ids);
             if (existingObjectId != null)
             {
                 return existingObjectId;
@@ -66,15 +66,15 @@ namespace CPS_API.Repositories
 
             // Create new objectId
             var objectId = $"ZLD{DateTime.Now.Year}-{sequence}";
-            sharePointIds.ObjectId = objectId;
+            ids.ObjectId = objectId;
 
             // Add any missing location IDs
-            sharePointIds = await FindMissingIds(sharePointIds);
+            ids = await FindMissingIds(ids);
 
             // Store objectId + backend ids in table
             try
             {
-                succeeded = await SaveObjectIdsAsync(objectId, sharePointIds);
+                succeeded = await SaveObjectIdentifiersAsync(objectId, ids);
                 if (!succeeded)
                 {
                     throw new Exception("Error while saving SharePoint ids");
@@ -88,17 +88,17 @@ namespace CPS_API.Repositories
             return objectId;
         }
 
-        private async Task<ObjectIds> FindMissingIds(ObjectIds sharePointIds)
+        private async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids)
         {
-            if (sharePointIds.DriveId.IsNullOrEmpty() || sharePointIds.DriveItemId.IsNullOrEmpty())
+            if (ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
             {
                 // Find driveID + driveItemID for object
                 try
                 {
-                    var drive = await _driveRepository.GetDriveAsync(sharePointIds.SiteId, sharePointIds.ListId);
-                    sharePointIds.DriveId = drive.Id;
-                    var driveItem = await _driveRepository.GetDriveItemAsync(sharePointIds.SiteId, sharePointIds.ListId, sharePointIds.ListItemId);
-                    sharePointIds.DriveItemId = driveItem.Id;
+                    var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId);
+                    ids.DriveId = drive.Id;
+                    var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
+                    ids.DriveItemId = driveItem.Id;
                 }
                 catch (Exception ex)
                 {
@@ -106,15 +106,15 @@ namespace CPS_API.Repositories
                 }
             }
 
-            if (sharePointIds.SiteId.IsNullOrEmpty() || sharePointIds.ListId.IsNullOrEmpty() || sharePointIds.ListItemId.IsNullOrEmpty())
+            if (ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty())
             {
                 // Find sharepoint Ids from drive
                 try
                 {
-                    var driveItem = await _driveRepository.GetDriveItemIdsAsync(sharePointIds.DriveId, sharePointIds.DriveItemId);
-                    sharePointIds.SiteId = driveItem.SharepointIds.SiteId;
-                    sharePointIds.ListId = driveItem.SharepointIds.ListId;
-                    sharePointIds.ListItemId = driveItem.SharepointIds.ListItemId;
+                    var driveItem = await _driveRepository.GetDriveItemIdsAsync(ids.DriveId, ids.DriveItemId);
+                    ids.SiteId = driveItem.SharepointIds.SiteId;
+                    ids.ListId = driveItem.SharepointIds.ListId;
+                    ids.ListItemId = driveItem.SharepointIds.ListItemId;
                 }
                 catch (Exception ex)
                 {
@@ -122,64 +122,64 @@ namespace CPS_API.Repositories
                 }
             }
 
-            return sharePointIds;
+            return ids;
         }
 
-        private CloudTable? GetDocumentIdsTable()
+        private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
+            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
         }
 
-        public async Task<DocumentIdsEntity?> GetSharepointIdsAsync(string objectId)
+        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
         {
-            var documentIdsEntity = await GetDocumentIdsEntityAsync(objectId);
-            if (documentIdsEntity == null) throw new FileNotFoundException($"DocumentIdsEntity (objectId = {objectId}) does not exist!");
+            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectId);
+            if (objectIdentifiersEntity == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
 
-            return documentIdsEntity;
+            return objectIdentifiersEntity;
         }
 
-        private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string objectId)
+        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string objectId)
         {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null)
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (objectIdentifiersTable == null)
             {
                 return null;
             }
 
             var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
-            var query = new TableQuery<DocumentIdsEntity>().Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
 
-            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
             return result.Results?.FirstOrDefault();
         }
 
-        public async Task<string?> GetObjectIdAsync(ObjectIds sharePointIds)
+        public async Task<string?> GetObjectIdAsync(ObjectIdentifiers ids)
         {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null)
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (objectIdentifiersTable == null)
             {
                 return null;
             }
 
-            var rowKey = sharePointIds.SiteId + sharePointIds.ListId + sharePointIds.ListItemId;
+            var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
             var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
-            var query = new TableQuery<DocumentIdsEntity>().Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
 
-            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
-            var documentIdsEntity = result.Results?.FirstOrDefault();
-            return documentIdsEntity?.PartitionKey;
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
+            var objectIdentifiersEntity = result.Results?.FirstOrDefault();
+            return objectIdentifiersEntity?.PartitionKey;
         }
 
-        public async Task<bool> SaveObjectIdsAsync(string objectId, ObjectIds objectIds)
+        public async Task<bool> SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null)
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (objectIdentifiersTable == null)
             {
                 return false;
             }
 
-            var document = new DocumentIdsEntity(objectId, objectIds);
-            await _storageTableService.SaveAsync(documentIdsTable, document);
+            var document = new ObjectIdentifiersEntity(objectId, ids);
+            await _storageTableService.SaveAsync(objectIdentifiersTable, document);
             return true;
         }
     }
