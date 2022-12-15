@@ -4,24 +4,24 @@ using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
 {
-    public interface IContentIdRepository
+    public interface IObjectIdRepository
     {
-        Task<string> GenerateContentIdAsync(ContentIds sharePointIds);
+        Task<string> GenerateObjectIdAsync(ObjectIds sharePointIds);
 
-        Task<DocumentIdsEntity?> GetSharepointIdsAsync(string contentId);
+        Task<DocumentIdsEntity?> GetSharepointIdsAsync(string objectId);
 
-        Task<string?> GetContentIdAsync(ContentIds sharePointIds);
+        Task<string?> GetObjectIdAsync(ObjectIds sharePointIds);
 
-        Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds);
+        Task<bool> SaveObjectIdsAsync(string objectId, ObjectIds objectIds);
     }
 
-    public class ContentIdRepository : IContentIdRepository
+    public class ObjectIdRepository : IObjectIdRepository
     {
         private readonly ISettingsRepository _settingsRepository;
         private readonly StorageTableService _storageTableService;
         private readonly IDriveRepository _driveRepository;
 
-        public ContentIdRepository(ISettingsRepository settingsRepository,
+        public ObjectIdRepository(ISettingsRepository settingsRepository,
                                    StorageTableService storageTableService,
                                    IDriveRepository driveRepository)
         {
@@ -30,16 +30,16 @@ namespace CPS_API.Repositories
             _driveRepository = driveRepository;
         }
 
-        public async Task<string> GenerateContentIdAsync(ContentIds sharePointIds)
+        public async Task<string> GenerateObjectIdAsync(ObjectIds sharePointIds)
         {
-            // Check if sharepointIds already in table, if so; return contentId.
-            var existingContentId = await GetContentIdAsync(sharePointIds);
-            if (existingContentId != null)
+            // Check if sharepointIds already in table, if so; return objectId.
+            var existingObjectId = await GetObjectIdAsync(sharePointIds);
+            if (existingObjectId != null)
             {
-                return existingContentId;
+                return existingObjectId;
             }
 
-            // Get sequencenr for contentid from table
+            // Get sequencenr for objectId from table
             var currentSequenceNumber = await _settingsRepository.GetSequenceNumberAsync();
             if (currentSequenceNumber == null)
             {
@@ -63,17 +63,17 @@ namespace CPS_API.Repositories
                 throw new Exception($"Error while saving new sequence {sequence}");
             }
 
-            // Create new contentId
-            var contentId = $"ZLD{DateTime.Now.Year}-{sequence}";
-            sharePointIds.ContentId = contentId;
+            // Create new objectId
+            var objectId = $"ZLD{DateTime.Now.Year}-{sequence}";
+            sharePointIds.ObjectId = objectId;
 
             // Add any missing location IDs
             sharePointIds = await FindMissingIds(sharePointIds);
 
-            // Store contentId + backend ids in table
+            // Store objectId + backend ids in table
             try
             {
-                succeeded = await SaveContentIdsAsync(contentId, sharePointIds);
+                succeeded = await SaveObjectIdsAsync(objectId, sharePointIds);
                 if (!succeeded)
                 {
                     throw new Exception("Error while saving SharePoint ids");
@@ -84,10 +84,10 @@ namespace CPS_API.Repositories
                 throw new Exception("Error while saving SharePoint ids", ex);
             }
 
-            return contentId;
+            return objectId;
         }
 
-        private async Task<ContentIds> FindMissingIds(ContentIds sharePointIds)
+        private async Task<ObjectIds> FindMissingIds(ObjectIds sharePointIds)
         {
             if (sharePointIds.DriveId == null || sharePointIds.DriveItemId == null)
             {
@@ -128,15 +128,15 @@ namespace CPS_API.Repositories
             return _storageTableService.GetTable(Helpers.Constants.DocumentIdsTableName);
         }
 
-        public async Task<DocumentIdsEntity?> GetSharepointIdsAsync(string contentId)
+        public async Task<DocumentIdsEntity?> GetSharepointIdsAsync(string objectId)
         {
-            var documentIdsEntity = await GetDocumentIdsEntityAsync(contentId);
-            if (documentIdsEntity == null) throw new FileNotFoundException($"DocumentIdsEntity (contentId = {contentId}) does not exist!");
+            var documentIdsEntity = await GetDocumentIdsEntityAsync(objectId);
+            if (documentIdsEntity == null) throw new FileNotFoundException($"DocumentIdsEntity (objectId = {objectId}) does not exist!");
 
             return documentIdsEntity;
         }
 
-        private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string contentId)
+        private async Task<DocumentIdsEntity?> GetDocumentIdsEntityAsync(string objectId)
         {
             var documentIdsTable = GetDocumentIdsTable();
             if (documentIdsTable == null)
@@ -144,14 +144,14 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, contentId);
+            var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
             var query = new TableQuery<DocumentIdsEntity>().Where(filter);
 
             var result = await documentIdsTable.ExecuteQuerySegmentedAsync(query, null);
             return result.Results?.FirstOrDefault();
         }
 
-        public async Task<string?> GetContentIdAsync(ContentIds sharePointIds)
+        public async Task<string?> GetObjectIdAsync(ObjectIds sharePointIds)
         {
             var documentIdsTable = GetDocumentIdsTable();
             if (documentIdsTable == null)
@@ -168,7 +168,7 @@ namespace CPS_API.Repositories
             return documentIdsEntity?.PartitionKey;
         }
 
-        public async Task<bool> SaveContentIdsAsync(string contentId, ContentIds contentIds)
+        public async Task<bool> SaveObjectIdsAsync(string objectId, ObjectIds objectIds)
         {
             var documentIdsTable = GetDocumentIdsTable();
             if (documentIdsTable == null)
@@ -176,7 +176,7 @@ namespace CPS_API.Repositories
                 return false;
             }
 
-            var document = new DocumentIdsEntity(contentId, contentIds);
+            var document = new DocumentIdsEntity(objectId, objectIds);
             await _storageTableService.SaveAsync(documentIdsTable, document);
             return true;
         }

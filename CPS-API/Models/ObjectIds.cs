@@ -1,8 +1,8 @@
 ﻿namespace CPS_API.Models
 {
-    public class ContentIds
+    public class ObjectIds
     {
-        public string ContentId { get; set; }
+        public string ObjectId { get; set; }
 
         public string SiteId { get; set; }
 
@@ -14,14 +14,14 @@
 
         public string DriveItemId { get; set; }
 
-        public ContentIds()
+        public ObjectIds()
         {
 
         }
 
-        public ContentIds(DocumentIdsEntity documentIdsEntity)
+        public ObjectIds(DocumentIdsEntity documentIdsEntity)
         {
-            ContentId = documentIdsEntity.ContentId;
+            ObjectId = documentIdsEntity.ObjectId;
             SiteId = documentIdsEntity.SiteId;
             ListId = documentIdsEntity.ListId;
             ListItemId = documentIdsEntity.ListItemId;

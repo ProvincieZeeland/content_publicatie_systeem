@@ -6,22 +6,22 @@ namespace CPS_API.Controllers
 {
     [Route("/files/[controller]")]
     [ApiController]
-    public class ContentIdController : Controller
+    public class ObjectIdController : Controller
     {
-        private readonly IContentIdRepository _contentIdRepository;
+        private readonly IObjectIdRepository _objectIdRepository;
 
-        public ContentIdController(IContentIdRepository contentIdRepository)
+        public ObjectIdController(IObjectIdRepository objectIdRepository)
         {
-            _contentIdRepository = contentIdRepository;
+            _objectIdRepository = objectIdRepository;
         }
 
         [HttpPut]
-        public async Task<IActionResult> CreateId([FromBody] ContentIds ids)
+        public async Task<IActionResult> CreateId([FromBody] ObjectIds ids)
         {
             try
             {
-                string contentId = await _contentIdRepository.GenerateContentIdAsync(ids);
-                return Ok(contentId);
+                string objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
+                return Ok(objectId);
             }
             catch (UnauthorizedAccessException ex)
             {

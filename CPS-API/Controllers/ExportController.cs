@@ -167,7 +167,7 @@ namespace CPS_API.Controllers
             FileInformation? metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(documentIdsEntity.ContentId);
+                metadata = await _filesRepository.GetMetadataAsync(documentIdsEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -186,7 +186,7 @@ namespace CPS_API.Controllers
             }
             if (stream == null) throw new Exception("Error while getting content");
 
-            var fileName = $"{documentIdsEntity.ContentId}.{driveItem.Name}";
+            var fileName = $"{documentIdsEntity.ObjectId}.{driveItem.Name}";
             bool succeeded;
             try
             {
@@ -264,7 +264,7 @@ namespace CPS_API.Controllers
                 }
                 if (documentIdsEntity == null) return StatusCode(500, "Error while getting sharepointIds");
 
-                var fileName = $"{documentIdsEntity.ContentId}.{deletedItem.Name}";
+                var fileName = $"{documentIdsEntity.ObjectId}.{deletedItem.Name}";
                 bool succeeded;
                 try
                 {
@@ -321,7 +321,7 @@ namespace CPS_API.Controllers
                     xml.AppendLine(GetPropertyXml(propertyInfo, metadata));
                 }
             }
-            return $"<?xml version=\"1.0\"?><document id=\"{metadata.Ids.ContentId}\">{xml}</document></xml>";
+            return $"<?xml version=\"1.0\"?><document id=\"{metadata.Ids.ObjectId}\">{xml}</document></xml>";
         }
 
         private string GetPropertyXml(PropertyInfo? propertyInfo, object obj)

@@ -17,7 +17,7 @@ builder.Services.AddSwaggerGen();
 
 // Add Repos
 builder.Services.AddScoped<IFilesRepository, FilesRepository>();
-builder.Services.AddScoped<IContentIdRepository, ContentIdRepository>();
+builder.Services.AddScoped<IObjectIdRepository, ObjectIdRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
 

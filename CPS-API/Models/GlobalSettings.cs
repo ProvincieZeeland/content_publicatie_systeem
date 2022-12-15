@@ -5,14 +5,14 @@
         public string StorageTableConnectionstring { get; set; } = string.Empty;
         public string FileStorageConnectionstring { get; set; } = string.Empty;
 
-        public string ContentIdsTable { get; set; } = string.Empty;
+        public string ObjectIdsTable { get; set; } = string.Empty;
         public string AppSettingsTable { get; set; } = string.Empty;
 
         public string CallbackUrl { get; set; } = string.Empty;
         public LoggingLevel LoggingLevel { get; set; }
 
         public IEnumerable<MetadataMapping> MetadataSettings { get; set; }
-      
+
         // ClassificationMapping 
 
     }
