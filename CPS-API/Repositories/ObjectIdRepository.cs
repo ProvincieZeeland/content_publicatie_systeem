@@ -33,6 +33,9 @@ namespace CPS_API.Repositories
 
         public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids)
         {
+            // Add any missing location IDs before looking for existing.
+            ids = await FindMissingIds(ids);
+
             // Check if objectIdentifiers already in table, if so; return objectId.
             var existingObjectId = await GetObjectIdAsync(ids);
             if (existingObjectId != null)
@@ -67,9 +70,6 @@ namespace CPS_API.Repositories
             // Create new objectId
             var objectId = $"ZLD{DateTime.Now.Year}-{sequence}";
             ids.ObjectId = objectId;
-
-            // Add any missing location IDs
-            ids = await FindMissingIds(ids);
 
             // Store objectId + backend ids in table
             try
