@@ -1,13 +1,10 @@
-﻿using CPS_API.Helpers;
-using CPS_API.Models;
+﻿using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Net.Http.Headers;
 
 namespace CPS_API.Controllers
 {
@@ -17,25 +14,25 @@ namespace CPS_API.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IFilesRepository _filesRepository;
-        private readonly IContentIdRepository _contentIdRepository;
+        private readonly IObjectIdRepository _objectIdRepository;
 
         public FilesController(IFilesRepository filesRepository,
-                               IContentIdRepository contentIdRepository)
+                               IObjectIdRepository objectIdRepository)
         {
             _filesRepository = filesRepository;
-            _contentIdRepository = contentIdRepository;
+            _objectIdRepository = objectIdRepository;
         }
 
         // GET
         [HttpGet]
-        [Route("content/{contentId}")]
-        //[Route("{contentId}/content")]
-        public async Task<IActionResult> GetFileURL(string contentId)
+        [Route("content/{objectId}")]
+        //[Route("{objectId}/content")]
+        public async Task<IActionResult> GetFileURL(string objectId)
         {
             string? fileUrl;
             try
             {
-                fileUrl = await _filesRepository.GetUrlAsync(contentId);
+                fileUrl = await _filesRepository.GetUrlAsync(objectId);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -55,14 +52,14 @@ namespace CPS_API.Controllers
         }
 
         [HttpGet]
-        [Route("metadata/{contentId}")]
-        //[Route("{contentId}/metadata")]
-        public async Task<IActionResult> GetFileMetadata(string contentId)
+        [Route("metadata/{objectId}")]
+        //[Route("{objectId}/metadata")]
+        public async Task<IActionResult> GetFileMetadata(string objectId)
         {
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(contentId);
+                metadata = await _filesRepository.GetMetadataAsync(objectId);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -85,11 +82,11 @@ namespace CPS_API.Controllers
         [HttpPut]
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
-            string? contentId;
+            string? objectId;
             try
             {
                 var spoIds = await _filesRepository.CreateFileAsync(file);
-                contentId = spoIds.ContentId;
+                objectId = spoIds.ObjectId;
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -103,9 +100,9 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (contentId.IsNullOrEmpty()) return NotFound("ContentId not found");
+            if (objectId.IsNullOrEmpty()) return NotFound("ObjectId not found");
 
-            return Ok(contentId);
+            return Ok(objectId);
         }
 
 
@@ -116,7 +113,7 @@ namespace CPS_API.Controllers
         {
             if (Request.Form.Files.Count != 1) throw new ArgumentException("You must add one file for upload in form data");
 
-            string? contentId;
+            string? objectId;
             var formFile = Request.Form.Files.First();
             try
             {
@@ -134,7 +131,7 @@ namespace CPS_API.Controllers
                 };
 
                 var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
-                contentId = spoIds.ContentId;
+                objectId = spoIds.ObjectId;
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -148,21 +145,21 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (contentId.IsNullOrEmpty()) return NotFound("ContentId not found");
+            if (objectId.IsNullOrEmpty()) return NotFound("ObjectId not found");
 
-            return Ok(contentId);
+            return Ok(objectId);
         }
 
         // POST
         [HttpPut]
-        [Route("content/{contentId}")]
-        //[Route("{contentId}/content")]
-        public async Task<IActionResult> UpdateFileContent(string contentId, [FromBody] byte[] content)
+        [Route("content/{objectId}")]
+        //[Route("{objectId}/content")]
+        public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)
         {
             bool succeeded;
             try
             {
-                succeeded = await _filesRepository.UpdateContentAsync(Request, contentId, content);
+                succeeded = await _filesRepository.UpdateContentAsync(Request, objectId, content);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -182,16 +179,16 @@ namespace CPS_API.Controllers
         }
 
         [HttpPut]
-        [Route("metadata/{contentId}")]
-        //[Route("{contentId}/metadata")]
-        public async Task<IActionResult> UpdateFileMetadata(string contentId, [FromBody] FileInformation fileInfo)
+        [Route("metadata/{objectId}")]
+        //[Route("{objectId}/metadata")]
+        public async Task<IActionResult> UpdateFileMetadata(string objectId, [FromBody] FileInformation fileInfo)
         {
-            fileInfo.Ids.ContentId = contentId;
+            fileInfo.Ids.ObjectId = objectId;
 
-            ListItem? listItem;
+            FieldValueSet? fields;
             try
             {
-                listItem = await _filesRepository.UpdateMetadataAsync(fileInfo);
+                fields = await _filesRepository.UpdateMetadataAsync(fileInfo);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -205,7 +202,7 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (listItem == null) return NotFound("ListItem not found");
+            if (fields == null) return NotFound("Error while updating metadata");
 
             return Ok();
         }

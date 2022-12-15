@@ -4,11 +4,9 @@ namespace CPS_API.Models
 {
     public class DocumentIdsEntity : TableEntity
     {
-        public string ContentId { get; set; }
+        public string ObjectId { get; set; }
 
         public string SiteId { get; set; }
-
-        public string WebId { get; set; }
 
         public string ListId { get; set; }
 
@@ -23,13 +21,12 @@ namespace CPS_API.Models
 
         }
 
-        public DocumentIdsEntity(string contentId, ContentIds ids)
+        public DocumentIdsEntity(string objectId, ObjectIds ids)
         {
-            PartitionKey = contentId;
-            RowKey = ids.SiteId + ids.WebId + ids.ListId + ids.ListItemId;
-            ContentId = contentId;
+            PartitionKey = objectId;
+            RowKey = ids.SiteId + ids.ListId + ids.ListItemId;
+            ObjectId = objectId;
             SiteId = ids.SiteId;
-            WebId = ids.WebId;
             ListId = ids.ListId;
             ListItemId = ids.ListItemId;
             DriveId = ids.DriveId;
