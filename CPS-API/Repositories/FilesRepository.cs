@@ -205,50 +205,17 @@ namespace CPS_API.Repositories
             }
             if (ids == null) throw new FileNotFoundException("ObjectIdentifiers not found");
 
-            // Get Drive
-            Drive? drive;
-            try
-            {
-                drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId);
-            }
-            catch (Exception)
-            {
-                // TODO: Log error in App Insights
-
-                throw new Exception("Error while getting drive");
-            }
-            if (drive == null) throw new FileNotFoundException("Drive not found");
-
-            // Get DriveItem
-            DriveItem? driveItem;
-            try
-            {
-                driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
-            }
-            catch (Exception)
-            {
-                // TODO: Log error in App Insights
-
-                throw new Exception("Error while getting driveItem");
-            }
-            if (driveItem == null) throw new FileNotFoundException("DriveItem not found");
-
             // Create new version
             try
             {
-                using (var ms = new MemoryStream())
-                {
-                    await Request.Body.CopyToAsync(ms);
-                    ms.Position = 0;
-
-                    await _graphClient.Drives[drive.Id].Items[driveItem.Id].Request().UpdateAsync(driveItem);
-                }
+                using var stream = new MemoryStream(content);
+                await _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request().PutAsync<DriveItem>(stream);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // TODO: Log error in App Insights
 
-                throw new Exception("Error while updating driveItem");
+                throw new Exception("Error while updating driveItem", ex);
             }
 
             return true;

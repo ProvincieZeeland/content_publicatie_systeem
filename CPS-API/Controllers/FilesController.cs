@@ -1,7 +1,6 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
