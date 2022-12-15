@@ -22,7 +22,7 @@ namespace CPS_API.Repositories
 
         Task DeleteFileAsync(string driveId, string driveItemId);
 
-        Task<IEnumerable<string>> GetKnownDrivesAsync();
+        Task<List<string>> GetKnownDrivesAsync();
 
         Task<List<DriveItem>> GetNewItems(DateTime startDate);
 
@@ -71,11 +71,22 @@ namespace CPS_API.Repositories
             return await _graphClient.Drives[driveId].Items[driveItemId].Request().Select("sharepointids").GetAsync();
         }
 
-        public Task<IEnumerable<string>> GetKnownDrivesAsync()
+        public async Task<List<string>> GetKnownDrivesAsync()
         {
-            // Get all unique driveIds from documents table
+            var documentIdsTable = GetDocumentIdsTable();
+            if (documentIdsTable == null)
+            {
+                return null;
+            }
 
-            throw new NotImplementedException();
+            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(new TableQuery<DocumentIdsEntity>(), null);
+            var documentIdsEntities = result.Results;
+            if (documentIdsEntities == null)
+            {
+                return null;
+            }
+
+            return documentIdsEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
         public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream)
@@ -156,7 +167,7 @@ namespace CPS_API.Repositories
         private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate)
         {
             // Get known drives
-            var driveIds = await getDriveIdsAsync();
+            var driveIds = await GetKnownDrivesAsync();
             if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
 
             // For each drive:
@@ -181,24 +192,6 @@ namespace CPS_API.Repositories
                 driveItems.AddRange(delta.CurrentPage);
             }
             return driveItems;
-        }
-
-        private async Task<List<string>?> getDriveIdsAsync()
-        {
-            var documentIdsTable = GetDocumentIdsTable();
-            if (documentIdsTable == null)
-            {
-                return null;
-            }
-
-            var result = await documentIdsTable.ExecuteQuerySegmentedAsync(new TableQuery<DocumentIdsEntity>(), null);
-            var documentIdsEntities = result.Results;
-            if (documentIdsEntities == null)
-            {
-                return null;
-            }
-
-            return documentIdsEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
         private CloudTable? GetDocumentIdsTable()
