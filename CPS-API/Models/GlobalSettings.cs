@@ -13,8 +13,7 @@
 
         public IEnumerable<MetadataMapping> MetadataSettings { get; set; }
 
-        // ClassificationMapping 
-
+        public List<ClassificationMapping> ClassificationMapping { get; set; }
     }
 
     public class AppSettings
@@ -35,9 +34,10 @@
         public Classification Classification { get; set; }
 
         // Afhankelijk van SPO inrichting > wordt mogelijk anders
-        public Guid SiteId { get; set; }
-        public Guid WebId { get; set; }
-        public Guid ListId { get; set; }
+        public string SiteId { get; set; }
+
+        public string ListId { get; set; }
+
         // optioneel
         public string folderName { get; set; } = string.Empty;
     }

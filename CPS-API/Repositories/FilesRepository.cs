@@ -92,9 +92,20 @@ namespace CPS_API.Repositories
         {
             // Find wanted storage location depending on classification
             // todo: get driveid or site matching classification & source
+
+            var driveId = file.Metadata?.Ids?.DriveId;
+            if (driveId == null)
+            {
+                var classificationMapping = _globalSettings.ClassificationMapping.FirstOrDefault(item => item.Classification == file.Metadata?.AdditionalMetadata?.Classification);
+                if (classificationMapping == null) throw new NullReferenceException(nameof(classificationMapping));
+                var drive = await _driveRepository.GetDriveAsync(classificationMapping.SiteId, classificationMapping.ListId);
+                driveId = drive?.Id;
+            }
+            if (driveId == null) throw new NullReferenceException(nameof(driveId));
+
             var ids = new ObjectIdentifiers
             {
-                DriveId = file.Metadata.Ids.DriveId
+                DriveId = driveId
             };
 
             // Add new file to SharePoint
