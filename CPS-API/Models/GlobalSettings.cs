@@ -19,13 +19,20 @@
     public class AppSettings
     {
         public int SequenceNumber { get; set; } = 0;
-        public DateTime LastSynchronisation { get; set; } = DateTime.MinValue;
+
+        public DateTime LastSynchronisationNew { get; set; } = DateTime.MinValue;
+
+        public DateTime LastSynchronisationChanged { get; set; } = DateTime.MinValue;
+
+        public DateTime LastSynchronisationDeleted { get; set; } = DateTime.MinValue;
     }
 
     public class MetadataMapping
     {
         public string FieldName { get; set; } = string.Empty;
+
         public string SpoColumnName { get; set; } = string.Empty;
+
         public object? DefaultValue { get; set; }
     }
 

@@ -8,7 +8,11 @@ namespace CPS_API.Repositories
     {
         Task<long?> GetSequenceNumberAsync();
 
-        Task<DateTime?> GetLastSynchronisationAsync();
+        Task<DateTime?> GetLastSynchronisationNewAsync();
+
+        Task<DateTime?> GetLastSynchronisationChangedAsync();
+
+        Task<DateTime?> GetLastSynchronisationDeletedAsync();
 
         Task<bool> SaveSettingAsync(SettingsEntity setting);
     }
@@ -41,7 +45,7 @@ namespace CPS_API.Repositories
             return currentSetting.SequenceNumber;
         }
 
-        public async Task<DateTime?> GetLastSynchronisationAsync()
+        public async Task<DateTime?> GetLastSynchronisationNewAsync()
         {
             var settingsTable = this.GetSettingsTable();
             if (settingsTable == null)
@@ -49,9 +53,35 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationRowKey, settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationNewRowKey, settingsTable);
             if (currentSetting == null) return null;
-            return currentSetting.LastSynchronisation;
+            return currentSetting.LastSynchronisationNew;
+        }
+
+        public async Task<DateTime?> GetLastSynchronisationChangedAsync()
+        {
+            var settingsTable = this.GetSettingsTable();
+            if (settingsTable == null)
+            {
+                return null;
+            }
+
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationChangedRowKey, settingsTable);
+            if (currentSetting == null) return null;
+            return currentSetting.LastSynchronisationChanged;
+        }
+
+        public async Task<DateTime?> GetLastSynchronisationDeletedAsync()
+        {
+            var settingsTable = this.GetSettingsTable();
+            if (settingsTable == null)
+            {
+                return null;
+            }
+
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationDeletedRowKey, settingsTable);
+            if (currentSetting == null) return null;
+            return currentSetting.LastSynchronisationDeleted;
         }
 
         public async Task<bool> SaveSettingAsync(SettingsEntity setting)

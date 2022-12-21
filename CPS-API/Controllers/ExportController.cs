@@ -53,7 +53,7 @@ namespace CPS_API.Controllers
             DateTime? startDate;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationAsync();
+                startDate = await _settingsRepository.GetLastSynchronisationNewAsync();
             }
             catch (Exception ex)
             {
@@ -107,7 +107,7 @@ namespace CPS_API.Controllers
             DateTime? startDate;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationAsync();
+                startDate = await _settingsRepository.GetLastSynchronisationChangedAsync();
             }
             catch (Exception ex)
             {
@@ -230,7 +230,7 @@ namespace CPS_API.Controllers
             DateTime? startDate;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationAsync();
+                startDate = await _settingsRepository.GetLastSynchronisationDeletedAsync();
             }
             catch (Exception ex)
             {

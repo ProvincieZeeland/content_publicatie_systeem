@@ -7,7 +7,11 @@ namespace CPS_API.Models
     {
         public long? SequenceNumber { get; set; }
 
-        public DateTime? LastSynchronisation { get; set; }
+        public DateTime LastSynchronisationNew { get; set; } = DateTime.MinValue;
+
+        public DateTime LastSynchronisationChanged { get; set; } = DateTime.MinValue;
+
+        public DateTime LastSynchronisationDeleted { get; set; } = DateTime.MinValue;
 
         public SettingsEntity()
         {
@@ -21,11 +25,31 @@ namespace CPS_API.Models
             this.SequenceNumber = sequenceNumber;
         }
 
-        public SettingsEntity(DateTime lastSynchronisation)
+        public static SettingsEntity createForLastSynchronisationNew(DateTime lastSynchronisationNew)
         {
-            this.PartitionKey = Constants.SettingsPartitionKey;
-            this.RowKey = Constants.SettingsLastSynchronisationRowKey;
-            this.LastSynchronisation = lastSynchronisation;
+            var entity = new SettingsEntity();
+            entity.PartitionKey = Constants.SettingsPartitionKey;
+            entity.RowKey = Constants.SettingsLastSynchronisationNewRowKey;
+            entity.LastSynchronisationNew = lastSynchronisationNew;
+            return entity;
+        }
+
+        public static SettingsEntity createForLastSynchronisationChanged(DateTime lastSynchronisationChanged)
+        {
+            var entity = new SettingsEntity();
+            entity.PartitionKey = Constants.SettingsPartitionKey;
+            entity.RowKey = Constants.SettingsLastSynchronisationChangedRowKey;
+            entity.LastSynchronisationChanged = lastSynchronisationChanged;
+            return entity;
+        }
+
+        public static SettingsEntity createForLastSynchronisationDeleted(DateTime lastSynchronisationDeleted)
+        {
+            var entity = new SettingsEntity();
+            entity.PartitionKey = Constants.SettingsPartitionKey;
+            entity.RowKey = Constants.SettingsLastSynchronisationDeletedRowKey;
+            entity.LastSynchronisationDeleted = lastSynchronisationDeleted;
+            return entity;
         }
     }
 }
