@@ -147,21 +147,27 @@ namespace CPS_API.Repositories
         {
             var driveItems = await GetDeltaAsync(startDate);
             var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime >= startDate).ToList();
-            return newItems.Where(item => item.Folder == null).ToList();
+            newItems = newItems.Where(item => item.Folder == null).ToList();
+            newItems = newItems.OrderBy(item => item.CreatedDateTime).ToList();
+            return newItems;
         }
 
         public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate)
         {
             var driveItems = await GetDeltaAsync(startDate);
             var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime < startDate).ToList();
-            return updatedItems.Where(item => item.Folder == null).ToList();
+            updatedItems = updatedItems.Where(item => item.Folder == null).ToList();
+            updatedItems = updatedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
+            return updatedItems;
         }
 
         public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate)
         {
             var driveItems = await GetDeltaAsync(startDate);
             var deletedItems = driveItems.Where(item => item.Deleted != null).ToList();
-            return deletedItems.Where(item => item.Folder == null).ToList();
+            deletedItems = deletedItems.Where(item => item.Folder == null).ToList();
+            deletedItems = deletedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
+            return deletedItems;
         }
 
         private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate)
