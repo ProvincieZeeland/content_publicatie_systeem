@@ -261,10 +261,15 @@ namespace CPS_API.Repositories
             var fileName = file.Name.IsNullOrEmpty() ? driveItem.Name : file.Name;
 
             FileInformation metadata = new FileInformation();
-            metadata.MimeType = driveItem.File?.MimeType ?? string.Empty;
+            metadata.MimeType = "application/pdf";
+            if (driveItem.File != null && driveItem.File.MimeType != null)
+            {
+                metadata.MimeType = driveItem.File.MimeType;
+            }
             metadata.FileName = fileName;
             metadata.AdditionalMetadata = new FileMetadata();
 
+            metadata.FileExtension = "pdf";
             if (!fileName.IsNullOrEmpty() && fileName.Contains('.'))
                 metadata.FileExtension = fileName.Split('.')[1];
 
@@ -292,6 +297,10 @@ namespace CPS_API.Repositories
                 {
                     // log warning to insights?
                     // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
+                }
+                else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+                {
+                    metadata[fieldMapping.FieldName] = value;
                 }
                 else
                 {

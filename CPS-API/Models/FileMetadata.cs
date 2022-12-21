@@ -11,12 +11,14 @@ namespace CPS_API.Models
 
         public string DocumentType { get; set; } = string.Empty;
 
+        public string ZeesterDocumentType { get; set; } = string.Empty;
+
         public string ZeesterReference { get; set; } = string.Empty;
+
+        public int RetentionPeriod { get; set; } = 0;
 
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public Classification Classification { get; set; }
-
-        public int RetentionPeriod { get; set; } = 0;
 
         public DateTime PublicationDate { get; set; } = DateTime.MinValue;
 
