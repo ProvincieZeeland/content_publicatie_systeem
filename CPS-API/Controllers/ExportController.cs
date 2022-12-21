@@ -81,18 +81,18 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    await uploadFileAndXmlToFileStorage(newItem);
+                    await UploadFileAndXmlToFileStorage(newItem);
+
+                    // Callback for new file.
+                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    {
+                        dynamic callbackFunc = _globalSettings.CallbackUrl;
+                        callbackFunc();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, ex.Message);
-                }
-
-                // Callback for new file.
-                if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
-                {
-                    dynamic callbackFunc = _globalSettings.CallbackUrl;
-                    callbackFunc();
+                    // TODO: Log failed synchronisation.
                 }
             }
 
@@ -135,25 +135,25 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    await uploadFileAndXmlToFileStorage(updatedItem);
+                    await UploadFileAndXmlToFileStorage(updatedItem);
+
+                    // Callback for changed file.
+                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    {
+                        dynamic callbackFunc = _globalSettings.CallbackUrl;
+                        callbackFunc();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, ex.Message);
-                }
-
-                // Callback for changed file.
-                if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
-                {
-                    dynamic callbackFunc = _globalSettings.CallbackUrl;
-                    callbackFunc();
+                    // TODO: Log failed synchronisation.
                 }
             }
 
             return Ok();
         }
 
-        private async Task uploadFileAndXmlToFileStorage(DriveItem driveItem)
+        private async Task UploadFileAndXmlToFileStorage(DriveItem driveItem)
         {
             ObjectIdentifiersEntity objectIdentifiersEntity;
             try
@@ -192,7 +192,7 @@ namespace CPS_API.Controllers
             bool succeeded;
             try
             {
-                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType);
+                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -213,7 +213,7 @@ namespace CPS_API.Controllers
             var metadataName = fileName + ".xml";
             try
             {
-                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.MetadataContainerName, metadataName, metadataXml, "application/xml");
+                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -255,49 +255,59 @@ namespace CPS_API.Controllers
             // delete xml from storage container
             foreach (var deletedItem in deletedItems)
             {
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
+                    await DeleteFileAndXmlFromFileStorage(deletedItem);
+
+                    // Callback for changed file.
+                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    {
+                        dynamic callbackFunc = _globalSettings.CallbackUrl;
+                        callbackFunc();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, "Error while getting objectIdentifiers");
-                }
-                if (objectIdentifiersEntity == null) return StatusCode(500, "Error while getting objectIdentifiers");
-
-                var fileName = $"{objectIdentifiersEntity.ObjectId}.{deletedItem.Name}";
-                bool succeeded;
-                try
-                {
-                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, fileName);
-                }
-                catch (Exception ex)
-                {
-                    return StatusCode(500, "Error while deleting document");
-                }
-                if (!succeeded) return StatusCode(500, "Error while deleting document");
-
-                var metadataName = fileName + ".xml";
-                try
-                {
-                    succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.MetadataContainerName, metadataName);
-                }
-                catch (Exception ex)
-                {
-                    return StatusCode(500, "Error while deleting metadata");
-                }
-                if (!succeeded) return StatusCode(500, "Error while deleting metadata");
-
-                // Callback for deleted file.
-                if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
-                {
-                    dynamic callbackFunc = _globalSettings.CallbackUrl;
-                    callbackFunc();
+                    // TODO: Log failed synchronisation.
                 }
             }
 
             return Ok();
+        }
+
+        private async Task DeleteFileAndXmlFromFileStorage(DriveItem deletedItem)
+        {
+            ObjectIdentifiersEntity? objectIdentifiersEntity;
+            try
+            {
+                objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while getting objectIdentifiers");
+            }
+            if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+
+            bool succeeded;
+            try
+            {
+                succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, objectIdentifiersEntity.ObjectId);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while deleting document");
+            }
+            if (!succeeded) throw new Exception("Error while deleting document");
+
+            try
+            {
+                succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.MetadataContainerName, objectIdentifiersEntity.ObjectId);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while deleting metadata");
+            }
+            if (!succeeded) throw new Exception("Error while deleting metadata");
         }
 
         private string exportMetadataAsXml(FileInformation metadata)
@@ -305,6 +315,13 @@ namespace CPS_API.Controllers
             var xml = new StringBuilder();
             foreach (var propertyInfo in metadata.GetType().GetProperties())
             {
+                if (
+                    propertyInfo.Name == "Item"
+                    || propertyInfo.PropertyType == typeof(ObjectIdentifiers)
+                    || propertyInfo.PropertyType == typeof(List<ExternalReferences>))
+                {
+                    continue;
+                }
                 if (propertyInfo.PropertyType == typeof(FileMetadata))
                 {
                     var value = propertyInfo.GetValue(metadata);
@@ -323,7 +340,7 @@ namespace CPS_API.Controllers
                     xml.AppendLine(GetPropertyXml(propertyInfo, metadata));
                 }
             }
-            return $"<?xml version=\"1.0\"?><document id=\"{metadata.Ids.ObjectId}\">{xml}</document></xml>";
+            return $"<?xml version=\"1.0\"?><Document id=\"{metadata.Ids.ObjectId}\">{xml}</Document></xml>";
         }
 
         private string GetPropertyXml(PropertyInfo? propertyInfo, object obj)
@@ -335,17 +352,8 @@ namespace CPS_API.Controllers
 
             var propertyName = propertyInfo.Name;
             if (propertyName == null) throw new ArgumentNullException(nameof(propertyInfo));
-            propertyName = FirstCharToLowerCase(propertyName);
 
             return $"<{propertyName}>{valueAsStr}</{propertyName}>";
-        }
-
-        private string? FirstCharToLowerCase(string? str)
-        {
-            if (!string.IsNullOrEmpty(str) && char.IsUpper(str[0]))
-                return str.Length == 1 ? char.ToLower(str[0]).ToString() : char.ToLower(str[0]) + str[1..];
-
-            return str;
         }
 
         private CloudTable? GetObjectIdentifiersTable()

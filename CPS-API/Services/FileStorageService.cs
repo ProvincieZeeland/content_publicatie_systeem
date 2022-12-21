@@ -1,6 +1,7 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using CPS_API.Models;
+using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Helpers
 {
@@ -12,11 +13,11 @@ namespace CPS_API.Helpers
 
         Task<byte[]> GetContentAsync(string containerName, string filename);
 
-        Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype);
+        Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype, string objectId);
 
-        Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype);
+        Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId);
 
-        Task<bool> DeleteAsync(string containerName, string filename);
+        Task<bool> DeleteAsync(string containerName, string objectId);
     }
 
     public class FileStorageService : IFileStorageService
@@ -130,7 +131,7 @@ namespace CPS_API.Helpers
             }
         }
 
-        public async Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype)
+        public async Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype, string objectId)
         {
             try
             {
@@ -141,8 +142,9 @@ namespace CPS_API.Helpers
                     throw new FileNotFoundException("Container " + containerName + " does not exist!");
 
                 var initialMetadata = new Dictionary<string, string> { { "contenttype", contenttype } };
+                var tags = new Dictionary<string, string> { { "objectid", objectId } };
                 BlobClient blobClient = containerClient.GetBlobClient(filename);
-                await blobClient.UploadAsync(BinaryData.FromString(content), new BlobUploadOptions { Metadata = initialMetadata });
+                await blobClient.UploadAsync(BinaryData.FromString(content), new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
                 return true;
             }
             catch (Exception error)
@@ -153,7 +155,7 @@ namespace CPS_API.Helpers
             return false;
         }
 
-        public async Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype)
+        public async Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId)
         {
             try
             {
@@ -164,9 +166,10 @@ namespace CPS_API.Helpers
                     throw new FileNotFoundException("Container " + containerName + " does not exist!");
 
                 var initialMetadata = new Dictionary<string, string> { { "contenttype", contenttype } };
+                var tags = new Dictionary<string, string> { { "objectid", objectId } };
                 BlobClient blobClient = containerClient.GetBlobClient(filename);
                 content.Position = 0;
-                await blobClient.UploadAsync(content, new BlobUploadOptions { Metadata = initialMetadata });
+                await blobClient.UploadAsync(content, new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
 
                 return true;
             }
@@ -184,7 +187,7 @@ namespace CPS_API.Helpers
             return false;
         }
 
-        public async Task<bool> DeleteAsync(string containerName, string filename)
+        public async Task<bool> DeleteAsync(string containerName, string objectId)
         {
             try
             {
@@ -194,7 +197,12 @@ namespace CPS_API.Helpers
                 if (!await containerClient.ExistsAsync())
                     throw new FileNotFoundException("Container " + containerName + " does not exist!");
 
-                var blobClient = containerClient.GetBlobClient(filename);
+                var query = $"objectid = '{objectId}'";
+                var taggedBlobItems = containerClient.FindBlobsByTags(query);
+                if (taggedBlobItems.IsNullOrEmpty()) throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
+
+                var blobName = taggedBlobItems.First().BlobName;
+                var blobClient = containerClient.GetBlobClient(blobName);
                 await blobClient.DeleteAsync();
                 return true;
             }

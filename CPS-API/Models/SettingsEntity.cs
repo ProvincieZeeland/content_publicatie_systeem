@@ -7,11 +7,11 @@ namespace CPS_API.Models
     {
         public long? SequenceNumber { get; set; }
 
-        public DateTime LastSynchronisationNew { get; set; } = DateTime.MinValue;
+        public DateTime? LastSynchronisationNew { get; set; }
 
-        public DateTime LastSynchronisationChanged { get; set; } = DateTime.MinValue;
+        public DateTime? LastSynchronisationChanged { get; set; }
 
-        public DateTime LastSynchronisationDeleted { get; set; } = DateTime.MinValue;
+        public DateTime? LastSynchronisationDeleted { get; set; }
 
         public SettingsEntity()
         {

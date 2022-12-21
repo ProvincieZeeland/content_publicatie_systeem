@@ -146,14 +146,14 @@ namespace CPS_API.Repositories
         public async Task<List<DriveItem>> GetNewItems(DateTime startDate)
         {
             var driveItems = await GetDeltaAsync(startDate);
-            var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime <= startDate).ToList();
+            var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime >= startDate).ToList();
             return newItems.Where(item => item.Folder == null).ToList();
         }
 
         public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate)
         {
             var driveItems = await GetDeltaAsync(startDate);
-            var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime > startDate).ToList();
+            var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime < startDate).ToList();
             return updatedItems.Where(item => item.Folder == null).ToList();
         }
 
