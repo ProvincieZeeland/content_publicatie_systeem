@@ -352,7 +352,16 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    var value = metadata.AdditionalMetadata[fieldMapping.FieldName];
+                    object? value;
+                    if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+                    {
+                        value = metadata[fieldMapping.FieldName];
+                    }
+                    else
+                    {
+                        value = metadata.AdditionalMetadata[fieldMapping.FieldName];
+                    }
+
                     if (value is DateTime dateValue)
                     {
                         if (dateValue == DateTime.MinValue)
