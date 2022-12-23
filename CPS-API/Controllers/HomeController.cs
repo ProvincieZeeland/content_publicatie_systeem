@@ -1,10 +1,12 @@
-﻿using System.Diagnostics;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.Graph;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using CPS_API.Models;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph;
+using Microsoft.IdentityModel.Tokens;
+using System.Diagnostics;
+using System.Net;
 
 namespace CPS_API.Controllers
 {
@@ -13,15 +15,12 @@ namespace CPS_API.Controllers
     {
         private readonly GraphServiceClient _graphServiceClient;
         private readonly IFilesRepository _filesRepository;
-        private readonly IObjectIdRepository _objectIdRepository;
 
         public HomeController(GraphServiceClient graphServiceClient,
-                              IFilesRepository filesRepository,
-                              IObjectIdRepository objectIdRepository)
+                              IFilesRepository filesRepository)
         {
             _graphServiceClient = graphServiceClient;
             _filesRepository = filesRepository;
-            _objectIdRepository = objectIdRepository;
         }
 
         public async Task<IActionResult> Index()
@@ -32,7 +31,6 @@ namespace CPS_API.Controllers
             return View();
         }
 
-
         // GET
         [HttpGet]
         [Route("content/{objectId}")]
@@ -42,21 +40,25 @@ namespace CPS_API.Controllers
             string? fileUrl;
             try
             {
-                fileUrl = await _filesRepository.GetUrlAsync(objectId);
+                fileUrl = await _filesRepository.GetUrlAsync(objectId, true);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return StatusCode(403, "Access denied");
             }
             catch (FileNotFoundException ex)
             {
                 return NotFound(ex.Message ?? "Url not found!");
             }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (string.IsNullOrEmpty(fileUrl)) return NotFound("Url not found");
+            if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
 
             return Ok(fileUrl);
         }
@@ -69,15 +71,19 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectId);
+                metadata = await _filesRepository.GetMetadataAsync(objectId, true);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return StatusCode(403, "Access denied");
             }
             catch (FileNotFoundException ex)
             {
                 return NotFound(ex.Message ?? "Url not found!");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
@@ -87,7 +93,6 @@ namespace CPS_API.Controllers
 
             return Ok(metadata);
         }
-
 
         [AllowAnonymous]
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
@@ -100,6 +105,7 @@ namespace CPS_API.Controllers
     public class ErrorViewModel
     {
         public string RequestId { get; set; }
+
         public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
     }
 }

@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using Microsoft.Graph;
+using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -8,19 +9,19 @@ namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
-        Task<Drive> GetDriveAsync(string driveId);
+        Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false);
 
-        Task<Drive> GetDriveAsync(string siteId, string listId);
+        Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId);
+        Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId);
+        Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId);
+        Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream);
+        Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
-        Task DeleteFileAsync(string driveId, string driveItemId);
+        Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<List<string>> GetKnownDrivesAsync();
 
@@ -46,29 +47,49 @@ namespace CPS_API.Repositories
             _storageTableService = storageTableService;
         }
 
-        public async Task<Drive> GetDriveAsync(string siteId, string listId)
+        public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser)
         {
-            return await _graphClient.Sites[siteId].Lists[listId].Drive.Request().GetAsync();
+            if (getAsUser)
+            {
+                return await _graphClient.Sites[siteId].Lists[listId].Drive.Request().GetAsync();
+            }
+            return await _graphClient.Sites[siteId].Lists[listId].Drive.Request().WithAppOnly().GetAsync();
         }
 
-        public async Task<Drive> GetDriveAsync(string driveId)
+        public async Task<Drive> GetDriveAsync(string driveId, bool getAsUser)
         {
-            return await _graphClient.Drives[driveId].Request().GetAsync();
+            if (getAsUser)
+            {
+                return await _graphClient.Drives[driveId].Request().GetAsync();
+            }
+            return await _graphClient.Drives[driveId].Request().WithAppOnly().GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId)
+        public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser)
         {
-            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().Select("*").GetAsync();
+            if (getAsUser)
+            {
+                return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().Select("*").GetAsync();
+            }
+            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().WithAppOnly().Select("*").GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId)
+        public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser)
         {
-            return await _graphClient.Drives[driveId].Items[driveItemId].Request().GetAsync();
+            if (getAsUser)
+            {
+                return await _graphClient.Drives[driveId].Items[driveItemId].Request().GetAsync();
+            }
+            return await _graphClient.Drives[driveId].Items[driveItemId].Request().WithAppOnly().GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId)
+        public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser)
         {
-            return await _graphClient.Drives[driveId].Items[driveItemId].Request().Select("sharepointids").GetAsync();
+            if (getAsUser)
+            {
+                return await _graphClient.Drives[driveId].Items[driveItemId].Request().Select("sharepointids").GetAsync();
+            }
+            return await _graphClient.Drives[driveId].Items[driveItemId].Request().WithAppOnly().Select("sharepointids").GetAsync();
         }
 
         public async Task<List<string>> GetKnownDrivesAsync()
@@ -89,7 +110,7 @@ namespace CPS_API.Repositories
             return documentIdsEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
-        public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream)
+        public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser)
         {
             if (fileStream.Length > 0)
             {
@@ -138,9 +159,16 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task DeleteFileAsync(string driveId, string driveItemId)
+        public async Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser)
         {
-            await _graphClient.Drives[driveId].Items[driveItemId].Request().DeleteAsync();
+            if (getAsUser)
+            {
+                await _graphClient.Drives[driveId].Items[driveItemId].Request().DeleteAsync();
+            }
+            else
+            {
+                await _graphClient.Drives[driveId].Items[driveItemId].Request().WithAppOnly().DeleteAsync();
+            }
         }
 
         public async Task<List<DriveItem>> GetNewItems(DateTime startDate)
