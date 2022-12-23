@@ -1,6 +1,8 @@
 ﻿using CPS_API.Models;
 using Microsoft.Graph;
+using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
+using System.Net;
 
 namespace CPS_API.Repositories
 {
@@ -8,17 +10,17 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetFileAsync(string objectId);
 
-        Task<string> GetUrlAsync(string objectId);
+        Task<string> GetUrlAsync(string objectId, bool getAsUser = false);
 
         Task<ObjectIdentifiers> CreateFileAsync(CpsFile file);
 
         Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile);
 
-        Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content);
+        Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content, bool getAsUser = false);
 
-        Task<FileInformation> GetMetadataAsync(string objectId);
+        Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
-        Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata);
+        Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
     }
 
     public class FilesRepository : IFilesRepository
@@ -36,7 +38,7 @@ namespace CPS_API.Repositories
             _driveRepository = driveRepository;
         }
 
-        public async Task<string> GetUrlAsync(string objectId)
+        public async Task<string> GetUrlAsync(string objectId, bool getAsUser = false)
         {
             ObjectIdentifiersEntity? objectIdentifiers;
             try
@@ -52,9 +54,13 @@ namespace CPS_API.Repositories
             DriveItem? driveItem;
             try
             {
-                driveItem = await _driveRepository.GetDriveItemAsync(objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId);
+                driveItem = await _driveRepository.GetDriveItemAsync(objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId, getAsUser);
             }
-            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw ex;
+            }
+            catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex.Message != "Access denied")
             {
                 throw new Exception("Error while getting driveItem");
             }
@@ -200,7 +206,7 @@ namespace CPS_API.Repositories
             return ids;
         }
 
-        public async Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content)
+        public async Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content, bool getAsUser = false)
         {
             // Get objectIdentifiers
             ObjectIdentifiersEntity? ids;
@@ -220,7 +226,12 @@ namespace CPS_API.Repositories
             try
             {
                 using var stream = new MemoryStream(content);
-                await _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request().PutAsync<DriveItem>(stream);
+                var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                await request.PutAsync<DriveItem>(stream);
             }
             catch (Exception ex)
             {
@@ -234,12 +245,16 @@ namespace CPS_API.Repositories
 
         #region Metadata
 
-        public async Task<FileInformation> GetMetadataAsync(string objectId)
+        public async Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false)
         {
             ListItem? file;
             try
             {
-                file = await getListItem(objectId);
+                file = await getListItem(objectId, getAsUser);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw ex;
             }
             catch (Exception)
             {
@@ -250,7 +265,11 @@ namespace CPS_API.Repositories
             DriveItem? driveItem;
             try
             {
-                driveItem = await getDriveItem(objectId);
+                driveItem = await getDriveItem(objectId, getAsUser);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw ex;
             }
             catch (Exception)
             {
@@ -318,7 +337,7 @@ namespace CPS_API.Repositories
             return metadata;
         }
 
-        public async Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata)
+        public async Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
@@ -339,7 +358,12 @@ namespace CPS_API.Repositories
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
-            return await _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Fields.Request().UpdateAsync(fields);
+            var request = _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Fields.Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.UpdateAsync(fields);
         }
 
         private FieldValueSet mapMetadata(FileInformation metadata)
@@ -390,7 +414,7 @@ namespace CPS_API.Repositories
 
         #region Helpers
 
-        private async Task<ListItem?> getListItem(string objectId)
+        private async Task<ListItem?> getListItem(string objectId, bool getAsUser = false)
         {
             // Find file info in documents table by objectId
             var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
@@ -402,16 +426,21 @@ namespace CPS_API.Repositories
                 new QueryOption("expand", "fields")
             };
 
-            return await _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Request(queryOptions).GetAsync();
+            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Request(queryOptions);
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
-        private async Task<DriveItem?> getDriveItem(string objectId)
+        private async Task<DriveItem?> getDriveItem(string objectId, bool getAsUser = false)
         {
             // Find file info in documents table by objectId
             var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
             if (ids == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
-            return await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
+            return await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser);
         }
 
         #endregion

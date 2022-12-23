@@ -1,5 +1,6 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
@@ -7,7 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [Route("[controller]")]
     [ApiController]
     public class FilesController : ControllerBase
@@ -103,7 +104,6 @@ namespace CPS_API.Controllers
 
             return Ok(objectId);
         }
-
 
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB

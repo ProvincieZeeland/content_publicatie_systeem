@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using Microsoft.Graph;
+using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -8,29 +9,29 @@ namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
-        Task<Drive> GetDriveAsync(string driveId);
+        Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false);
 
-        Task<Drive> GetDriveAsync(string siteId, string listId);
+        Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId);
+        Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId);
+        Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false);
 
-        Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId);
+        Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream);
+        Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
-        Task DeleteFileAsync(string driveId, string driveItemId);
+        Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<List<string>> GetKnownDrivesAsync();
 
-        Task<List<DriveItem>> GetNewItems(DateTime startDate);
+        Task<List<DriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false);
 
-        Task<List<DriveItem>> GetUpdatedItems(DateTime startDate);
+        Task<List<DriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false);
 
-        Task<List<DriveItem>> GetDeletedItems(DateTime startDate);
+        Task<List<DriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false);
 
-        Task<Stream> DownloadAsync(string driveId, string driveItemId);
+        Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false);
     }
 
     public class DriveRepository : IDriveRepository
@@ -46,29 +47,54 @@ namespace CPS_API.Repositories
             _storageTableService = storageTableService;
         }
 
-        public async Task<Drive> GetDriveAsync(string siteId, string listId)
+        public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false)
         {
-            return await _graphClient.Sites[siteId].Lists[listId].Drive.Request().GetAsync();
+            var request = _graphClient.Sites[siteId].Lists[listId].Drive.Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
-        public async Task<Drive> GetDriveAsync(string driveId)
+        public async Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false)
         {
-            return await _graphClient.Drives[driveId].Request().GetAsync();
+            var request = _graphClient.Drives[driveId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId)
+        public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false)
         {
-            return await _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request().Select("*").GetAsync();
+            var request = _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.Select("*").GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId)
+        public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            return await _graphClient.Drives[driveId].Items[driveItemId].Request().GetAsync();
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
-        public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId)
+        public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            return await _graphClient.Drives[driveId].Items[driveItemId].Request().Select("sharepointids").GetAsync();
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.Select("sharepointids").GetAsync();
         }
 
         public async Task<List<string>> GetKnownDrivesAsync()
@@ -89,17 +115,21 @@ namespace CPS_API.Repositories
             return objectIdentifiersEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
-        public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream)
+        public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false)
         {
             if (fileStream.Length > 0)
             {
                 var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
                 properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "fail");
 
-                var uploadSession = await _graphClient.Drives[driveId].Root
+                var request = _graphClient.Drives[driveId].Root
                     .ItemWithPath(fileName).CreateUploadSession(properties)
-                    .Request()
-                    .PostAsync();
+                    .Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                var uploadSession = await request.PostAsync();
 
                 // 10 MB; recommended fragment size is between 5-10 MiB
                 var chunkSize = (320 * 1024) * 32;
@@ -138,39 +168,44 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task DeleteFileAsync(string driveId, string driveItemId)
+        public async Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            await _graphClient.Drives[driveId].Items[driveItemId].Request().DeleteAsync();
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            await request.DeleteAsync();
         }
 
-        public async Task<List<DriveItem>> GetNewItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate);
+            var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime >= startDate).ToList();
             newItems = newItems.Where(item => item.Folder == null).ToList();
             newItems = newItems.OrderBy(item => item.CreatedDateTime).ToList();
             return newItems;
         }
 
-        public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate);
+            var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime < startDate).ToList();
             updatedItems = updatedItems.Where(item => item.Folder == null).ToList();
             updatedItems = updatedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
             return updatedItems;
         }
 
-        public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate)
+        public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate);
+            var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var deletedItems = driveItems.Where(item => item.Deleted != null).ToList();
             deletedItems = deletedItems.Where(item => item.Folder == null).ToList();
             deletedItems = deletedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
             return deletedItems;
         }
 
-        private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate)
+        private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate, bool getAsUser = false)
         {
             // Get known drives
             var driveIds = await GetKnownDrivesAsync();
@@ -189,7 +224,12 @@ namespace CPS_API.Repositories
                 IDriveItemDeltaCollectionPage delta;
                 try
                 {
-                    delta = await _graphClient.Drives[driveId].Root.Delta().Request(queryOptions).GetAsync();
+                    var request = _graphClient.Drives[driveId].Root.Delta().Request(queryOptions);
+                    if (!getAsUser)
+                    {
+                        request = request.WithAppOnly();
+                    }
+                    delta = await request.GetAsync();
                 }
                 catch (Exception ex)
                 {
@@ -205,9 +245,14 @@ namespace CPS_API.Repositories
             return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
         }
 
-        public async Task<Stream> DownloadAsync(string driveId, string driveItemId)
+        public async Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            return await _graphClient.Drives[driveId].Items[driveItemId].Content.Request().GetAsync();
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Content.Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
     }
 }
