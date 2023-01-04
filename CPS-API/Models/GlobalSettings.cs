@@ -13,7 +13,7 @@
 
         public IEnumerable<MetadataMapping> MetadataSettings { get; set; }
 
-        public List<ClassificationMapping> ClassificationMapping { get; set; }
+        public List<LocationMapping> LocationMapping { get; set; }
     }
 
     public class AppSettings
@@ -36,9 +36,11 @@
         public object? DefaultValue { get; set; }
     }
 
-    public class ClassificationMapping
+    public class LocationMapping
     {
         public Classification Classification { get; set; }
+
+        public string Source { get; set; }
 
         // Afhankelijk van SPO inrichting > wordt mogelijk anders
         public string SiteId { get; set; }

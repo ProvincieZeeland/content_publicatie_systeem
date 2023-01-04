@@ -96,15 +96,21 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile)
         {
-            // Find wanted storage location depending on classification
-            // todo: get driveid or site matching classification & source
+            if (file.Metadata == null) throw new NullReferenceException(nameof(file.Metadata));
 
+            // Get driveid or site matching classification & source
             var driveId = file.Metadata?.Ids?.DriveId;
-            if (driveId == null)
+            if (driveId.IsNullOrEmpty())
             {
-                var classificationMapping = _globalSettings.ClassificationMapping.FirstOrDefault(item => item.Classification == file.Metadata?.AdditionalMetadata?.Classification);
-                if (classificationMapping == null) throw new NullReferenceException(nameof(classificationMapping));
-                var drive = await _driveRepository.GetDriveAsync(classificationMapping.SiteId, classificationMapping.ListId);
+                if (file.Metadata.AdditionalMetadata == null) throw new NullReferenceException(nameof(file.Metadata.AdditionalMetadata));
+
+                var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
+                                        item.Classification == file.Metadata.AdditionalMetadata.Classification
+                                        && item.Source == file.Metadata.AdditionalMetadata.Source
+                                      );
+                if (locationMapping == null) throw new Exception($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
+
+                var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
                 driveId = drive?.Id;
             }
             if (driveId == null) throw new NullReferenceException(nameof(driveId));

@@ -3,7 +3,7 @@
     public enum Classification
     {
         Internal,
-        //
-        Public
+        Public,
+        Confidential
     }
 }
