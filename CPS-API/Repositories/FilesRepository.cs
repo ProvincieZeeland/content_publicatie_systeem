@@ -364,7 +364,8 @@ namespace CPS_API.Repositories
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
-            var request = _graphClient.Sites[metadata.Ids.SiteId].Lists[metadata.Ids.ListId].Items[metadata.Ids.ListItemId].Fields.Request();
+            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
             if (!getAsUser)
             {
                 request = request.WithAppOnly();
@@ -412,6 +413,7 @@ namespace CPS_API.Repositories
                 {
                     throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                 }
+
             }
             return fields;
         }

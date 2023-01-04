@@ -3,6 +3,7 @@ using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 
@@ -14,13 +15,13 @@ namespace CPS_API.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IFilesRepository _filesRepository;
-        private readonly IObjectIdRepository _objectIdRepository;
+        private readonly GlobalSettings _globalSettings;
 
         public FilesController(IFilesRepository filesRepository,
-                               IObjectIdRepository objectIdRepository)
+                               IOptions<GlobalSettings> settings)
         {
             _filesRepository = filesRepository;
-            _objectIdRepository = objectIdRepository;
+            _globalSettings = settings.Value;
         }
 
         // GET
@@ -121,13 +122,29 @@ namespace CPS_API.Controllers
                     Metadata = new FileInformation
                     {
                         FileName = formFile.FileName,
-                        AdditionalMetadata = new FileMetadata
-                        {
-                            Source = source,
-                            Classification = classification
-                        }
+                        AdditionalMetadata = new FileMetadata()
                     }
                 };
+                foreach (var fieldMapping in _globalSettings.MetadataSettings)
+                {
+                    if (fieldMapping.DefaultValue != null)
+                    {
+                        var defaultAsStr = fieldMapping.DefaultValue?.ToString();
+                        if (!defaultAsStr.IsNullOrEmpty())
+                        {
+                            if (fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedBy))
+                            {
+                                file.Metadata[fieldMapping.FieldName] = fieldMapping.DefaultValue;
+                            }
+                            else
+                            {
+                                file.Metadata.AdditionalMetadata[fieldMapping.FieldName] = fieldMapping.DefaultValue;
+                            }
+                        }
+                    }
+                }
+                file.Metadata.AdditionalMetadata.Source = source;
+                file.Metadata.AdditionalMetadata.Classification = classification;
 
                 var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
                 objectId = spoIds.ObjectId;

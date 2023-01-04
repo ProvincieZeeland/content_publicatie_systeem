@@ -14,6 +14,8 @@ namespace CPS_API.Repositories
         Task<string?> GetObjectIdAsync(ObjectIdentifiers ids);
 
         Task<bool> SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
+
+        Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids);
     }
 
     public class ObjectIdRepository : IObjectIdRepository
@@ -88,7 +90,7 @@ namespace CPS_API.Repositories
             return objectId;
         }
 
-        private async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids)
+        public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids)
         {
             if (ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
             {
