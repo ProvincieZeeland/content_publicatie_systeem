@@ -230,12 +230,24 @@ namespace CPS_API.Repositories
                         request = request.WithAppOnly();
                     }
                     delta = await request.GetAsync();
+                    driveItems.AddRange(delta.CurrentPage);
+
+                    // Fetch additional pages for delta; we get max of 500 per request by default
+                    while (delta.NextPageRequest != null)
+                    {
+                        var newPageRequest = delta.NextPageRequest;
+                        if (!getAsUser)
+                        {
+                            newPageRequest = delta.NextPageRequest.WithAppOnly();
+                        }
+                        delta = await newPageRequest.GetAsync();
+                        driveItems.AddRange(delta.CurrentPage);
+                    }
                 }
                 catch (Exception ex)
                 {
                     throw new Exception("Error while getting changed driveItems with delta");
                 }
-                driveItems.AddRange(delta.CurrentPage);
             }
             return driveItems;
         }
