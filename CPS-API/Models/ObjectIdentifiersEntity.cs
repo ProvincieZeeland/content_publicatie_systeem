@@ -16,6 +16,8 @@ namespace CPS_API.Models
 
         public string DriveItemId { get; set; }
 
+        public string ExternalReferenceListId { get; set; }
+
         public ObjectIdentifiersEntity()
         {
 
@@ -31,6 +33,7 @@ namespace CPS_API.Models
             ListItemId = ids.ListItemId;
             DriveId = ids.DriveId;
             DriveItemId = ids.DriveItemId;
+            ExternalReferenceListId = ids.ExternalReferenceListId;
         }
     }
 }

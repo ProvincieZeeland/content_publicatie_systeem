@@ -26,10 +26,23 @@ namespace CPS_API.Models
             set
             {
                 var property = this.GetType().GetProperty(fieldname);
-                if (property != null)
-                    property.SetValue(this, value, null);
+                if (property == null) throw new ArgumentException("Unknown property " + fieldname);
+
+                if (property.PropertyType == typeof(string))
+                {
+                    var stringValue = value?.ToString();
+                    property.SetValue(this, stringValue, null);
+                }
+                else if (property.PropertyType == typeof(ExternalReferenceType))
+                {
+                    var stringValue = value?.ToString();
+                    var externalReferenceType = (ExternalReferenceType)Enum.Parse(typeof(ExternalReferenceType), stringValue, true);
+                    property.SetValue(this, externalReferenceType, null);
+                }
                 else
-                    throw new ArgumentException("Unknown property " + fieldname);
+                {
+                    property.SetValue(this, value, null);
+                }
             }
         }
     }

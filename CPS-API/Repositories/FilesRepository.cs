@@ -1,8 +1,8 @@
-﻿using CPS_API.Models;
+﻿using System.Net;
+using CPS_API.Models;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
-using System.Net;
 
 namespace CPS_API.Repositories
 {
@@ -98,27 +98,21 @@ namespace CPS_API.Repositories
         {
             if (file.Metadata == null) throw new NullReferenceException(nameof(file.Metadata));
 
-            // Get driveid or site matching classification & source
-            var driveId = file.Metadata?.Ids?.DriveId;
-            if (driveId.IsNullOrEmpty())
-            {
-                if (file.Metadata.AdditionalMetadata == null) throw new NullReferenceException(nameof(file.Metadata.AdditionalMetadata));
+            var ids = new ObjectIdentifiers();
 
-                var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
-                                        item.Classification == file.Metadata.AdditionalMetadata.Classification
-                                        && item.Source == file.Metadata.AdditionalMetadata.Source
-                                      );
-                if (locationMapping == null) throw new Exception($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
+            // Get driveid or site matching classification & source           
+            if (file.Metadata.AdditionalMetadata == null) throw new NullReferenceException(nameof(file.Metadata.AdditionalMetadata));
 
-                var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
-                driveId = drive?.Id;
-            }
-            if (driveId == null) throw new NullReferenceException(nameof(driveId));
+            var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
+                                    item.Classification == file.Metadata.AdditionalMetadata.Classification
+                                    && item.Source == file.Metadata.AdditionalMetadata.Source
+                                    );
+            if (locationMapping == null) throw new Exception($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
+            ids.DriveId = locationMapping.ExternalReferenceListId;
 
-            var ids = new ObjectIdentifiers
-            {
-                DriveId = driveId
-            };
+            var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
+            if (drive == null) throw new Exception("Drive not found for new file.");
+            ids.DriveId = drive.Id;
 
             // Add new file to SharePoint
             DriveItem driveItem;
@@ -192,10 +186,10 @@ namespace CPS_API.Repositories
                 throw new Exception("Error while generating ObjectId");
             }
 
+            file.Metadata.Ids = ids;
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                file.Metadata.Ids = ids;
                 await UpdateMetadataAsync(file.Metadata);
             }
             catch (Exception ex)
@@ -206,6 +200,21 @@ namespace CPS_API.Repositories
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
                 throw new Exception("Error while updating metadata");
+            }
+
+            // Update ExternalReferences in Sharepoint with Graph
+            try
+            {
+                await UpdateExternalReferencesAsync(file.Metadata);
+            }
+            catch (Exception ex)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+
+                throw new Exception("Error while updating external references");
             }
 
             // Done
@@ -253,10 +262,18 @@ namespace CPS_API.Repositories
 
         public async Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false)
         {
-            ListItem? file;
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (ids == null)
+            {
+                throw new Exception("Error while getting objectIdentifiers");
+            }
+            var metadata = new FileInformation();
+            metadata.Ids = new ObjectIdentifiers(ids);
+
+            ListItem? listItem;
             try
             {
-                file = await getListItem(objectId, getAsUser);
+                listItem = await getListItem(metadata.Ids, getAsUser);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -266,7 +283,7 @@ namespace CPS_API.Repositories
             {
                 throw new Exception("Error while getting listItem");
             }
-            if (file == null) throw new FileNotFoundException($"LisItem (objectId = {objectId}) does not exist!");
+            if (listItem == null) throw new FileNotFoundException($"LisItem (objectId = {objectId}) does not exist!");
 
             DriveItem? driveItem;
             try
@@ -283,9 +300,8 @@ namespace CPS_API.Repositories
             }
             if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
 
-            var fileName = file.Name.IsNullOrEmpty() ? driveItem.Name : file.Name;
+            var fileName = listItem.Name.IsNullOrEmpty() ? driveItem.Name : listItem.Name;
 
-            FileInformation metadata = new FileInformation();
             metadata.MimeType = "application/pdf";
             if (driveItem.File != null && driveItem.File.MimeType != null)
             {
@@ -298,30 +314,34 @@ namespace CPS_API.Repositories
             if (!fileName.IsNullOrEmpty() && fileName.Contains('.'))
                 metadata.FileExtension = fileName.Split('.')[1];
 
-            if (file.CreatedDateTime.HasValue)
-                metadata.CreatedOn = file.CreatedDateTime.Value.DateTime;
+            if (listItem.CreatedDateTime.HasValue)
+                metadata.CreatedOn = listItem.CreatedDateTime.Value.DateTime;
 
-            if (file.CreatedBy.User != null)
-                metadata.CreatedBy = file.CreatedBy.User.DisplayName;
-            else if (file.CreatedBy.Application != null)
-                metadata.CreatedBy = file.CreatedBy.Application.DisplayName;
+            if (listItem.CreatedBy.User != null)
+                metadata.CreatedBy = listItem.CreatedBy.User.DisplayName;
+            else if (listItem.CreatedBy.Application != null)
+                metadata.CreatedBy = listItem.CreatedBy.Application.DisplayName;
 
-            if (file.LastModifiedDateTime.HasValue)
-                metadata.ModifiedOn = file.LastModifiedDateTime.Value.DateTime;
+            if (listItem.LastModifiedDateTime.HasValue)
+                metadata.ModifiedOn = listItem.LastModifiedDateTime.Value.DateTime;
 
-            if (file.LastModifiedBy.User != null)
-                metadata.ModifiedBy = file.LastModifiedBy.User.DisplayName;
-            else if (file.LastModifiedBy.Application != null)
-                metadata.ModifiedBy = file.LastModifiedBy.Application.DisplayName;
+            if (listItem.LastModifiedBy.User != null)
+                metadata.ModifiedBy = listItem.LastModifiedBy.User.DisplayName;
+            else if (listItem.LastModifiedBy.Application != null)
+                metadata.ModifiedBy = listItem.LastModifiedBy.Application.DisplayName;
 
             foreach (var fieldMapping in _globalSettings.MetadataSettings)
             {
                 // create object with sharepoint fields metadata + url to item
-                file.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
+                listItem.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
                 if (value == null)
                 {
                     // log warning to insights?
                     // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
+                }
+                if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                {
+                    continue;
                 }
                 else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
                 {
@@ -333,13 +353,32 @@ namespace CPS_API.Repositories
                 }
             }
 
-            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
-            if (ids == null)
+            var externalReferenceListItems = await getExternalReferenceListItems(metadata.Ids, getAsUser);
+            metadata.ExternalReferences = new List<ExternalReferences>();
+            foreach (var externalReferenceListItem in externalReferenceListItems)
             {
-                throw new Exception("Error while getting objectIdentifiers");
+                var externalReference = new ExternalReferences();
+                foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
+                {
+                    // create object with sharepoint fields metadata + url to item
+                    externalReferenceListItem.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
+                    if (value == null)
+                    {
+                        // log warning to insights?
+                        // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
+                    }
+                    if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        externalReference[fieldMapping.FieldName] = value;
+                    }
+                }
+                metadata.ExternalReferences.Add(externalReference);
             }
 
-            metadata.Ids = new ObjectIdentifiers(ids);
             return metadata;
         }
 
@@ -347,17 +386,6 @@ namespace CPS_API.Repositories
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
-
-            ListItem? listItem;
-            try
-            {
-                listItem = await getListItem(metadata.Ids.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while getting listItem");
-            }
-            if (listItem == null) throw new FileNotFoundException();
 
             // map received metadata to SPO object
             var fields = mapMetadata(metadata);
@@ -384,7 +412,11 @@ namespace CPS_API.Repositories
                 try
                 {
                     object? value;
-                    if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+                    if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                    {
+                        value = metadata.Ids.ObjectId;
+                    }
+                    else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
                     {
                         value = metadata[fieldMapping.FieldName];
                     }
@@ -418,16 +450,68 @@ namespace CPS_API.Repositories
             return fields;
         }
 
+        public async Task UpdateExternalReferencesAsync(FileInformation metadata, bool getAsUser = false)
+        {
+            if (metadata == null) throw new ArgumentNullException("metadata");
+            if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
+
+            // map received metadata to SPO object
+            var listItems = mapExternalReferences(metadata);
+            if (listItems == null) throw new NullReferenceException(nameof(listItems));
+
+            // update sharepoint fields with metadata
+            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            foreach (var listItem in listItems)
+            {
+                var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                await request.AddAsync(listItem);
+            }
+        }
+
+        private List<ListItem> mapExternalReferences(FileInformation metadata)
+        {
+            if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
+
+            var listItems = new List<ListItem>();
+            foreach (var externalReference in metadata.ExternalReferences)
+            {
+                var fields = new FieldValueSet();
+                fields.AdditionalData = new Dictionary<string, object>();
+                foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
+                {
+                    if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                    {
+                        fields.AdditionalData[fieldMapping.SpoColumnName] = metadata.Ids.ObjectId;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var value = externalReference[fieldMapping.FieldName];
+                            fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                        }
+                        catch
+                        {
+                            throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                        }
+                    }
+                }
+                listItems.Add(new ListItem { Fields = fields });
+            }
+
+            return listItems;
+        }
+
         #endregion
 
         #region Helpers
 
-        private async Task<ListItem?> getListItem(string objectId, bool getAsUser = false)
+        private async Task<ListItem?> getListItem(ObjectIdentifiers ids, bool getAsUser = false)
         {
-            // Find file info in documents table by objectId
-            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
-            if (ids == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
-
             // Find file in SharePoint using ids
             var queryOptions = new List<QueryOption>()
             {
@@ -440,6 +524,17 @@ namespace CPS_API.Repositories
                 request = request.WithAppOnly();
             }
             return await request.GetAsync();
+        }
+
+        private async Task<List<ListItem>> getExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
+        {
+            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request().Expand("Fields").Filter("Fields/ObjectID eq 'ZLD2023-36'");
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            var listItemsPage = await request.GetAsync();
+            return listItemsPage?.CurrentPage?.ToList();
         }
 
         private async Task<DriveItem?> getDriveItem(string objectId, bool getAsUser = false)

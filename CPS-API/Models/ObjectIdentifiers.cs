@@ -14,6 +14,8 @@
 
         public string DriveItemId { get; set; }
 
+        public string? ExternalReferenceListId { get; set; }
+
         public ObjectIdentifiers()
         {
 
@@ -27,6 +29,7 @@
             ListItemId = entity.ListItemId;
             DriveId = entity.DriveId;
             DriveItemId = entity.DriveItemId;
+            ExternalReferenceListId = entity.ExternalReferenceListId;
         }
     }
 }

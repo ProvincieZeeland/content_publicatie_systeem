@@ -11,7 +11,9 @@
         public string CallbackUrl { get; set; } = string.Empty;
         public LoggingLevel LoggingLevel { get; set; }
 
-        public IEnumerable<MetadataMapping> MetadataSettings { get; set; }
+        public IEnumerable<FieldMapping> MetadataSettings { get; set; }
+
+        public List<FieldMapping> ExternalReferencesMapping { get; set; }
 
         public List<LocationMapping> LocationMapping { get; set; }
     }
@@ -27,7 +29,7 @@
         public DateTime LastSynchronisationDeleted { get; set; } = DateTime.MinValue;
     }
 
-    public class MetadataMapping
+    public class FieldMapping
     {
         public string FieldName { get; set; } = string.Empty;
 
@@ -46,6 +48,8 @@
         public string SiteId { get; set; }
 
         public string ListId { get; set; }
+
+        public string ExternalReferenceListId { get; set; }
 
         // optioneel
         public string folderName { get; set; } = string.Empty;

@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -23,14 +24,17 @@ namespace CPS_API.Repositories
         private readonly ISettingsRepository _settingsRepository;
         private readonly StorageTableService _storageTableService;
         private readonly IDriveRepository _driveRepository;
+        private readonly GlobalSettings _globalSettings;
 
         public ObjectIdRepository(ISettingsRepository settingsRepository,
                                    StorageTableService storageTableService,
-                                   IDriveRepository driveRepository)
+                                   IDriveRepository driveRepository,
+                                   IOptions<GlobalSettings> settings)
         {
             _settingsRepository = settingsRepository;
             _storageTableService = storageTableService;
             _driveRepository = driveRepository;
+            _globalSettings = settings.Value;
         }
 
         public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids)
@@ -122,6 +126,15 @@ namespace CPS_API.Repositories
                 {
                     throw new Exception("Error while getting SharePoint Ids", ex);
                 }
+            }
+
+            if (ids.ExternalReferenceListId.IsNullOrEmpty())
+            {
+                var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
+                                        item.SiteId == ids.SiteId
+                                        && item.ListId == ids.ListId
+                                      );
+                ids.ExternalReferenceListId = locationMapping?.ExternalReferenceListId;
             }
 
             return ids;

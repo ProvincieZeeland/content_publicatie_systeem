@@ -2,6 +2,7 @@
 {
     public enum ExternalReferenceType
     {
-        // Wat moet hier in?
+        Link,
+        Dossier
     }
 }
