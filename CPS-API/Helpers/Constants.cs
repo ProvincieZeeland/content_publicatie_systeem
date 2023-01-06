@@ -12,6 +12,5 @@
         public const string SettingsLastSynchronisationDeletedRowKey = "LastSynchronisationDeleted";
 
         public const string ContentContainerName = "content";
-        public const string MetadataContainerName = "metadata";
     }
 }

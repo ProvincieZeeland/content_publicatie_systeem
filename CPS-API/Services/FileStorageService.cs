@@ -201,9 +201,12 @@ namespace CPS_API.Helpers
                 var taggedBlobItems = containerClient.FindBlobsByTags(query);
                 if (taggedBlobItems.IsNullOrEmpty()) throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
 
-                var blobName = taggedBlobItems.First().BlobName;
-                var blobClient = containerClient.GetBlobClient(blobName);
-                await blobClient.DeleteAsync();
+                foreach (var blobItem in taggedBlobItems)
+                {
+                    var blobName = blobItem.BlobName;
+                    var blobClient = containerClient.GetBlobClient(blobName);
+                    await blobClient.DeleteAsync();
+                }
                 return true;
             }
             catch (Exception error)

@@ -217,7 +217,7 @@ namespace CPS_API.Controllers
             var metadataName = fileName + ".xml";
             try
             {
-                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
+                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -302,16 +302,6 @@ namespace CPS_API.Controllers
                 throw new Exception("Error while deleting document");
             }
             if (!succeeded) throw new Exception("Error while deleting document");
-
-            try
-            {
-                succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.MetadataContainerName, objectIdentifiersEntity.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while deleting metadata");
-            }
-            if (!succeeded) throw new Exception("Error while deleting metadata");
         }
 
         private CloudTable? GetObjectIdentifiersTable()
