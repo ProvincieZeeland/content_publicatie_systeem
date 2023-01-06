@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using CPS_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,8 +9,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
-using System.Reflection;
-using System.Text;
 
 namespace CPS_API.Controllers
 {
@@ -30,12 +29,15 @@ namespace CPS_API.Controllers
 
         private readonly GlobalSettings _globalSettings;
 
+        private readonly XmlExportSerivce _xmlExportSerivce;
+
         public ExportController(IDriveRepository driveRepository,
                                 ISettingsRepository settingsRepository,
                                 FileStorageService fileStorageService,
                                 StorageTableService storageTableService,
                                 IFilesRepository filesRepository,
-                                IOptions<GlobalSettings> settings)
+                                IOptions<GlobalSettings> settings,
+                                XmlExportSerivce xmlExportSerivce)
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
@@ -43,6 +45,7 @@ namespace CPS_API.Controllers
             _storageTableService = storageTableService;
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
+            _xmlExportSerivce = xmlExportSerivce;
         }
 
         // GET
@@ -204,7 +207,7 @@ namespace CPS_API.Controllers
             string metadataXml;
             try
             {
-                metadataXml = exportMetadataAsXml(metadata);
+                metadataXml = _xmlExportSerivce.GetMetadataAsXml(metadata);
             }
             catch (Exception ex)
             {
@@ -309,52 +312,6 @@ namespace CPS_API.Controllers
                 throw new Exception("Error while deleting metadata");
             }
             if (!succeeded) throw new Exception("Error while deleting metadata");
-        }
-
-        private string exportMetadataAsXml(FileInformation metadata)
-        {
-            var xml = new StringBuilder();
-            foreach (var propertyInfo in metadata.GetType().GetProperties())
-            {
-                if (
-                    propertyInfo.Name == "Item"
-                    || propertyInfo.PropertyType == typeof(ObjectIdentifiers)
-                    || propertyInfo.PropertyType == typeof(List<ExternalReferences>))
-                {
-                    continue;
-                }
-                if (propertyInfo.PropertyType == typeof(FileMetadata))
-                {
-                    var value = propertyInfo.GetValue(metadata);
-                    if (value == null) throw new ArgumentNullException(nameof(value));
-                    foreach (var secondPropertyInfo in value.GetType().GetProperties())
-                    {
-                        if (secondPropertyInfo.Name == "Item")
-                        {
-                            continue;
-                        }
-                        xml.AppendLine(GetPropertyXml(secondPropertyInfo, value));
-                    }
-                }
-                else
-                {
-                    xml.AppendLine(GetPropertyXml(propertyInfo, metadata));
-                }
-            }
-            return $"<?xml version=\"1.0\"?><Document id=\"{metadata.Ids.ObjectId}\">{xml}</Document></xml>";
-        }
-
-        private string GetPropertyXml(PropertyInfo? propertyInfo, object obj)
-        {
-            if (propertyInfo == null) throw new ArgumentNullException(nameof(propertyInfo));
-            var value = propertyInfo.GetValue(obj);
-            if (value == null) throw new ArgumentNullException(nameof(propertyInfo));
-            var valueAsStr = value.ToString();
-
-            var propertyName = propertyInfo.Name;
-            if (propertyName == null) throw new ArgumentNullException(nameof(propertyInfo));
-
-            return $"<{propertyName}>{valueAsStr}</{propertyName}>";
         }
 
         private CloudTable? GetObjectIdentifiersTable()

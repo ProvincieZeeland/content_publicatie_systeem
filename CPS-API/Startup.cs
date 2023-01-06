@@ -1,6 +1,7 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using CPS_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
@@ -36,6 +37,7 @@ namespace CPS_API
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();
             services.AddSingleton<StorageTableService, StorageTableService>();
+            services.AddSingleton<XmlExportSerivce, XmlExportSerivce>();
 
             // Configure for large file uploads
             services.Configure<FormOptions>(opt =>
