@@ -9,6 +9,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
+using System.Text;
+using System.Text.Json;
 
 namespace CPS_API.Controllers
 {
@@ -85,13 +87,27 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    await UploadFileAndXmlToFileStorage(newItem);
+                    ObjectIdentifiersEntity? objectIdentifiersEntity;
+                    try
+                    {
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception("Error while getting objectIdentifiers");
+                    }
+                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
-                    // Callback for new file.
+                    // Callback for changed file.
                     if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        dynamic callbackFunc = _globalSettings.CallbackUrl;
-                        callbackFunc();
+                        CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
+                        //fileInfo.Metadata.FileLocation = fileLocation;
+                        string body = JsonSerializer.Serialize(fileInfo.Metadata);
+                        string callbackUrl = _globalSettings.CallbackUrl + $"/create/{objectIdentifiersEntity.ObjectId}";
+
+                        await CallCallbackUrl(callbackUrl, body);
                     }
                 }
                 catch (Exception ex)
@@ -139,13 +155,27 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    await UploadFileAndXmlToFileStorage(updatedItem);
+                    ObjectIdentifiersEntity? objectIdentifiersEntity;
+                    try
+                    {
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception("Error while getting objectIdentifiers");
+                    }
+                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
                     if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        dynamic callbackFunc = _globalSettings.CallbackUrl;
-                        callbackFunc();
+                        CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
+                        //fileInfo.Metadata.FileLocation = fileLocation;
+                        string body = JsonSerializer.Serialize(fileInfo.Metadata);
+                        string callbackUrl = _globalSettings.CallbackUrl + $"/update/{objectIdentifiersEntity.ObjectId}";
+
+                        await CallCallbackUrl(callbackUrl, body);
                     }
                 }
                 catch (Exception ex)
@@ -157,18 +187,8 @@ namespace CPS_API.Controllers
             return Ok();
         }
 
-        private async Task UploadFileAndXmlToFileStorage(DriveItem driveItem)
+        private async Task<string> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
         {
-            ObjectIdentifiersEntity objectIdentifiersEntity;
-            try
-            {
-                objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(driveItem.Id);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while getting objectIdentifiers");
-            }
-            if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
 
             FileInformation? metadata;
             try
@@ -184,7 +204,7 @@ namespace CPS_API.Controllers
             Stream? stream;
             try
             {
-                stream = await _driveRepository.DownloadAsync(objectIdentifiersEntity.DriveId, driveItem.Id);
+                stream = await _driveRepository.DownloadAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
             }
             catch (Exception ex)
             {
@@ -192,11 +212,13 @@ namespace CPS_API.Controllers
             }
             if (stream == null) throw new Exception("Error while getting content");
 
-            var fileName = $"{objectIdentifiersEntity.ObjectId}.{driveItem.Name}";
+            var fileName = $"{objectIdentifiersEntity.ObjectId}.{name}";
+            var fileLocation = "";
             bool succeeded;
             try
             {
                 succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
+                //todo: get full filelocation for sending to callback?
             }
             catch (Exception ex)
             {
@@ -224,6 +246,8 @@ namespace CPS_API.Controllers
                 throw new Exception("Error while uploading metadata");
             }
             if (!succeeded) throw new Exception("Error while uploading metadata");
+
+            return fileLocation;
         }
 
         [HttpGet]
@@ -261,13 +285,23 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    await DeleteFileAndXmlFromFileStorage(deletedItem);
+                    ObjectIdentifiersEntity? objectIdentifiersEntity;
+                    try
+                    {
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception("Error while getting objectIdentifiers");
+                    }
+                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    await DeleteFileAndXmlFromFileStorage(objectIdentifiersEntity);
 
                     // Callback for changed file.
                     if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        dynamic callbackFunc = _globalSettings.CallbackUrl;
-                        callbackFunc();
+                        string callbackUrl = _globalSettings.CallbackUrl + $"/delete/{objectIdentifiersEntity.ObjectId}";
+                        await CallCallbackUrl(callbackUrl);
                     }
                 }
                 catch (Exception ex)
@@ -279,19 +313,31 @@ namespace CPS_API.Controllers
             return Ok();
         }
 
-        private async Task DeleteFileAndXmlFromFileStorage(DriveItem deletedItem)
+        private async Task CallCallbackUrl(string url, string body = "")
         {
-            ObjectIdentifiersEntity? objectIdentifiersEntity;
-            try
+            using (var client = new HttpClient())
             {
-                objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
+                try
+                {
+                    if (string.IsNullOrEmpty(body))
+                    {
+                        await client.GetAsync(url);
+                    }
+                    else
+                    {
+                        var content = new StringContent(body, Encoding.UTF8, "application/json");
+                        await client.PostAsync(url, content);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log error to callback service, otherwise ignore it
+                }
             }
-            catch (Exception ex)
-            {
-                throw new Exception("Error while getting objectIdentifiers");
-            }
-            if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+        }
 
+        private async Task DeleteFileAndXmlFromFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity)
+        {
             bool succeeded;
             try
             {

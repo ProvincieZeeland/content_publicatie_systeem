@@ -399,6 +399,8 @@ namespace CPS_API.Repositories
                 request = request.WithAppOnly();
             }
             return await request.UpdateAsync(fields);
+
+            //todo: add external references to mapped list
         }
 
         private FieldValueSet mapMetadata(FileInformation metadata)
