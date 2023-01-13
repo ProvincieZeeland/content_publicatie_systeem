@@ -20,7 +20,7 @@ namespace CPS_API.Repositories
 
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
-        Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
+        Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
     }
 
     public class FilesRepository : IFilesRepository
@@ -190,7 +190,7 @@ namespace CPS_API.Repositories
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                await UpdateMetadataAsync(file.Metadata);
+                await UpdateMetadataWithoutExternalReferencesAsync(file.Metadata);
             }
             catch (Exception ex)
             {
@@ -382,7 +382,13 @@ namespace CPS_API.Repositories
             return metadata;
         }
 
-        public async Task<FieldValueSet?> UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
+        public async Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
+        {
+            await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser);
+            await UpdateExternalReferencesAsync(metadata, getAsUser);
+        }
+
+        public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool getAsUser = false)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
@@ -398,9 +404,7 @@ namespace CPS_API.Repositories
             {
                 request = request.WithAppOnly();
             }
-            return await request.UpdateAsync(fields);
-
-            //todo: add external references to mapped list
+            await request.UpdateAsync(fields);
         }
 
         private FieldValueSet mapMetadata(FileInformation metadata)
@@ -461,8 +465,22 @@ namespace CPS_API.Repositories
             var listItems = mapExternalReferences(metadata);
             if (listItems == null) throw new NullReferenceException(nameof(listItems));
 
-            // update sharepoint fields with metadata
+            // Get existing sharepoint fields with metadata
             var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            var externalReferenceListItems = await getExternalReferenceListItems(metadata.Ids, getAsUser);
+
+            // Delete existing sharepoint fields
+            foreach (var listItem in externalReferenceListItems)
+            {
+                var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items[listItem.Id].Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                await request.DeleteAsync();
+            }
+
+            // Add sharepoint fields with metadata
             foreach (var listItem in listItems)
             {
                 var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
@@ -530,7 +548,7 @@ namespace CPS_API.Repositories
 
         private async Task<List<ListItem>> getExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request().Expand("Fields").Filter("Fields/ObjectID eq 'ZLD2023-36'");
+            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request().Expand("Fields").Filter($"Fields/ObjectID eq '{ids.ObjectId}'");
             if (!getAsUser)
             {
                 request = request.WithAppOnly();

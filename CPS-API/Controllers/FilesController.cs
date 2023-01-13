@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
@@ -207,10 +206,9 @@ namespace CPS_API.Controllers
         {
             fileInfo.Ids.ObjectId = objectId;
 
-            FieldValueSet? fields;
             try
             {
-                fields = await _filesRepository.UpdateMetadataAsync(fileInfo);
+                await _filesRepository.UpdateMetadataAsync(fileInfo);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -224,7 +222,6 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (fields == null) return NotFound("Error while updating metadata");
 
             return Ok();
         }
