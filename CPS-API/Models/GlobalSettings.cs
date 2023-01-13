@@ -11,7 +11,7 @@
         public string CallbackUrl { get; set; } = string.Empty;
         public LoggingLevel LoggingLevel { get; set; }
 
-        public IEnumerable<FieldMapping> MetadataSettings { get; set; }
+        public IEnumerable<FieldMapping> MetadataMapping { get; set; }
 
         public List<FieldMapping> ExternalReferencesMapping { get; set; }
 

@@ -124,7 +124,7 @@ namespace CPS_API.Controllers
                         AdditionalMetadata = new FileMetadata()
                     }
                 };
-                foreach (var fieldMapping in _globalSettings.MetadataSettings)
+                foreach (var fieldMapping in _globalSettings.MetadataMapping)
                 {
                     if (fieldMapping.DefaultValue != null)
                     {

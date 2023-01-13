@@ -330,7 +330,7 @@ namespace CPS_API.Repositories
             else if (listItem.LastModifiedBy.Application != null)
                 metadata.ModifiedBy = listItem.LastModifiedBy.Application.DisplayName;
 
-            foreach (var fieldMapping in _globalSettings.MetadataSettings)
+            foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
                 // create object with sharepoint fields metadata + url to item
                 listItem.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
@@ -413,7 +413,7 @@ namespace CPS_API.Repositories
 
             var fields = new FieldValueSet();
             fields.AdditionalData = new Dictionary<string, object>();
-            foreach (var fieldMapping in _globalSettings.MetadataSettings)
+            foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
                 try
                 {
