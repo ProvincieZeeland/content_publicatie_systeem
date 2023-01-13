@@ -2,8 +2,8 @@
 {
     public enum Classification
     {
-        Internal,
-        Public,
-        Confidential
+        Internopenbaar,
+        Openbaar,
+        Vertrouwelijk
     }
 }

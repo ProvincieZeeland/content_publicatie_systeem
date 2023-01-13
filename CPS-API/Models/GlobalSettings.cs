@@ -42,7 +42,7 @@
     {
         public Classification Classification { get; set; }
 
-        public string Source { get; set; }
+        public Source Source { get; set; }
 
         // Afhankelijk van SPO inrichting > wordt mogelijk anders
         public string SiteId { get; set; }

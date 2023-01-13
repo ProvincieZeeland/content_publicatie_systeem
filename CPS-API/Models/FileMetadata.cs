@@ -24,7 +24,8 @@ namespace CPS_API.Models
 
         public DateTime ArchiveDate { get; set; } = DateTime.MinValue;
 
-        public string Source { get; set; } = string.Empty;
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public Source Source { get; set; }
 
         [JsonIgnore]
         public object? this[string fieldname]
@@ -49,6 +50,15 @@ namespace CPS_API.Models
                     if (stringValue != null)
                     {
                         Enum.TryParse<Classification>(stringValue, out var enumValue);
+                        property.SetValue(this, enumValue, null);
+                    }
+                }
+                else if (property.PropertyType == typeof(Source))
+                {
+                    var stringValue = value?.ToString();
+                    if (stringValue != null)
+                    {
+                        Enum.TryParse<Source>(stringValue, out var enumValue);
                         property.SetValue(this, enumValue, null);
                     }
                 }

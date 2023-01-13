@@ -109,7 +109,7 @@ namespace CPS_API.Controllers
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
         [Route("new/{source}/{classification}")]
-        public async Task<IActionResult> CreateLargeFile(string source, Classification classification)
+        public async Task<IActionResult> CreateLargeFile(string source, string classification)
         {
             if (Request.Form.Files.Count != 1) throw new ArgumentException("You must add one file for upload in form data");
 
@@ -143,8 +143,14 @@ namespace CPS_API.Controllers
                         }
                     }
                 }
-                file.Metadata.AdditionalMetadata.Source = source;
-                file.Metadata.AdditionalMetadata.Classification = classification;
+
+                source = source.Replace(" ", "");
+                Enum.TryParse<Source>(source, true, out var sourceAsEnum);
+                file.Metadata.AdditionalMetadata.Source = sourceAsEnum;
+
+                classification = classification.Replace(" ", "");
+                Enum.TryParse<Classification>(classification, true, out var classificationAsEnum);
+                file.Metadata.AdditionalMetadata.Classification = classificationAsEnum;
 
                 var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
                 objectId = spoIds.ObjectId;

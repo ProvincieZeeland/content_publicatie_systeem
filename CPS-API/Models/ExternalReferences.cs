@@ -4,12 +4,12 @@ namespace CPS_API.Models
 {
     public class ExternalReferences
     {
-        public string ExternalApplication { get; set; } = string.Empty;
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public ExternalApplication ExternalApplication { get; set; }
 
         public string ExternalReference { get; set; } = string.Empty;
 
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public ExternalReferenceType ExternalReferenceType { get; set; }
+        public string ExternalReferenceType { get; set; } = string.Empty;
 
         [JsonIgnore]
         public object? this[string fieldname]
@@ -33,11 +33,12 @@ namespace CPS_API.Models
                     var stringValue = value?.ToString();
                     property.SetValue(this, stringValue, null);
                 }
-                else if (property.PropertyType == typeof(ExternalReferenceType))
+                else if (property.PropertyType == typeof(ExternalApplication))
                 {
                     var stringValue = value?.ToString();
-                    var externalReferenceType = (ExternalReferenceType)Enum.Parse(typeof(ExternalReferenceType), stringValue, true);
-                    property.SetValue(this, externalReferenceType, null);
+                    stringValue = stringValue.Replace(".", "");
+                    var externalApplication = (ExternalApplication)Enum.Parse(typeof(ExternalApplication), stringValue, true);
+                    property.SetValue(this, externalApplication, null);
                 }
                 else
                 {
