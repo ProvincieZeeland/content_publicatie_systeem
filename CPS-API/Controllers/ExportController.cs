@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using CPS_API.Helpers;
 using CPS_API.Models;
@@ -97,15 +98,15 @@ namespace CPS_API.Controllers
                         throw new Exception("Error while getting objectIdentifiers");
                     }
                     if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
-                    string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
+                    var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
                     // Callback for changed file.
-                    if (!fileLocation.IsNullOrEmpty() && !_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    if (succeeded && !_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
-                        //fileInfo.Metadata.FileLocation = fileLocation;
-                        string body = JsonSerializer.Serialize(fileInfo.Metadata);
-                        string callbackUrl = _globalSettings.CallbackUrl + $"/create/{objectIdentifiersEntity.ObjectId}";
+                        var fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
+                        var callbackFileInfo = new CallbackCpsFile(fileInfo);
+                        var body = JsonSerializer.Serialize(callbackFileInfo);
+                        var callbackUrl = _globalSettings.CallbackUrl + $"/create/{objectIdentifiersEntity.ObjectId}";
 
                         await CallCallbackUrl(callbackUrl, body);
                     }
@@ -165,15 +166,15 @@ namespace CPS_API.Controllers
                         throw new Exception("Error while getting objectIdentifiers");
                     }
                     if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
-                    string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
+                    var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
-                    if (!fileLocation.IsNullOrEmpty() && !_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    if (succeeded && !_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
-                        //fileInfo.Metadata.FileLocation = fileLocation;
-                        string body = JsonSerializer.Serialize(fileInfo.Metadata);
-                        string callbackUrl = _globalSettings.CallbackUrl + $"/update/{objectIdentifiersEntity.ObjectId}";
+                        var fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
+                        var callbackFileInfo = new CallbackCpsFile(fileInfo);
+                        var body = JsonSerializer.Serialize(callbackFileInfo);
+                        var callbackUrl = _globalSettings.CallbackUrl + $"/update/{objectIdentifiersEntity.ObjectId}";
 
                         await CallCallbackUrl(callbackUrl, body);
                     }
@@ -187,7 +188,7 @@ namespace CPS_API.Controllers
             return Ok();
         }
 
-        private async Task<string> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
+        private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
         {
             bool metadataExists;
             try
@@ -203,7 +204,7 @@ namespace CPS_API.Controllers
             // The file is a new incomplete file or something went wrong while adding the file.
             if (!metadataExists)
             {
-                return null;
+                return false;
             }
 
             FileInformation? metadata;
@@ -229,7 +230,6 @@ namespace CPS_API.Controllers
             if (stream == null) throw new Exception("Error while getting content");
 
             var fileName = $"{objectIdentifiersEntity.ObjectId}.{name}";
-            var fileLocation = "";
             try
             {
                 await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
@@ -260,7 +260,7 @@ namespace CPS_API.Controllers
                 throw new Exception("Error while uploading metadata");
             }
 
-            return fileLocation;
+            return true;
         }
 
         [HttpGet]
@@ -313,7 +313,7 @@ namespace CPS_API.Controllers
                     // Callback for changed file.
                     if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
-                        string callbackUrl = _globalSettings.CallbackUrl + $"/delete/{objectIdentifiersEntity.ObjectId}";
+                        var callbackUrl = _globalSettings.CallbackUrl + $"/delete/{objectIdentifiersEntity.ObjectId}";
                         await CallCallbackUrl(callbackUrl);
                     }
                 }
@@ -332,15 +332,17 @@ namespace CPS_API.Controllers
             {
                 try
                 {
-                    if (string.IsNullOrEmpty(body))
+                    var method = body.IsNullOrEmpty() ? HttpMethod.Get : HttpMethod.Post;
+                    var request = new HttpRequestMessage(method, url);
+                    request.Headers.Accept.Clear();
+                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _globalSettings.CallbackAccessToken);
+                    if (body.IsNullOrEmpty())
                     {
-                        await client.GetAsync(url);
+                        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                     }
-                    else
-                    {
-                        var content = new StringContent(body, Encoding.UTF8, "application/json");
-                        await client.PostAsync(url, content);
-                    }
+
+                    await client.SendAsync(request);
                 }
                 catch (Exception ex)
                 {

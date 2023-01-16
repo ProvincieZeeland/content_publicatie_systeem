@@ -3,27 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace CPS_API.Models
 {
-    public class FileMetadata
+    public class FileMetadata : CallbackFileMetadata
     {
-        public string Author { get; set; } = string.Empty;
-
-        public string Title { get; set; } = string.Empty;
-
-        public string DocumentType { get; set; } = string.Empty;
-
-        public string ZeesterDocumentType { get; set; } = string.Empty;
-
-        public string ZeesterReference { get; set; } = string.Empty;
-
-        public int RetentionPeriod { get; set; } = 0;
-
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public Classification Classification { get; set; }
-
-        public DateTime PublicationDate { get; set; } = DateTime.MinValue;
-
-        public DateTime ArchiveDate { get; set; } = DateTime.MinValue;
-
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public Source Source { get; set; }
 
