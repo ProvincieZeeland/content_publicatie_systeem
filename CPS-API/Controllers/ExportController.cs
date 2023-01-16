@@ -100,7 +100,7 @@ namespace CPS_API.Controllers
                     string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
                     // Callback for changed file.
-                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    if (!fileLocation.IsNullOrEmpty() && !_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
                         CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
                         //fileInfo.Metadata.FileLocation = fileLocation;
@@ -168,7 +168,7 @@ namespace CPS_API.Controllers
                     string fileLocation = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
-                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
+                    if (!fileLocation.IsNullOrEmpty() && !_globalSettings.CallbackUrl.IsNullOrEmpty())
                     {
                         CpsFile fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
                         //fileInfo.Metadata.FileLocation = fileLocation;
@@ -189,6 +189,22 @@ namespace CPS_API.Controllers
 
         private async Task<string> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
         {
+            bool metadataExists;
+            try
+            {
+                var ids = new ObjectIdentifiers(objectIdentifiersEntity);
+                metadataExists = await _filesRepository.FileContainsMetadata(ids);
+            }
+            catch
+            {
+                throw new Exception("Error while getting metadata");
+            }
+            // When metadata is unknown, we skip the synchronisation.
+            // The file is a new incomplete file or something went wrong while adding the file.
+            if (!metadataExists)
+            {
+                return null;
+            }
 
             FileInformation? metadata;
             try

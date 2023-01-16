@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Globalization;
+using System.Net;
 using CPS_API.Models;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
@@ -21,6 +22,8 @@ namespace CPS_API.Repositories
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
         Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
+
+        Task<bool> FileContainsMetadata(ObjectIdentifiers ids);
     }
 
     public class FilesRepository : IFilesRepository
@@ -546,6 +549,97 @@ namespace CPS_API.Repositories
         }
 
         #endregion
+
+        public async Task<bool> FileContainsMetadata(ObjectIdentifiers ids)
+        {
+            var listItem = await getListItem(ids);
+            if (listItem == null) throw new Exception($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
+
+            // When metadata is unknown, we skip the synchronisation.
+            // The file is a new incomplete file or something went wrong while adding the file.
+            var additionalData = listItem.Fields.AdditionalData;
+            foreach (var fieldMapping in _globalSettings.MetadataMapping)
+            {
+                var succeeded = additionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
+                if (!succeeded)
+                {
+                    continue;
+                }
+                if (value != null)
+                {
+                    var defaultValue = fieldMapping.DefaultValue;
+                    if (defaultValue == null)
+                    {
+                        return true;
+                    }
+
+                    if (fieldMapping.FieldName == nameof(ids.ObjectId))
+                    {
+                        continue;
+                    }
+
+                    var tempMetadata = new FileMetadata();
+                    var propertyInfo = tempMetadata.GetType().GetProperty(fieldMapping.FieldName);
+                    if (propertyInfo == null)
+                    {
+                        var tempFileInfo = new FileInformation();
+                        propertyInfo = tempFileInfo.GetType().GetProperty(fieldMapping.FieldName);
+                    }
+                    if (propertyInfo == null) throw new Exception("Error while getting type of metadata");
+
+                    var stringValue = value.ToString();
+                    var stringDefaultValue = defaultValue.ToString();
+                    if (propertyInfo.PropertyType == typeof(Classification))
+                    {
+                        Enum.TryParse<Classification>(stringValue, out var enumValue);
+                        Enum.TryParse<Classification>(stringDefaultValue, out var enumDefaultValue);
+                        if (enumValue != enumDefaultValue)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(Source))
+                    {
+                        Enum.TryParse<Source>(stringValue, out var enumValue);
+                        Enum.TryParse<Source>(stringDefaultValue, out var enumDefaultValue);
+                        if (enumValue != enumDefaultValue)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(int))
+                    {
+                        var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                        var decimalDefaultValue = Convert.ToDecimal(stringDefaultValue, new CultureInfo("en-US"));
+                        if (decimalValue != decimalDefaultValue)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(DateTime))
+                    {
+                        DateTime.TryParse(stringValue, out var dateTimeValue);
+                        DateTime.TryParse(stringDefaultValue, out var dateTimeDefaultValue);
+                        if (dateTimeValue != dateTimeDefaultValue)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(string))
+                    {
+                        if (stringValue != stringDefaultValue)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (value != defaultValue)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
 
         #region Helpers
 
