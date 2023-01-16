@@ -216,6 +216,10 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/metadata")]
         public async Task<IActionResult> UpdateFileMetadata(string objectId, [FromBody] FileInformation fileInfo)
         {
+            if (fileInfo.Ids == null)
+            {
+                fileInfo.Ids = new ObjectIdentifiers();
+            }
             fileInfo.Ids.ObjectId = objectId;
 
             try

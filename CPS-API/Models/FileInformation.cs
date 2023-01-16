@@ -5,7 +5,7 @@ namespace CPS_API.Models
 
     public class FileInformation
     {
-        public ObjectIdentifiers Ids { get; set; }
+        public ObjectIdentifiers? Ids { get; set; }
 
         public string MimeType { get; set; } = string.Empty;
 

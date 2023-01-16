@@ -223,6 +223,12 @@ namespace CPS_API.Repositories
 
         public async Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false)
         {
+            // Get File metadata
+            // When updating content, all metadata gets remove for the file.
+            // After de content update, we perform a metadata update to keep the metadata.
+            // TODO: Is there a better solution?
+            var metadata = await this.GetMetadataAsync(objectId);
+
             // Get objectIdentifiers
             ObjectIdentifiersEntity? ids;
             try
@@ -253,6 +259,21 @@ namespace CPS_API.Repositories
                 // TODO: Log error in App Insights
 
                 throw new Exception("Error while updating driveItem", ex);
+            }
+
+            // Update metadata in Sharepoint with Graph
+            if (metadata != null)
+            {
+                try
+                {
+                    await UpdateMetadataWithoutExternalReferencesAsync(metadata);
+                }
+                catch (Exception ex)
+                {
+                    // TODO: Log error in App Insights
+
+                    throw new Exception("Error while updating metadata");
+                }
             }
         }
 

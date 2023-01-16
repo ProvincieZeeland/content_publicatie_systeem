@@ -92,15 +92,19 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids)
         {
-            if (ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
+            if ((ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
+                && (!ids.SiteId.IsNullOrEmpty() && !ids.ListId.IsNullOrEmpty()))
             {
                 // Find driveID + driveItemID for object
                 try
                 {
                     var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId);
                     ids.DriveId = drive.Id;
-                    var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
-                    ids.DriveItemId = driveItem.Id;
+                    if (!ids.ListItemId.IsNullOrEmpty())
+                    {
+                        var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
+                        ids.DriveItemId = driveItem.Id;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -108,7 +112,8 @@ namespace CPS_API.Repositories
                 }
             }
 
-            if (ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty())
+            if ((ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty())
+                && (!ids.DriveId.IsNullOrEmpty() && !ids.DriveItemId.IsNullOrEmpty()))
             {
                 // Find sharepoint Ids from drive
                 try
@@ -117,6 +122,25 @@ namespace CPS_API.Repositories
                     ids.SiteId = driveItem.SharepointIds.SiteId;
                     ids.ListId = driveItem.SharepointIds.ListId;
                     ids.ListItemId = driveItem.SharepointIds.ListItemId;
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error while getting SharePoint Ids", ex);
+                }
+            }
+
+            if (!ids.ObjectId.IsNullOrEmpty() &&
+                (ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty()
+                || ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty()))
+            {
+                try
+                {
+                    var idsFromStorageTable = await this.GetObjectIdentifiersAsync(ids.ObjectId);
+                    ids.DriveId = idsFromStorageTable.DriveId;
+                    ids.DriveItemId = idsFromStorageTable.DriveItemId;
+                    ids.SiteId = idsFromStorageTable.SiteId;
+                    ids.ListId = idsFromStorageTable.ListId;
+                    ids.ListItemId = idsFromStorageTable.ListItemId;
                 }
                 catch (Exception ex)
                 {
@@ -138,10 +162,10 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            var table = _storageTableService.GetTable(Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{Constants.ObjectIdentifiersTableName}\" not found");
+                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }
