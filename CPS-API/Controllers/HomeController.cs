@@ -1,12 +1,12 @@
-﻿using CPS_API.Models;
+﻿using System.Diagnostics;
+using System.Net;
+using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
-using System.Diagnostics;
-using System.Net;
 
 namespace CPS_API.Controllers
 {
@@ -44,11 +44,11 @@ namespace CPS_API.Controllers
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(403, "Access denied");
+                return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (FileNotFoundException ex)
             {
-                return NotFound(ex.Message ?? "Url not found!");
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -58,7 +58,7 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
+            if (fileUrl.IsNullOrEmpty()) return StatusCode(500, "Error while getting url");
 
             return Ok(fileUrl);
         }
@@ -75,11 +75,11 @@ namespace CPS_API.Controllers
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(403, "Access denied");
+                return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (FileNotFoundException ex)
             {
-                return NotFound(ex.Message ?? "Url not found!");
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -89,7 +89,7 @@ namespace CPS_API.Controllers
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (metadata == null) return NotFound("Metadata not found");
+            if (metadata == null) return StatusCode(500, "Error while getting metadata");
 
             return Ok(metadata);
         }

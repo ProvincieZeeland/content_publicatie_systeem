@@ -1,9 +1,11 @@
-﻿using CPS_API.Models;
+﻿using System.Net;
+using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
@@ -34,19 +36,23 @@ namespace CPS_API.Controllers
             {
                 fileUrl = await _filesRepository.GetUrlAsync(objectId);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return StatusCode(403, ex.Message ?? "Access denied");
             }
             catch (FileNotFoundException ex)
             {
-                return NotFound(ex.Message ?? "Url not found!");
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (fileUrl.IsNullOrEmpty()) return NotFound("Url not found");
+            if (fileUrl.IsNullOrEmpty()) return StatusCode(500, "Error while getting url");
 
             return Ok(fileUrl);
         }
@@ -61,19 +67,23 @@ namespace CPS_API.Controllers
             {
                 metadata = await _filesRepository.GetMetadataAsync(objectId);
             }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return StatusCode(403, ex.Message ?? "Access denied");
             }
             catch (FileNotFoundException ex)
             {
-                return NotFound(ex.Message ?? "Url not found!");
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
-            if (metadata == null) return NotFound("Metadata not found");
+            if (metadata == null) return StatusCode(500, "Error while getting metadata");
 
             return Ok(metadata);
         }
@@ -88,19 +98,19 @@ namespace CPS_API.Controllers
                 var spoIds = await _filesRepository.CreateFileAsync(file);
                 objectId = spoIds.ObjectId;
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while getting metadata");
+                return StatusCode(500, ex.Message ?? "Error while creating file");
             }
-            if (objectId.IsNullOrEmpty()) return NotFound("ObjectId not found");
+            if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating file");
 
             return Ok(objectId);
         }
@@ -154,19 +164,19 @@ namespace CPS_API.Controllers
                 var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
                 objectId = spoIds.ObjectId;
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while getting metadata");
+                return StatusCode(500, ex.Message ?? "Error while creating large file");
             }
-            if (objectId.IsNullOrEmpty()) return NotFound("ObjectId not found");
+            if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating large file");
 
             return Ok(objectId);
         }
@@ -177,24 +187,26 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)
         {
-            bool succeeded;
             try
             {
-                succeeded = await _filesRepository.UpdateContentAsync(Request, objectId, content);
+                await _filesRepository.UpdateContentAsync(objectId, content);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while updating content");
             }
-            if (!succeeded) return NotFound("Error while updating content");
 
             return Ok();
         }
@@ -210,17 +222,21 @@ namespace CPS_API.Controllers
             {
                 await _filesRepository.UpdateMetadataAsync(fileInfo);
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
-            catch (FileNotFoundException ex)
-            {
-                return NotFound(ex.Message ?? "Url not found!");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while getting metadata");
+                return StatusCode(500, ex.Message ?? "Error while updating metadata");
             }
 
             return Ok();

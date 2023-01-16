@@ -1,8 +1,10 @@
-﻿using CPS_API.Models;
+﻿using System.Net;
+using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph;
 
 namespace CPS_API.Controllers
 {
@@ -26,13 +28,21 @@ namespace CPS_API.Controllers
                 string objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
                 return Ok(objectId);
             }
-            catch (UnauthorizedAccessException ex)
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                return StatusCode(401);
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? $"File not found by objectIdentifiers");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                return StatusCode(500, ex.Message ?? "Error while creating objectId");
             }
         }
     }

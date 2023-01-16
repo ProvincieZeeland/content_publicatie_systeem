@@ -1,4 +1,6 @@
-﻿using CPS_API.Helpers;
+﻿using System.Text;
+using System.Text.Json;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
 using CPS_API.Services;
@@ -9,8 +11,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
-using System.Text;
-using System.Text.Json;
 
 namespace CPS_API.Controllers
 {
@@ -63,7 +63,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, "Error while getting LastSynchronisation");
+                return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
             if (startDate == null) startDate = DateTime.Now.Date;
 
@@ -75,7 +75,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, "Error while getting new documents");
+                return StatusCode(500, ex.Message ?? "Error while getting new documents");
             }
             if (newItems == null) return StatusCode(500, "Error while getting new documents");
 
@@ -214,17 +214,15 @@ namespace CPS_API.Controllers
 
             var fileName = $"{objectIdentifiersEntity.ObjectId}.{name}";
             var fileLocation = "";
-            bool succeeded;
             try
             {
-                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
                 //todo: get full filelocation for sending to callback?
             }
             catch (Exception ex)
             {
                 throw new Exception("Error while uploading document");
             }
-            if (!succeeded) throw new Exception("Error while uploading document");
 
             string metadataXml;
             try
@@ -239,13 +237,12 @@ namespace CPS_API.Controllers
             var metadataName = fileName + ".xml";
             try
             {
-                succeeded = await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
                 throw new Exception("Error while uploading metadata");
             }
-            if (!succeeded) throw new Exception("Error while uploading metadata");
 
             return fileLocation;
         }
@@ -338,27 +335,29 @@ namespace CPS_API.Controllers
 
         private async Task DeleteFileAndXmlFromFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity)
         {
-            bool succeeded;
             try
             {
-                succeeded = await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
                 throw new Exception("Error while deleting document");
             }
-            if (!succeeded) throw new Exception("Error while deleting document");
         }
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            if (table == null)
+            {
+                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
+            }
+            return table;
         }
 
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string driveItemId)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (objectIdentifiersTable == null) throw new ArgumentNullException(nameof(objectIdentifiersTable));
 
             var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);

@@ -16,7 +16,7 @@ namespace CPS_API.Repositories
 
         Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile);
 
-        Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content, bool getAsUser = false);
+        Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false);
 
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
@@ -221,7 +221,7 @@ namespace CPS_API.Repositories
             return ids;
         }
 
-        public async Task<bool> UpdateContentAsync(HttpRequest Request, string objectId, byte[] content, bool getAsUser = false)
+        public async Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false)
         {
             // Get objectIdentifiers
             ObjectIdentifiersEntity? ids;
@@ -254,8 +254,6 @@ namespace CPS_API.Repositories
 
                 throw new Exception("Error while updating driveItem", ex);
             }
-
-            return true;
         }
 
         #region Metadata

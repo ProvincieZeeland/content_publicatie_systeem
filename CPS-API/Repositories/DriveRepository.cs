@@ -100,10 +100,6 @@ namespace CPS_API.Repositories
         public async Task<List<string>> GetKnownDrivesAsync()
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (objectIdentifiersTable == null)
-            {
-                return null;
-            }
 
             var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(new TableQuery<ObjectIdentifiersEntity>(), null);
             var objectIdentifiersEntities = result.Results;
@@ -254,7 +250,12 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            if (table == null)
+            {
+                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
+            }
+            return table;
         }
 
         public async Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false)

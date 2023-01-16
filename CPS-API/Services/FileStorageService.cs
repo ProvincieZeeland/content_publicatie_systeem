@@ -13,11 +13,11 @@ namespace CPS_API.Helpers
 
         Task<byte[]> GetContentAsync(string containerName, string filename);
 
-        Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype, string objectId);
+        Task CreateAsync(string containerName, string filename, string content, string contenttype, string objectId);
 
-        Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId);
+        Task CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId);
 
-        Task<bool> DeleteAsync(string containerName, string objectId);
+        Task DeleteAsync(string containerName, string objectId);
     }
 
     public class FileStorageService : IFileStorageService
@@ -131,7 +131,7 @@ namespace CPS_API.Helpers
             }
         }
 
-        public async Task<bool> CreateAsync(string containerName, string filename, string content, string contenttype, string objectId)
+        public async Task CreateAsync(string containerName, string filename, string content, string contenttype, string objectId)
         {
             try
             {
@@ -145,17 +145,15 @@ namespace CPS_API.Helpers
                 var tags = new Dictionary<string, string> { { "objectid", objectId } };
                 BlobClient blobClient = containerClient.GetBlobClient(filename);
                 await blobClient.UploadAsync(BinaryData.FromString(content), new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
-                return true;
             }
             catch (Exception error)
             {
                 // todo: log error to app insights
+                throw;
             }
-
-            return false;
         }
 
-        public async Task<bool> CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId)
+        public async Task CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId)
         {
             try
             {
@@ -170,24 +168,20 @@ namespace CPS_API.Helpers
                 BlobClient blobClient = containerClient.GetBlobClient(filename);
                 content.Position = 0;
                 await blobClient.UploadAsync(content, new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
-
-                return true;
             }
             catch (Exception error)
             {
                 // todo: log error to app insights
-
+                throw;
             }
             finally
             {
                 content.Close();
                 content.Dispose();
             }
-
-            return false;
         }
 
-        public async Task<bool> DeleteAsync(string containerName, string objectId)
+        public async Task DeleteAsync(string containerName, string objectId)
         {
             try
             {
@@ -207,14 +201,11 @@ namespace CPS_API.Helpers
                     var blobClient = containerClient.GetBlobClient(blobName);
                     await blobClient.DeleteAsync();
                 }
-                return true;
             }
             catch (Exception error)
             {
                 // todo: log error to app insights
             }
-
-            return false;
         }
     }
 }

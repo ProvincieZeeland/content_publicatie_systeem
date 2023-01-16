@@ -14,7 +14,7 @@ namespace CPS_API.Repositories
 
         Task<string?> GetObjectIdAsync(ObjectIdentifiers ids);
 
-        Task<bool> SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
+        Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
 
         Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids);
     }
@@ -80,11 +80,7 @@ namespace CPS_API.Repositories
             // Store objectId + backend ids in table
             try
             {
-                succeeded = await SaveObjectIdentifiersAsync(objectId, ids);
-                if (!succeeded)
-                {
-                    throw new Exception("Error while saving SharePoint ids");
-                }
+                await SaveObjectIdentifiersAsync(objectId, ids);
             }
             catch (Exception ex)
             {
@@ -142,7 +138,12 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            return _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(Constants.ObjectIdentifiersTableName);
+            if (table == null)
+            {
+                throw new Exception($"Tabel \"{Constants.ObjectIdentifiersTableName}\" not found");
+            }
+            return table;
         }
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
@@ -156,10 +157,6 @@ namespace CPS_API.Repositories
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string objectId)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (objectIdentifiersTable == null)
-            {
-                return null;
-            }
 
             var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
@@ -171,10 +168,6 @@ namespace CPS_API.Repositories
         public async Task<string?> GetObjectIdAsync(ObjectIdentifiers ids)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (objectIdentifiersTable == null)
-            {
-                return null;
-            }
 
             var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
             var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
@@ -185,17 +178,12 @@ namespace CPS_API.Repositories
             return objectIdentifiersEntity?.PartitionKey;
         }
 
-        public async Task<bool> SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
+        public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (objectIdentifiersTable == null)
-            {
-                return false;
-            }
 
             var document = new ObjectIdentifiersEntity(objectId, ids);
             await _storageTableService.SaveAsync(objectIdentifiersTable, document);
-            return true;
         }
     }
 }

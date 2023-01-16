@@ -29,6 +29,10 @@ namespace CPS_API.Repositories
         private CloudTable? GetSettingsTable()
         {
             var table = this._storageTableService.GetTable(Constants.SettingsTableName);
+            if (table == null)
+            {
+                throw new Exception($"Tabel \"{Helpers.Constants.SettingsTableName}\" not found");
+            }
             return table;
         }
 
