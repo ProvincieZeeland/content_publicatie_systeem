@@ -43,8 +43,15 @@ namespace CPS_API.Models
                     else
                     {
                         stringValue = stringValue.Replace(".", "");
-                        Enum.TryParse<ExternalApplication>(stringValue, out var enumValue);
-                        property.SetValue(this, enumValue, null);
+                        var succeeded = Enum.TryParse<ExternalApplication>(stringValue, true, out var enumValue);
+                        if (succeeded)
+                        {
+                            property.SetValue(this, enumValue, null);
+                        }
+                        else
+                        {
+                            property.SetValue(this, null, null);
+                        }
                     }
                 }
                 else

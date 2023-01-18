@@ -194,7 +194,16 @@ namespace CPS_API.Repositories
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                await UpdateMetadataWithoutExternalReferencesAsync(file.Metadata);
+                await UpdateMetadataWithoutExternalReferencesAsync(file.Metadata, isForNewFile: true);
+            }
+            catch (FieldRequiredException)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+
+                throw;
             }
             catch (Exception ex)
             {
@@ -210,6 +219,15 @@ namespace CPS_API.Repositories
             try
             {
                 await UpdateExternalReferencesAsync(file.Metadata);
+            }
+            catch (FieldRequiredException)
+            {
+                // TODO: Log error in App Insights
+
+                // Remove file from Sharepoint
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+
+                throw;
             }
             catch (Exception ex)
             {
@@ -271,6 +289,12 @@ namespace CPS_API.Repositories
                 try
                 {
                     await UpdateMetadataWithoutExternalReferencesAsync(metadata);
+                }
+                catch (FieldRequiredException)
+                {
+                    // TODO: Log error in App Insights
+
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -407,17 +431,17 @@ namespace CPS_API.Repositories
 
         public async Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
         {
-            await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser);
-            await UpdateExternalReferencesAsync(metadata, getAsUser);
+            await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser: getAsUser);
+            await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
         }
 
-        public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool getAsUser = false)
+        public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
             // map received metadata to SPO object
-            var fields = mapMetadata(metadata);
+            var fields = mapMetadata(metadata, isForNewFile);
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
@@ -430,7 +454,7 @@ namespace CPS_API.Repositories
             await request.UpdateAsync(fields);
         }
 
-        private FieldValueSet mapMetadata(FileInformation metadata)
+        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
@@ -459,46 +483,88 @@ namespace CPS_API.Repositories
                     }
 
                     // Keep the existing value, if value equals null.
-                    if (value == null)
+                    if (!isForNewFile && value == null)
                     {
                         continue;
                     }
 
-                    if (fieldMapping.Required)
+                    var fieldIsEmpty = false;
+                    if (value == null)
                     {
-                        if (propertyInfo.PropertyType == typeof(DateTime?))
+                        fieldIsEmpty = true;
+                    }
+                    else if (propertyInfo.PropertyType == typeof(DateTime?))
+                    {
+                        var stringValue = value.ToString();
+                        DateTime.TryParse(stringValue, out var dateValue);
+                        if (dateValue == DateTime.MinValue)
                         {
-                            var stringValue = value.ToString();
-                            DateTime.TryParse(stringValue, out var dateValue);
-                            if (dateValue == DateTime.MinValue)
+                            fieldIsEmpty = true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(int?))
+                    {
+                        var stringValue = value.ToString();
+                        var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                        if (decimalValue == 0)
+                        {
+                            fieldIsEmpty = true;
+                        }
+                    }
+                    else if (propertyInfo.PropertyType == typeof(string))
+                    {
+                        var stringValue = value.ToString();
+                        if (stringValue == string.Empty)
+                        {
+                            fieldIsEmpty = true;
+                        }
+                    }
+
+                    if (fieldMapping.Required && fieldIsEmpty)
+                    {
+                        if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                        {
+                            if (fieldMapping.DefaultValue.ToString() == "DateTime.Now")
                             {
-                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                                value = DateTime.Now;
+                            }
+                            else if (fieldMapping.DefaultValue.ToString() == "PublicationDate + RetentionPeriod")
+                            {
+                                var date = metadata.AdditionalMetadata.PublicationDate;
+                                if (date == null)
+                                {
+                                    date = DateTime.Now;
+                                }
+                                if (date != null && metadata.AdditionalMetadata.RetentionPeriod != null)
+                                {
+                                    date = date.Value.AddDays(metadata.AdditionalMetadata.RetentionPeriod.Value);
+                                    value = date;
+                                }
+                                else
+                                {
+                                    throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                                }
+                            }
+                            else
+                            {
+                                value = fieldMapping.DefaultValue;
                             }
                         }
-                        else if (propertyInfo.PropertyType == typeof(int?))
+                        else
                         {
-                            var stringValue = value.ToString();
-                            var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
-                            if (decimalValue == 0)
-                            {
-                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
-                            }
-                        }
-                        else if (propertyInfo.PropertyType == typeof(string))
-                        {
-                            var stringValue = value.ToString();
-                            if (stringValue == string.Empty)
-                            {
-                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
-                            }
+                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                         }
                     }
 
                     if (propertyInfo.PropertyType == typeof(DateTime?))
                     {
                         var stringValue = value.ToString();
-                        DateTime.TryParse(stringValue, out var dateValue);
-                        if (dateValue == DateTime.MinValue)
+                        var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
+                        if (!dateParsed)
+                        {
+                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                        }
+                        else if (dateValue == DateTime.MinValue)
                         {
                             fields.AdditionalData[fieldMapping.SpoColumnName] = null;
                         }
@@ -524,7 +590,7 @@ namespace CPS_API.Repositories
             return fields;
         }
 
-        public async Task UpdateExternalReferencesAsync(FileInformation metadata, bool getAsUser = false)
+        public async Task UpdateExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
@@ -560,7 +626,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private List<ListItem> mapExternalReferences(FileInformation metadata)
+        private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false)
         {
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
@@ -592,10 +658,27 @@ namespace CPS_API.Repositories
                             continue;
                         }
 
-                        if (fieldMapping.Required && propertyInfo.PropertyType == typeof(string))
+                        var fieldIsEmpty = false;
+                        if (value == null)
+                        {
+                            fieldIsEmpty = true;
+                        }
+                        else if (propertyInfo.PropertyType == typeof(string))
                         {
                             var stringValue = value.ToString();
                             if (stringValue == string.Empty)
+                            {
+                                fieldIsEmpty = true;
+                            }
+                        }
+
+                        if (fieldMapping.Required && fieldIsEmpty)
+                        {
+                            if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                            {
+                                value = fieldMapping.DefaultValue;
+                            }
+                            else
                             {
                                 throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                             }
@@ -657,18 +740,38 @@ namespace CPS_API.Repositories
                     var stringDefaultValue = defaultValue.ToString();
                     if (propertyInfo.PropertyType == typeof(Classification))
                     {
-                        Enum.TryParse<Classification>(stringValue, out var enumValue);
-                        Enum.TryParse<Classification>(stringDefaultValue, out var enumDefaultValue);
-                        if (enumValue != enumDefaultValue)
+                        var enumParsed = Enum.TryParse<Classification>(stringValue, true, out var enumValue);
+                        Classification? nullableEnumValue = null;
+                        if (enumParsed)
+                        {
+                            nullableEnumValue = enumValue;
+                        }
+                        enumParsed = Enum.TryParse<Classification>(stringDefaultValue, true, out var enumDefaultValue);
+                        Classification? nullableEnumDefaultValue = null;
+                        if (enumParsed)
+                        {
+                            nullableEnumDefaultValue = enumDefaultValue;
+                        }
+                        if (nullableEnumValue != nullableEnumDefaultValue)
                         {
                             return true;
                         }
                     }
                     else if (propertyInfo.PropertyType == typeof(Source))
                     {
-                        Enum.TryParse<Source>(stringValue, out var enumValue);
-                        Enum.TryParse<Source>(stringDefaultValue, out var enumDefaultValue);
-                        if (enumValue != enumDefaultValue)
+                        var enumParsed = Enum.TryParse<Source>(stringValue, true, out var enumValue);
+                        Source? nullableEnumValue = null;
+                        if (enumParsed)
+                        {
+                            nullableEnumValue = enumValue;
+                        }
+                        enumParsed = Enum.TryParse<Source>(stringDefaultValue, true, out var enumDefaultValue);
+                        Source? nullableEnumDefaultValue = null;
+                        if (enumParsed)
+                        {
+                            nullableEnumDefaultValue = enumDefaultValue;
+                        }
+                        if (nullableEnumValue != nullableEnumDefaultValue)
                         {
                             return true;
                         }
@@ -684,9 +787,19 @@ namespace CPS_API.Repositories
                     }
                     else if (propertyInfo.PropertyType == typeof(DateTime))
                     {
-                        DateTime.TryParse(stringValue, out var dateTimeValue);
-                        DateTime.TryParse(stringDefaultValue, out var dateTimeDefaultValue);
-                        if (dateTimeValue != dateTimeDefaultValue)
+                        var dateParsed = DateTime.TryParse(stringValue, out var dateTimeValue);
+                        DateTime? nullableDateValue = null;
+                        if (dateParsed)
+                        {
+                            nullableDateValue = dateTimeValue;
+                        }
+                        dateParsed = DateTime.TryParse(stringDefaultValue, out var dateTimeDefaultValue);
+                        DateTime? nullableDateDefaultValue = null;
+                        if (dateParsed)
+                        {
+                            nullableDateDefaultValue = dateTimeDefaultValue;
+                        }
+                        if (nullableDateValue != nullableDateDefaultValue)
                         {
                             return true;
                         }

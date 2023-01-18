@@ -45,8 +45,15 @@ namespace CPS_API.Models
                     }
                     else
                     {
-                        DateTime.TryParse(stringValue, out var dateValue);
-                        property.SetValue(this, dateValue, null);
+                        var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
+                        if (dateParsed)
+                        {
+                            property.SetValue(this, dateValue, null);
+                        }
+                        else
+                        {
+                            property.SetValue(this, null, null);
+                        }
                     }
                 }
                 else if (property.PropertyType == typeof(string))

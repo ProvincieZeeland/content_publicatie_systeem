@@ -34,8 +34,15 @@ namespace CPS_API.Models
                     }
                     else
                     {
-                        Enum.TryParse<Classification>(stringValue, out var enumValue);
-                        property.SetValue(this, enumValue, null);
+                        var succeeded = Enum.TryParse<Classification>(stringValue, true, out var enumValue);
+                        if (succeeded)
+                        {
+                            property.SetValue(this, enumValue, null);
+                        }
+                        else
+                        {
+                            property.SetValue(this, null, null);
+                        }
                     }
                 }
                 else if (property.PropertyType == typeof(Source?))
@@ -47,8 +54,15 @@ namespace CPS_API.Models
                     }
                     else
                     {
-                        Enum.TryParse<Source>(stringValue, out var enumValue);
-                        property.SetValue(this, enumValue, null);
+                        var succeeded = Enum.TryParse<Source>(stringValue, true, out var enumValue);
+                        if (succeeded)
+                        {
+                            property.SetValue(this, enumValue, null);
+                        }
+                        else
+                        {
+                            property.SetValue(this, null, null);
+                        }
                     }
                 }
                 else if (property.PropertyType == typeof(int?))
@@ -76,8 +90,15 @@ namespace CPS_API.Models
                     }
                     else
                     {
-                        DateTime.TryParse(stringValue, out var dateValue);
-                        property.SetValue(this, dateValue, null);
+                        var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
+                        if (dateParsed)
+                        {
+                            property.SetValue(this, dateValue, null);
+                        }
+                        else
+                        {
+                            property.SetValue(this, null, null);
+                        }
                     }
                 }
                 else if (property.PropertyType == typeof(string))
