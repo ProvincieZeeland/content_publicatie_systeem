@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Net;
+using System.Reflection;
 using CPS_API.Models;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
@@ -440,17 +441,21 @@ namespace CPS_API.Repositories
                 try
                 {
                     object? value;
+                    PropertyInfo propertyInfo;
                     if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
                     {
                         value = metadata.Ids.ObjectId;
+                        propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
                     }
                     else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
                     {
                         value = metadata[fieldMapping.FieldName];
+                        propertyInfo = metadata.GetType().GetProperty(fieldMapping.FieldName);
                     }
                     else
                     {
                         value = metadata.AdditionalMetadata[fieldMapping.FieldName];
+                        propertyInfo = metadata.AdditionalMetadata.GetType().GetProperty(fieldMapping.FieldName);
                     }
 
                     // Keep the existing value, if value equals null.
@@ -459,32 +464,40 @@ namespace CPS_API.Repositories
                         continue;
                     }
 
-                    var stringValue = value.ToString();
-                    var isDateTime = DateTime.TryParse(stringValue, out var dateValue);
                     if (fieldMapping.Required)
                     {
-                        if (isDateTime)
+                        if (propertyInfo.PropertyType == typeof(DateTime?))
                         {
+                            var stringValue = value.ToString();
+                            DateTime.TryParse(stringValue, out var dateValue);
                             if (dateValue == DateTime.MinValue)
                             {
                                 throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                             }
                         }
-                        else if (value is int intValue)
+                        else if (propertyInfo.PropertyType == typeof(int?))
                         {
-                            if (intValue == 0)
+                            var stringValue = value.ToString();
+                            var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                            if (decimalValue == 0)
                             {
                                 throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                             }
                         }
-                        else if (stringValue == string.Empty)
+                        else if (propertyInfo.PropertyType == typeof(string))
                         {
-                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            var stringValue = value.ToString();
+                            if (stringValue == string.Empty)
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
                         }
                     }
 
-                    if (isDateTime)
+                    if (propertyInfo.PropertyType == typeof(DateTime?))
                     {
+                        var stringValue = value.ToString();
+                        DateTime.TryParse(stringValue, out var dateValue);
                         if (dateValue == DateTime.MinValue)
                         {
                             fields.AdditionalData[fieldMapping.SpoColumnName] = null;
@@ -558,21 +571,41 @@ namespace CPS_API.Repositories
                 fields.AdditionalData = new Dictionary<string, object>();
                 foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
                 {
-                    if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                    try
                     {
-                        fields.AdditionalData[fieldMapping.SpoColumnName] = metadata.Ids.ObjectId;
+                        object? value;
+                        PropertyInfo propertyInfo;
+                        if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                        {
+                            value = metadata.Ids.ObjectId;
+                            propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
+                        }
+                        else
+                        {
+                            value = externalReference[fieldMapping.FieldName];
+                            propertyInfo = metadata.ExternalReferences.First().GetType().GetProperty(fieldMapping.FieldName);
+                        }
+
+                        // Keep the existing value, if value equals null.
+                        if (value == null)
+                        {
+                            continue;
+                        }
+
+                        if (fieldMapping.Required && propertyInfo.PropertyType == typeof(string))
+                        {
+                            var stringValue = value.ToString();
+                            if (stringValue == string.Empty)
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
+                        }
+
+                        fields.AdditionalData[fieldMapping.SpoColumnName] = value;
                     }
-                    else
+                    catch
                     {
-                        try
-                        {
-                            var value = externalReference[fieldMapping.FieldName];
-                            fields.AdditionalData[fieldMapping.SpoColumnName] = value;
-                        }
-                        catch
-                        {
-                            throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
-                        }
+                        throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                     }
                 }
                 listItems.Add(new ListItem { Fields = fields });
