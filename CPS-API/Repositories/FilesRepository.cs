@@ -453,7 +453,37 @@ namespace CPS_API.Repositories
                         value = metadata.AdditionalMetadata[fieldMapping.FieldName];
                     }
 
-                    if (value is DateTime dateValue)
+                    // Keep the existing value, if value equals null.
+                    if (value == null)
+                    {
+                        continue;
+                    }
+
+                    var stringValue = value.ToString();
+                    var isDateTime = DateTime.TryParse(stringValue, out var dateValue);
+                    if (fieldMapping.Required)
+                    {
+                        if (isDateTime)
+                        {
+                            if (dateValue == DateTime.MinValue)
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
+                        }
+                        else if (value is int intValue)
+                        {
+                            if (intValue == 0)
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
+                        }
+                        else if (stringValue == string.Empty)
+                        {
+                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                        }
+                    }
+
+                    if (isDateTime)
                     {
                         if (dateValue == DateTime.MinValue)
                         {
@@ -469,11 +499,14 @@ namespace CPS_API.Repositories
                         fields.AdditionalData[fieldMapping.SpoColumnName] = value;
                     }
                 }
+                catch (FieldRequiredException)
+                {
+                    throw;
+                }
                 catch
                 {
                     throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                 }
-
             }
             return fields;
         }
@@ -680,5 +713,21 @@ namespace CPS_API.Repositories
         }
 
         #endregion
+    }
+    public class FieldRequiredException : Exception
+    {
+        public FieldRequiredException()
+        {
+        }
+
+        public FieldRequiredException(string message)
+            : base(message)
+        {
+        }
+
+        public FieldRequiredException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
     }
 }

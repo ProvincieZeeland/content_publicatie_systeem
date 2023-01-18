@@ -41,6 +41,8 @@
         public string SpoColumnName { get; set; } = string.Empty;
 
         public object? DefaultValue { get; set; }
+
+        public bool Required { get; set; }
     }
 
     public class LocationMapping

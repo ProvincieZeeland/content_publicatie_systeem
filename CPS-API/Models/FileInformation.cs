@@ -7,17 +7,17 @@ namespace CPS_API.Models
     {
         public ObjectIdentifiers? Ids { get; set; }
 
-        public string CreatedBy { get; set; } = string.Empty;
+        public string? CreatedBy { get; set; }
 
-        public string ModifiedBy { get; set; } = string.Empty;
+        public string? ModifiedBy { get; set; }
 
-        public string SourceCreatedBy { get; set; } = string.Empty;
+        public string? SourceCreatedBy { get; set; }
 
-        public string SourceModifiedBy { get; set; } = string.Empty;
+        public string? SourceModifiedBy { get; set; }
 
         public new FileMetadata? AdditionalMetadata { get; set; }
 
-        public List<ExternalReferences> ExternalReferences { get; set; } = new List<ExternalReferences>();
+        public List<ExternalReferences> ExternalReferences { get; set; }
 
         [JsonIgnore]
         public object? this[string fieldname]
@@ -36,11 +36,18 @@ namespace CPS_API.Models
                 var property = this.GetType().GetProperty(fieldname);
                 if (property == null) throw new ArgumentException("Unknown property " + fieldname);
 
-                if (property.PropertyType == typeof(DateTime))
+                if (property.PropertyType == typeof(DateTime?))
                 {
                     var stringValue = value?.ToString();
-                    DateTime.TryParse(stringValue, out var dateValue);
-                    property.SetValue(this, dateValue, null);
+                    if (stringValue == null)
+                    {
+                        property.SetValue(this, null, null);
+                    }
+                    else
+                    {
+                        DateTime.TryParse(stringValue, out var dateValue);
+                        property.SetValue(this, dateValue, null);
+                    }
                 }
                 else if (property.PropertyType == typeof(string))
                 {

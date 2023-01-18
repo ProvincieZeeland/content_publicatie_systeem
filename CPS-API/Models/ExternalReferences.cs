@@ -5,7 +5,7 @@ namespace CPS_API.Models
     public class ExternalReferences
     {
         [JsonConverter(typeof(JsonStringEnumConverter))]
-        public ExternalApplication ExternalApplication { get; set; }
+        public ExternalApplication? ExternalApplication { get; set; }
 
         public string ExternalReference { get; set; } = string.Empty;
 
@@ -33,12 +33,19 @@ namespace CPS_API.Models
                     var stringValue = value?.ToString();
                     property.SetValue(this, stringValue, null);
                 }
-                else if (property.PropertyType == typeof(ExternalApplication))
+                else if (property.PropertyType == typeof(ExternalApplication?))
                 {
                     var stringValue = value?.ToString();
-                    stringValue = stringValue.Replace(".", "");
-                    var externalApplication = (ExternalApplication)Enum.Parse(typeof(ExternalApplication), stringValue, true);
-                    property.SetValue(this, externalApplication, null);
+                    if (stringValue == null)
+                    {
+                        property.SetValue(this, null, null);
+                    }
+                    else
+                    {
+                        stringValue = stringValue.Replace(".", "");
+                        Enum.TryParse<ExternalApplication>(stringValue, out var enumValue);
+                        property.SetValue(this, enumValue, null);
+                    }
                 }
                 else
                 {
