@@ -42,6 +42,28 @@ namespace CPS_API.Repositories
             // Add any missing location IDs before looking for existing.
             ids = await FindMissingIds(ids);
 
+            // Check if the ID's are valid.
+            if (ids.SiteId.IsNullOrEmpty())
+            {
+                throw new Exception(nameof(ids.SiteId) + " not found");
+            }
+            if (ids.ListId.IsNullOrEmpty())
+            {
+                throw new Exception(nameof(ids.ListId) + " not found");
+            }
+            if (ids.ListItemId.IsNullOrEmpty())
+            {
+                throw new Exception(nameof(ids.ListItemId) + " not found");
+            }
+            if (ids.DriveId.IsNullOrEmpty())
+            {
+                throw new Exception(nameof(ids.DriveId) + " not found");
+            }
+            if (ids.DriveItemId.IsNullOrEmpty())
+            {
+                throw new Exception(nameof(ids.DriveItemId) + " not found");
+            }
+
             // Check if objectIdentifiers already in table, if so; return objectId.
             var existingObjectId = await GetObjectIdAsync(ids);
             if (existingObjectId != null)
