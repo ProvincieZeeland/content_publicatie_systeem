@@ -69,7 +69,7 @@ namespace CPS_API.Controllers
             if (startDate == null) startDate = DateTime.Now.Date;
 
             // Get all new files from known locations
-            List<DriveItem> newItems;
+            List<DeltaDriveItem> newItems;
             try
             {
                 newItems = await _driveRepository.GetNewItems(startDate.Value);
@@ -91,7 +91,7 @@ namespace CPS_API.Controllers
                     ObjectIdentifiersEntity? objectIdentifiersEntity;
                     try
                     {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.Id);
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
                     }
                     catch (Exception ex)
                     {
@@ -137,7 +137,7 @@ namespace CPS_API.Controllers
             if (startDate == null) startDate = DateTime.Now.Date;
 
             // Get all updated files from known locations
-            List<DriveItem> updatedItems;
+            List<DeltaDriveItem> updatedItems;
             try
             {
                 updatedItems = await _driveRepository.GetUpdatedItems(startDate.Value);
@@ -159,7 +159,7 @@ namespace CPS_API.Controllers
                     ObjectIdentifiersEntity? objectIdentifiersEntity;
                     try
                     {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.Id);
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
                     }
                     catch (Exception ex)
                     {
@@ -280,7 +280,7 @@ namespace CPS_API.Controllers
             if (startDate == null) startDate = DateTime.Now.Date;
 
             // Get all deleted files from known locations
-            List<DriveItem> deletedItems;
+            List<DeltaDriveItem> deletedItems;
             try
             {
                 deletedItems = await _driveRepository.GetDeletedItems(startDate.Value);
@@ -301,7 +301,7 @@ namespace CPS_API.Controllers
                     ObjectIdentifiersEntity? objectIdentifiersEntity;
                     try
                     {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.Id);
+                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
                     }
                     catch (Exception ex)
                     {
@@ -363,7 +363,7 @@ namespace CPS_API.Controllers
             }
         }
 
-        private CloudTable? GetObjectIdentifiersTable()
+        private CloudTable GetObjectIdentifiersTable()
         {
             var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
             if (table == null)
@@ -373,12 +373,13 @@ namespace CPS_API.Controllers
             return table;
         }
 
-        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string driveItemId)
+        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string driveId, string driveItemId)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
+            var filterDrive = TableQuery.GenerateFilterCondition("DriveId", QueryComparisons.Equal, driveId);
             var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter);
 
             var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
             return result.Results?.FirstOrDefault();

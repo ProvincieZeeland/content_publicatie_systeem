@@ -25,11 +25,11 @@ namespace CPS_API.Repositories
 
         Task<List<string>> GetKnownDrivesAsync();
 
-        Task<List<DriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false);
+        Task<List<DeltaDriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false);
 
-        Task<List<DriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false);
+        Task<List<DeltaDriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false);
 
-        Task<List<DriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false);
+        Task<List<DeltaDriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false);
 
         Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false);
     }
@@ -174,7 +174,7 @@ namespace CPS_API.Repositories
             await request.DeleteAsync();
         }
 
-        public async Task<List<DriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false)
+        public async Task<List<DeltaDriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false)
         {
             var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime >= startDate).ToList();
@@ -183,7 +183,7 @@ namespace CPS_API.Repositories
             return newItems;
         }
 
-        public async Task<List<DriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false)
+        public async Task<List<DeltaDriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false)
         {
             var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime < startDate).ToList();
@@ -192,7 +192,7 @@ namespace CPS_API.Repositories
             return updatedItems;
         }
 
-        public async Task<List<DriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false)
+        public async Task<List<DeltaDriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false)
         {
             var driveItems = await GetDeltaAsync(startDate, getAsUser);
             var deletedItems = driveItems.Where(item => item.Deleted != null).ToList();
@@ -201,7 +201,7 @@ namespace CPS_API.Repositories
             return deletedItems;
         }
 
-        private async Task<List<DriveItem>> GetDeltaAsync(DateTime startDate, bool getAsUser = false)
+        private async Task<List<DeltaDriveItem>> GetDeltaAsync(DateTime startDate, bool getAsUser = false)
         {
             // Get known drives
             var driveIds = await GetKnownDrivesAsync();
@@ -209,7 +209,7 @@ namespace CPS_API.Repositories
 
             // For each drive:
             // Call graph delta and get changed items since time
-            var driveItems = new List<DriveItem>();
+            var driveItems = new List<DeltaDriveItem>();
             foreach (var driveId in driveIds)
             {
                 var queryOptions = new List<QueryOption>()
@@ -226,7 +226,7 @@ namespace CPS_API.Repositories
                         request = request.WithAppOnly();
                     }
                     delta = await request.GetAsync();
-                    driveItems.AddRange(delta.CurrentPage);
+                    driveItems.AddRange(delta.CurrentPage.Select(i => MapDriveItemToDeltaItem(driveId, i)));
 
                     // Fetch additional pages for delta; we get max of 500 per request by default
                     while (delta.NextPageRequest != null)
@@ -237,7 +237,7 @@ namespace CPS_API.Repositories
                             newPageRequest = delta.NextPageRequest.WithAppOnly();
                         }
                         delta = await newPageRequest.GetAsync();
-                        driveItems.AddRange(delta.CurrentPage);
+                        driveItems.AddRange(delta.CurrentPage.Select(i => MapDriveItemToDeltaItem(driveId, i)));
                     }
                 }
                 catch (Exception ex)
@@ -245,7 +245,23 @@ namespace CPS_API.Repositories
                     throw new Exception("Error while getting changed driveItems with delta");
                 }
             }
+
+
             return driveItems;
+        }
+
+        private DeltaDriveItem MapDriveItemToDeltaItem(string driveId, DriveItem item)
+        {
+            return new DeltaDriveItem
+            {
+                Id = item.Id,
+                DriveId = driveId,
+                Name = item.Name,
+                Folder = item.Folder,
+                CreatedDateTime = item.CreatedDateTime,
+                LastModifiedDateTime = item.LastModifiedDateTime,
+                Deleted = item.Deleted
+            };
         }
 
         private CloudTable? GetObjectIdentifiersTable()
