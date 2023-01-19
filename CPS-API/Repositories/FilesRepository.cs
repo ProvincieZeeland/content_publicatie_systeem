@@ -385,7 +385,6 @@ namespace CPS_API.Repositories
                 if (value == null)
                 {
                     // log warning to insights?
-                    // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
                 }
                 if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
                 {
@@ -422,7 +421,6 @@ namespace CPS_API.Repositories
                     if (value == null)
                     {
                         // log warning to insights?
-                        // TODO: If the property has no value in Sharepoint then the column is not present in AdditionalData, how do we handle this?
                     }
                     if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
                     {
@@ -481,6 +479,11 @@ namespace CPS_API.Repositories
             {
                 try
                 {
+                    if (fieldMapping.ReadOnly)
+                    {
+                        continue;
+                    }
+
                     // TODO: Saving term does not work.
                     // Implement SharePoint API to update the following properties.
                     if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
@@ -538,10 +541,7 @@ namespace CPS_API.Repositories
                     else if (propertyInfo.PropertyType == typeof(string))
                     {
                         var stringValue = value.ToString();
-                        if (stringValue == string.Empty)
-                        {
-                            fieldIsEmpty = true;
-                        }
+                        fieldIsEmpty = (stringValue == string.Empty);
                     }
 
                     if (fieldMapping.Required && fieldIsEmpty)
@@ -551,23 +551,6 @@ namespace CPS_API.Repositories
                             if (fieldMapping.DefaultValue.ToString() == "DateTime.Now")
                             {
                                 value = DateTime.Now;
-                            }
-                            else if (fieldMapping.DefaultValue.ToString() == "PublicationDate + RetentionPeriod")
-                            {
-                                var date = metadata.AdditionalMetadata.PublicationDate;
-                                if (date == null)
-                                {
-                                    date = DateTime.Now;
-                                }
-                                if (date != null && metadata.AdditionalMetadata.RetentionPeriod != null)
-                                {
-                                    date = date.Value.AddDays(metadata.AdditionalMetadata.RetentionPeriod.Value);
-                                    value = date;
-                                }
-                                else
-                                {
-                                    throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
-                                }
                             }
                             else
                             {
@@ -680,7 +663,7 @@ namespace CPS_API.Repositories
                         else
                         {
                             value = externalReference[fieldMapping.FieldName];
-                            propertyInfo = metadata.ExternalReferences.First().GetType().GetProperty(fieldMapping.FieldName);
+                            propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
                         }
 
                         // Keep the existing value, if value equals null.
@@ -697,10 +680,7 @@ namespace CPS_API.Repositories
                         else if (propertyInfo.PropertyType == typeof(string))
                         {
                             var stringValue = value.ToString();
-                            if (stringValue == string.Empty)
-                            {
-                                fieldIsEmpty = true;
-                            }
+                            fieldIsEmpty = (stringValue == string.Empty);
                         }
 
                         if (fieldMapping.Required && fieldIsEmpty)
@@ -852,21 +832,5 @@ namespace CPS_API.Repositories
         }
 
         #endregion
-    }
-    public class FieldRequiredException : Exception
-    {
-        public FieldRequiredException()
-        {
-        }
-
-        public FieldRequiredException(string message)
-            : base(message)
-        {
-        }
-
-        public FieldRequiredException(string message, Exception inner)
-            : base(message, inner)
-        {
-        }
     }
 }
