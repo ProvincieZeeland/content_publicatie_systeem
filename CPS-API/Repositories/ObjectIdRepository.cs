@@ -204,6 +204,7 @@ namespace CPS_API.Repositories
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
+            objectId = objectId.ToUpper();
             var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
 
