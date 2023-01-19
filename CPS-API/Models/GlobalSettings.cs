@@ -43,6 +43,8 @@
         public object? DefaultValue { get; set; }
 
         public bool Required { get; set; }
+
+        public bool ReadOnly { get; set; }
     }
 
     public class LocationMapping
