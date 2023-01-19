@@ -47,9 +47,9 @@
 
     public class LocationMapping
     {
-        public Classification Classification { get; set; }
+        public string Classification { get; set; }
 
-        public Source Source { get; set; }
+        public string Source { get; set; }
 
         // Afhankelijk van SPO inrichting > wordt mogelijk anders
         public string SiteId { get; set; }

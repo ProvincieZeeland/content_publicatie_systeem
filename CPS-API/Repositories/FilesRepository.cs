@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Net;
 using System.Reflection;
+using System.Text.Json;
 using CPS_API.Models;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
@@ -212,7 +213,7 @@ namespace CPS_API.Repositories
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
-                throw new Exception("Error while updating metadata");
+                throw new Exception("Error while updating metadata", ex);
             }
 
             // Update ExternalReferences in Sharepoint with Graph
@@ -300,7 +301,7 @@ namespace CPS_API.Repositories
                 {
                     // TODO: Log error in App Insights
 
-                    throw new Exception("Error while updating metadata");
+                    throw new Exception("Error while updating metadata", ex);
                 }
             }
         }
@@ -390,7 +391,16 @@ namespace CPS_API.Repositories
                 {
                     continue;
                 }
-                else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+
+                // Term to string
+                if (value != null && (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source)))
+                {
+                    var jsonString = value.ToString();
+                    var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
+                    value = term?.Label;
+                }
+
+                if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
                 {
                     metadata[fieldMapping.FieldName] = value;
                 }
@@ -418,10 +428,17 @@ namespace CPS_API.Repositories
                     {
                         continue;
                     }
-                    else
+
+                    // Term to string
+                    if (value != null && fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
                     {
-                        externalReference[fieldMapping.FieldName] = value;
+                        var jsonString = value.ToString();
+                        var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
+                        value = term?.Label;
                     }
+
+                    externalReference[fieldMapping.FieldName] = value;
+
                 }
                 metadata.ExternalReferences.Add(externalReference);
             }
@@ -464,6 +481,13 @@ namespace CPS_API.Repositories
             {
                 try
                 {
+                    // TODO: Saving term does not work.
+                    // Implement SharePoint API to update the following properties.
+                    if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
+                    {
+                        continue;
+                    }
+
                     object? value;
                     PropertyInfo propertyInfo;
                     if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
@@ -639,6 +663,13 @@ namespace CPS_API.Repositories
                 {
                     try
                     {
+                        // TODO: Saving term does not work.
+                        // Implement SharePoint API to update the following properties.
+                        if (fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
+                        {
+                            continue;
+                        }
+
                         object? value;
                         PropertyInfo propertyInfo;
                         if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
@@ -738,45 +769,7 @@ namespace CPS_API.Repositories
 
                     var stringValue = value.ToString();
                     var stringDefaultValue = defaultValue.ToString();
-                    if (propertyInfo.PropertyType == typeof(Classification))
-                    {
-                        var enumParsed = Enum.TryParse<Classification>(stringValue, true, out var enumValue);
-                        Classification? nullableEnumValue = null;
-                        if (enumParsed)
-                        {
-                            nullableEnumValue = enumValue;
-                        }
-                        enumParsed = Enum.TryParse<Classification>(stringDefaultValue, true, out var enumDefaultValue);
-                        Classification? nullableEnumDefaultValue = null;
-                        if (enumParsed)
-                        {
-                            nullableEnumDefaultValue = enumDefaultValue;
-                        }
-                        if (nullableEnumValue != nullableEnumDefaultValue)
-                        {
-                            return true;
-                        }
-                    }
-                    else if (propertyInfo.PropertyType == typeof(Source))
-                    {
-                        var enumParsed = Enum.TryParse<Source>(stringValue, true, out var enumValue);
-                        Source? nullableEnumValue = null;
-                        if (enumParsed)
-                        {
-                            nullableEnumValue = enumValue;
-                        }
-                        enumParsed = Enum.TryParse<Source>(stringDefaultValue, true, out var enumDefaultValue);
-                        Source? nullableEnumDefaultValue = null;
-                        if (enumParsed)
-                        {
-                            nullableEnumDefaultValue = enumDefaultValue;
-                        }
-                        if (nullableEnumValue != nullableEnumDefaultValue)
-                        {
-                            return true;
-                        }
-                    }
-                    else if (propertyInfo.PropertyType == typeof(int))
+                    if (propertyInfo.PropertyType == typeof(int))
                     {
                         var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
                         var decimalDefaultValue = Convert.ToDecimal(stringDefaultValue, new CultureInfo("en-US"));

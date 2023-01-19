@@ -1,6 +1,4 @@
-﻿using System.Text.Json.Serialization;
-
-namespace CPS_API.Models
+﻿namespace CPS_API.Models
 {
     public class CallbackFileMetadata
     {
@@ -16,8 +14,7 @@ namespace CPS_API.Models
 
         public int? RetentionPeriod { get; set; }
 
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public Classification? Classification { get; set; }
+        public string Classification { get; set; }
 
         public DateTime? PublicationDate { get; set; }
 

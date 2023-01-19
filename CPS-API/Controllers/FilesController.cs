@@ -152,24 +152,8 @@ namespace CPS_API.Controllers
                         }
                     }
                 }
-
-                source = source.Replace(" ", "");
-                var enumParsed = Enum.TryParse<Source>(source, true, out var sourceAsEnum);
-                Source? sourceAsNullableEnum = null;
-                if (enumParsed)
-                {
-                    sourceAsNullableEnum = sourceAsEnum;
-                }
-                file.Metadata.AdditionalMetadata.Source = sourceAsNullableEnum;
-
-                classification = classification.Replace(" ", "");
-                Enum.TryParse<Classification>(classification, true, out var classificationAsEnum);
-                Classification? classificationAsNullableEnum = null;
-                if (enumParsed)
-                {
-                    classificationAsNullableEnum = classificationAsEnum;
-                }
-                file.Metadata.AdditionalMetadata.Classification = classificationAsNullableEnum;
+                file.Metadata.AdditionalMetadata.Source = source;
+                file.Metadata.AdditionalMetadata.Classification = classification;
 
                 var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
                 objectId = spoIds.ObjectId;

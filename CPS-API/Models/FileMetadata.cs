@@ -5,8 +5,7 @@ namespace CPS_API.Models
 {
     public class FileMetadata : CallbackFileMetadata
     {
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public Source? Source { get; set; }
+        public string Source { get; set; }
 
         [JsonIgnore]
         public object? this[string fieldname]
@@ -25,47 +24,7 @@ namespace CPS_API.Models
                 var property = this.GetType().GetProperty(fieldname);
                 if (property == null) throw new ArgumentException("Unknown property " + fieldname);
 
-                if (property.PropertyType == typeof(Classification?))
-                {
-                    var stringValue = value?.ToString();
-                    if (stringValue == null)
-                    {
-                        property.SetValue(this, null, null);
-                    }
-                    else
-                    {
-                        var succeeded = Enum.TryParse<Classification>(stringValue, true, out var enumValue);
-                        if (succeeded)
-                        {
-                            property.SetValue(this, enumValue, null);
-                        }
-                        else
-                        {
-                            property.SetValue(this, null, null);
-                        }
-                    }
-                }
-                else if (property.PropertyType == typeof(Source?))
-                {
-                    var stringValue = value?.ToString();
-                    if (stringValue == null)
-                    {
-                        property.SetValue(this, null, null);
-                    }
-                    else
-                    {
-                        var succeeded = Enum.TryParse<Source>(stringValue, true, out var enumValue);
-                        if (succeeded)
-                        {
-                            property.SetValue(this, enumValue, null);
-                        }
-                        else
-                        {
-                            property.SetValue(this, null, null);
-                        }
-                    }
-                }
-                else if (property.PropertyType == typeof(int?))
+                if (property.PropertyType == typeof(int?))
                 {
                     var stringValue = value?.ToString();
                     if (stringValue == null)
