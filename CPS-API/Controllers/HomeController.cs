@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
+using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
@@ -60,7 +61,7 @@ namespace CPS_API.Controllers
             }
             if (fileUrl.IsNullOrEmpty()) return StatusCode(500, "Error while getting url");
 
-            return Ok(fileUrl);
+            return Redirect(fileUrl);
         }
 
         [HttpGet]
