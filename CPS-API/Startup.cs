@@ -58,7 +58,7 @@ namespace CPS_API
                 .AddMicrosoftIdentityWebApp(Configuration)
                 .EnableTokenAcquisitionToCallDownstreamApi(initialScopes)
                 .AddMicrosoftGraph(Configuration.GetSection("DownstreamApi"))
-                .AddInMemoryTokenCaches();
+                .AddInMemoryTokenCaches(options => options.AbsoluteExpirationRelativeToNow = new TimeSpan(0, 30, 0)); // cache 30 min max
 
             services.AddControllersWithViews(options =>
             {
