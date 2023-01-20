@@ -17,7 +17,7 @@ namespace CPS_API.Models
 
         public new FileMetadata? AdditionalMetadata { get; set; }
 
-        public List<ExternalReferences> ExternalReferences { get; set; }
+        public List<ExternalReferences>? ExternalReferences { get; set; }
 
         [JsonIgnore]
         public object? this[string fieldname]
