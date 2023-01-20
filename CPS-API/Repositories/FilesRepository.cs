@@ -34,13 +34,20 @@ namespace CPS_API.Repositories
         private readonly IObjectIdRepository _objectIdRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
+        private readonly ILogger _logger;
 
-        public FilesRepository(GraphServiceClient graphClient, IObjectIdRepository objectIdRepository, Microsoft.Extensions.Options.IOptions<GlobalSettings> settings, IDriveRepository driveRepository)
+        public FilesRepository(
+            GraphServiceClient graphClient,
+            IObjectIdRepository objectIdRepository,
+            Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
+            IDriveRepository driveRepository,
+            ILogger<FilesRepository> logger)
         {
             _graphClient = graphClient;
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task<string> GetUrlAsync(string objectId, bool getAsUser = false)
@@ -628,15 +635,25 @@ namespace CPS_API.Repositories
             }
 
             // Add sharepoint fields with metadata
+            var i = 0;
             foreach (var listItem in listItems)
             {
-                var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
-                if (!getAsUser)
+                try
                 {
-                    request = request.WithAppOnly();
+                    var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
+                    if (!getAsUser)
+                    {
+                        request = request.WithAppOnly();
+                    }
+                    await request.AddAsync(listItem);
                 }
-                await request.AddAsync(listItem);
+                catch (Exception ex)
+                {
+                    _logger.LogError($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
+                    throw;
+                }
             }
+            i++;
         }
 
         private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false)
@@ -655,6 +672,13 @@ namespace CPS_API.Repositories
                         // TODO: Saving term does not work.
                         // Implement SharePoint API to update the following properties.
                         if (fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
+                        {
+                            continue;
+                        }
+
+                        // TODO: Saving ExternalReference (linkTitle) does not work.
+                        // Implement SharePoint API to update the following properties.
+                        if (fieldMapping.FieldName == nameof(externalReference.ExternalReference))
                         {
                             continue;
                         }

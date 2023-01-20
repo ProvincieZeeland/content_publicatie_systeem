@@ -47,6 +47,7 @@ namespace CPS_API
 
             // Application Insights
             services.AddApplicationInsightsTelemetry();
+            services.AddSingleton<ILoggerFactory, LoggerFactory>();
 
             // Add GlobalSettings
             var globalSettings = Configuration.GetSection("GlobalSettings");
