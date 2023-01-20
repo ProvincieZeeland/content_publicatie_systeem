@@ -28,13 +28,13 @@ namespace CPS_API.Controllers
         {
             var user = await _graphServiceClient.Sites.Root.Request().GetAsync();
             ViewData["ApiResult"] = user.DisplayName;
-
             return View();
         }
 
         // GET
         [HttpGet]
         [Route("content/{objectId}")]
+        [AuthorizeForScopes(Scopes = new[] { "Sites.Read.All", "Files.Read.All" })]
         //[Route("{objectId}/content")]
         public async Task<IActionResult> GetFileURL(string objectId)
         {
@@ -66,6 +66,7 @@ namespace CPS_API.Controllers
 
         [HttpGet]
         [Route("metadata/{objectId}")]
+        [AuthorizeForScopes(Scopes = new[] { "Sites.Read.All", "Files.Read.All" })]
         //[Route("{objectId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string objectId)
         {

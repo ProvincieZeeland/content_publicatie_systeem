@@ -2,11 +2,15 @@
 using CPS_API.Models;
 using CPS_API.Repositories;
 using CPS_API.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 
@@ -70,7 +74,7 @@ namespace CPS_API
             });
 
             services.AddRazorPages()
-                  .AddMicrosoftIdentityUI();
+             .AddMicrosoftIdentityUI();
 
             // Add the UI support to handle claims challenges
             services.AddServerSideBlazor()
@@ -78,22 +82,36 @@ namespace CPS_API
 
             // For API calls
             services
-                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddMicrosoftIdentityWebApi(Configuration)
-                .EnableTokenAcquisitionToCallDownstreamApi()
-                .AddInMemoryTokenCaches();
+                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                 .AddMicrosoftIdentityWebApi(Configuration)
+                 .EnableTokenAcquisitionToCallDownstreamApi()
+                 .AddInMemoryTokenCaches();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            if (env.IsDevelopment())
+            app.UseExceptionHandler(new ExceptionHandlerOptions
             {
-                app.UseDeveloperExceptionPage();
-            }
-            else
+                ExceptionHandler = async ctx =>
+                {
+                    var feature = ctx.Features.Get<IExceptionHandlerFeature>();
+                    if (feature?.Error is MsalUiRequiredException
+                        or { InnerException: MsalUiRequiredException }
+                        or { InnerException.InnerException: MsalUiRequiredException })
+                    {
+                        ctx.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
+                        ctx.Response.Redirect(ctx.Request.GetEncodedPathAndQuery());
+                    }
+                    else
+                    {
+                        ctx.Response.Redirect("/Home/Error");
+                    }
+                }
+            });
+
+            if (!env.IsDevelopment())
             {
-                app.UseExceptionHandler("/Home/Error");
                 // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
                 app.UseHsts();
             }
