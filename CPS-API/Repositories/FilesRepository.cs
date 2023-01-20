@@ -602,6 +602,12 @@ namespace CPS_API.Repositories
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
+            // Keep the existing value, if value equals null.
+            if (metadata.ExternalReferences == null)
+            {
+                return;
+            }
+
             // map received metadata to SPO object
             var listItems = mapExternalReferences(metadata);
             if (listItems == null) throw new NullReferenceException(nameof(listItems));
