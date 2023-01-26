@@ -21,6 +21,18 @@
         public List<FieldMapping> ExternalReferencesMapping { get; set; }
 
         public List<LocationMapping> LocationMapping { get; set; }
+
+        public string RootSiteUrl { get; set; } = string.Empty;
+
+        public string ClientId { get; set; } = string.Empty;
+
+        public string ClientSecret { get; set; } = string.Empty;
+
+        public string TenantId { get; set; } = string.Empty;
+
+        public string CertificatePath { get; set; } = string.Empty;
+
+        public string CertificatePassword { get; set; } = string.Empty;
     }
 
     public class AppSettings

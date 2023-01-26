@@ -9,6 +9,8 @@ namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
+        Task<Site> GetSiteAsync(string siteId, bool getAsUser = false);
+
         Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false);
 
         Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false);
@@ -45,6 +47,16 @@ namespace CPS_API.Repositories
         {
             _graphClient = graphClient;
             _storageTableService = storageTableService;
+        }
+
+        public async Task<Site> GetSiteAsync(string siteId, bool getAsUser = false)
+        {
+            var request = _graphClient.Sites[siteId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
         public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false)

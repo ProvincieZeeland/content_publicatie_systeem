@@ -6,6 +6,10 @@ using CPS_API.Models;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.SharePoint.Client;
+using Microsoft.SharePoint.Client.Taxonomy;
+using FileInformation = CPS_API.Models.FileInformation;
+using ListItem = Microsoft.Graph.ListItem;
 
 namespace CPS_API.Repositories
 {
@@ -453,6 +457,7 @@ namespace CPS_API.Repositories
 
         public async Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
         {
+            metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
             await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser: getAsUser);
             await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
         }
@@ -463,7 +468,7 @@ namespace CPS_API.Repositories
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
             // map received metadata to SPO object
-            var fields = mapMetadata(metadata, isForNewFile);
+            var fields = mapMetadata(metadata, isForNewFile, getAsUser);
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
@@ -474,9 +479,12 @@ namespace CPS_API.Repositories
                 request = request.WithAppOnly();
             }
             await request.UpdateAsync(fields);
+
+            // update terms
+            await updateTermsForMetadataAsync(metadata, isForNewFile, getAsUser);
         }
 
-        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false)
+        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
@@ -491,29 +499,13 @@ namespace CPS_API.Repositories
                         continue;
                     }
 
+                    var value = getMetadataValue(metadata, fieldMapping);
+
                     // TODO: Saving term does not work.
                     // Implement SharePoint API to update the following properties.
                     if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
                     {
                         continue;
-                    }
-
-                    object? value;
-                    PropertyInfo propertyInfo;
-                    if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
-                    {
-                        value = metadata.Ids.ObjectId;
-                        propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
-                    }
-                    else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
-                    {
-                        value = metadata[fieldMapping.FieldName];
-                        propertyInfo = metadata.GetType().GetProperty(fieldMapping.FieldName);
-                    }
-                    else
-                    {
-                        value = metadata.AdditionalMetadata[fieldMapping.FieldName];
-                        propertyInfo = metadata.AdditionalMetadata.GetType().GetProperty(fieldMapping.FieldName);
                     }
 
                     // Keep the existing value, if value equals null.
@@ -522,52 +514,11 @@ namespace CPS_API.Repositories
                         continue;
                     }
 
-                    var fieldIsEmpty = false;
-                    if (value == null)
+                    var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
+                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile);
+                    if (defaultValue != null)
                     {
-                        fieldIsEmpty = true;
-                    }
-                    else if (propertyInfo.PropertyType == typeof(DateTime?))
-                    {
-                        var stringValue = value.ToString();
-                        DateTime.TryParse(stringValue, out var dateValue);
-                        if (dateValue == DateTime.MinValue)
-                        {
-                            fieldIsEmpty = true;
-                        }
-                    }
-                    else if (propertyInfo.PropertyType == typeof(int?))
-                    {
-                        var stringValue = value.ToString();
-                        var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
-                        if (decimalValue == 0)
-                        {
-                            fieldIsEmpty = true;
-                        }
-                    }
-                    else if (propertyInfo.PropertyType == typeof(string))
-                    {
-                        var stringValue = value.ToString();
-                        fieldIsEmpty = (stringValue == string.Empty);
-                    }
-
-                    if (fieldMapping.Required && fieldIsEmpty)
-                    {
-                        if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
-                        {
-                            if (fieldMapping.DefaultValue.ToString() == "DateTime.Now")
-                            {
-                                value = DateTime.Now;
-                            }
-                            else
-                            {
-                                value = fieldMapping.DefaultValue;
-                            }
-                        }
-                        else
-                        {
-                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
-                        }
+                        value = defaultValue;
                     }
 
                     if (propertyInfo.PropertyType == typeof(DateTime?))
@@ -616,7 +567,7 @@ namespace CPS_API.Repositories
             }
 
             // map received metadata to SPO object
-            var listItems = mapExternalReferences(metadata);
+            var listItems = mapExternalReferences(metadata, getAsUser: getAsUser);
             if (listItems == null) throw new NullReferenceException(nameof(listItems));
 
             // Get existing sharepoint fields with metadata
@@ -636,6 +587,7 @@ namespace CPS_API.Repositories
 
             // Add sharepoint fields with metadata
             var i = 0;
+            var newListItems = new List<ListItem>();
             foreach (var listItem in listItems)
             {
                 try
@@ -645,7 +597,8 @@ namespace CPS_API.Repositories
                     {
                         request = request.WithAppOnly();
                     }
-                    await request.AddAsync(listItem);
+                    var newListItem = await request.AddAsync(listItem);
+                    newListItems.Add(newListItem);
                 }
                 catch (Exception ex)
                 {
@@ -654,9 +607,12 @@ namespace CPS_API.Repositories
                 }
             }
             i++;
+
+            // update terms
+            await updateTermsForExternalReferencesAsync(metadata, newListItems, isForNewFile, getAsUser);
         }
 
-        private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false)
+        private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
         {
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
@@ -669,6 +625,19 @@ namespace CPS_API.Repositories
                 {
                     try
                     {
+                        object? value;
+                        PropertyInfo propertyInfo;
+                        if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                        {
+                            value = metadata.Ids.ObjectId;
+                            propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
+                        }
+                        else
+                        {
+                            value = externalReference[fieldMapping.FieldName];
+                            propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
+                        }
+
                         // TODO: Saving term does not work.
                         // Implement SharePoint API to update the following properties.
                         if (fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
@@ -679,6 +648,204 @@ namespace CPS_API.Repositories
                         // TODO: Saving ExternalReference (linkTitle) does not work.
                         // Implement SharePoint API to update the following properties.
                         if (fieldMapping.FieldName == nameof(externalReference.ExternalReference))
+                        {
+                            continue;
+                        }
+
+                        // Keep the existing value, if value equals null.
+                        if (value == null)
+                        {
+                            continue;
+                        }
+
+                        var fieldIsEmpty = false;
+                        if (value == null)
+                        {
+                            fieldIsEmpty = true;
+                        }
+                        else if (propertyInfo.PropertyType == typeof(string))
+                        {
+                            var stringValue = value.ToString();
+                            fieldIsEmpty = (stringValue == string.Empty);
+                        }
+
+                        if (fieldMapping.Required && fieldIsEmpty)
+                        {
+                            if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                            {
+                                value = fieldMapping.DefaultValue;
+                            }
+                            else
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
+                        }
+
+                        fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                    }
+                    catch
+                    {
+                        throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                    }
+                }
+                listItems.Add(new ListItem { Fields = fields });
+            }
+
+            return listItems;
+        }
+
+        #region Terms
+
+        private async Task updateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
+        {
+            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
+
+            foreach (var fieldMapping in _globalSettings.MetadataMapping)
+            {
+                try
+                {
+                    if (fieldMapping.ReadOnly)
+                    {
+                        continue;
+                    }
+
+                    // Only try to edit the terms.
+                    if (fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.DocumentType) && fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.Classification) && fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.Source))
+                    {
+                        continue;
+                    }
+
+                    var value = getMetadataValue(metadata, fieldMapping);
+
+                    // Keep the existing value, if value equals null.
+                    if (!isForNewFile && value == null)
+                    {
+                        continue;
+                    }
+
+                    var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
+                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile);
+                    if (defaultValue != null)
+                    {
+                        value = defaultValue;
+                    }
+
+                    await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, value, getAsUser);
+                }
+                catch (FieldRequiredException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                }
+            }
+        }
+
+        private object? getMetadataValue(FileInformation metadata, FieldMapping fieldMapping)
+        {
+            PropertyInfo propertyInfo;
+            if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+            {
+                return metadata.Ids.ObjectId;
+            }
+            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+            {
+                return metadata[fieldMapping.FieldName];
+            }
+            else
+            {
+                return metadata.AdditionalMetadata[fieldMapping.FieldName];
+            }
+            return null;
+        }
+
+        private PropertyInfo getMetadataPropertyInfo(FileInformation metadata, FieldMapping fieldMapping)
+        {
+            if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+            {
+                return metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
+            }
+            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+            {
+                return metadata.GetType().GetProperty(fieldMapping.FieldName);
+            }
+            else
+            {
+                return metadata.AdditionalMetadata.GetType().GetProperty(fieldMapping.FieldName);
+            }
+        }
+
+        private object? getMetadataDefaultValue(object? value, PropertyInfo propertyInfo, FieldMapping fieldMapping, bool isForNewFile)
+        {
+            var fieldIsEmpty = isMetadataFieldEmpty(value, propertyInfo);
+            if (fieldMapping.Required && fieldIsEmpty)
+            {
+                if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                {
+                    if (fieldMapping.DefaultValue.ToString() == "DateTime.Now")
+                    {
+                        return DateTime.Now;
+                    }
+                    else
+                    {
+                        return fieldMapping.DefaultValue;
+                    }
+                }
+                else
+                {
+                    throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                }
+            }
+            return null;
+        }
+
+        private bool isMetadataFieldEmpty(object? value, PropertyInfo propertyInfo)
+        {
+            if (value == null)
+            {
+                return true;
+            }
+            else if (propertyInfo.PropertyType == typeof(DateTime?))
+            {
+                var stringValue = value.ToString();
+                DateTime.TryParse(stringValue, out var dateValue);
+                if (dateValue == DateTime.MinValue)
+                {
+                    return true;
+                }
+            }
+            else if (propertyInfo.PropertyType == typeof(int?))
+            {
+                var stringValue = value.ToString();
+                var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                if (decimalValue == 0)
+                {
+                    return true;
+                }
+            }
+            else if (propertyInfo.PropertyType == typeof(string))
+            {
+                var stringValue = value.ToString();
+                return (stringValue == string.Empty);
+            }
+            return false;
+        }
+
+        private async Task updateTermsForExternalReferencesAsync(FileInformation metadata, List<ListItem> newListItems, bool isForNewFile = false, bool getAsUser = false)
+        {
+            if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
+
+            var i = 0;
+            foreach (var externalReference in metadata.ExternalReferences)
+            {
+                foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
+                {
+                    try
+                    {
+                        // Only try to edit the terms.
+                        if (fieldMapping.FieldName != nameof(externalReference.ExternalApplication))
                         {
                             continue;
                         }
@@ -725,18 +892,115 @@ namespace CPS_API.Repositories
                             }
                         }
 
-                        fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, newListItems[i].Id, fieldMapping.SpoColumnName, value, getAsUser);
                     }
                     catch
                     {
                         throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                     }
                 }
-                listItems.Add(new ListItem { Fields = fields });
+                i++;
+            }
+        }
+        private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, object? value, bool getAsUser)
+        {
+            var site = await _driveRepository.GetSiteAsync(siteId, getAsUser);
+            if (site == null) throw new Exception("Error while getting site");
+            var displayName = site.DisplayName.Replace(" ", "");
+            var baseUrl = $"{_globalSettings.RootSiteUrl}/sites/{displayName}";
+
+            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, _globalSettings.CertificatePath, _globalSettings.CertificatePassword, _globalSettings.TenantId))
+            using (ClientContext context = await authenticationManager.GetContextAsync(baseUrl))
+            {
+                var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, value, getAsUser);
+                listItem.Update();
+                context.ExecuteQuery();
+            }
+        }
+
+        private async Task<Microsoft.SharePoint.Client.ListItem> getTermsForListItem(ClientContext context, string listId, string listItemId, string spoColumnName, object value, bool getAsUser = false)
+        {
+            // Get TermId for value
+            var taxonomySession = TaxonomySession.GetTaxonomySession(context);
+            context.Load(taxonomySession,
+                ts => ts.TermStores.Include(
+                    store => store.Name,
+                    store => store.Groups.Include(group => group.Name)
+                )
+            );
+            await context.ExecuteQueryAsync();
+
+            var term = await getTermSet(context, spoColumnName, value);
+            if (term == null) throw new Exception("Term not found");
+
+            var list = context.Web.Lists.GetById(Guid.Parse(listId));
+            var listItem = list.GetItemById(listItemId);
+
+            var fields = listItem.ParentList.Fields;
+            context.Load(fields);
+            context.ExecuteQuery();
+
+            var field = context.CastTo<TaxonomyField>(fields.GetByInternalNameOrTitle(spoColumnName));
+            context.Load(field);
+
+            var termValue = new TaxonomyFieldValue()
+            {
+                Label = term.Name,
+                TermGuid = term.Id.ToString(),
+                WssId = -1
+            };
+            field.SetFieldValueByValue(listItem, termValue);
+
+            return listItem;
+        }
+
+        private async Task<Term> getTermSet(ClientContext context, string spoColumnName, object value)
+        {
+            var taxonomySession = TaxonomySession.GetTaxonomySession(context);
+            context.Load(taxonomySession,
+                ts => ts.TermStores.Include(
+                    store => store.Name,
+                    store => store.Groups.Include(group => group.Name)
+                )
+            );
+            await context.ExecuteQueryAsync();
+            if (taxonomySession == null)
+            {
+                return null;
             }
 
-            return listItems;
+            var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();
+            if (termStore == null)
+            {
+                return null;
+            }
+
+            var termGroup = termStore.GetTermGroupByName("Provincie Zeeland");
+            await context.ExecuteQueryAsync();
+            if (termGroup == null)
+            {
+                return null;
+            }
+
+            context.Load(termGroup.TermSets);
+            await context.ExecuteQueryAsync();
+
+            var termSet = termGroup.TermSets.FirstOrDefault(item => item.Name == spoColumnName);
+            if (termSet == null)
+            {
+                return null;
+            }
+
+            var terms = termSet.GetAllTerms();
+            await context.ExecuteQueryAsync();
+
+            var term = terms.GetByName(value.ToString());
+            context.Load(term);
+            await context.ExecuteQueryAsync();
+            return term;
         }
+
+        #endregion
 
         #endregion
 
