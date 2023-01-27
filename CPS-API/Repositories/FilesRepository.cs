@@ -468,7 +468,7 @@ namespace CPS_API.Repositories
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
             // map received metadata to SPO object
-            var fields = mapMetadata(metadata, isForNewFile, getAsUser);
+            var fields = mapMetadata(metadata, isForNewFile);
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
@@ -484,7 +484,7 @@ namespace CPS_API.Repositories
             await updateTermsForMetadataAsync(metadata, isForNewFile, getAsUser);
         }
 
-        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
+        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
@@ -501,8 +501,7 @@ namespace CPS_API.Repositories
 
                     var value = getMetadataValue(metadata, fieldMapping);
 
-                    // TODO: Saving term does not work.
-                    // Implement SharePoint API to update the following properties.
+                    // Term is saved separately.
                     if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
                     {
                         continue;
@@ -572,44 +571,62 @@ namespace CPS_API.Repositories
 
             // Get existing sharepoint fields with metadata
             var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
-            var externalReferenceListItems = await getExternalReferenceListItems(metadata.Ids, getAsUser);
+            var existingListItems = await getExternalReferenceListItems(metadata.Ids, getAsUser);
 
-            // Delete existing sharepoint fields
-            foreach (var listItem in externalReferenceListItems)
-            {
-                var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items[listItem.Id].Request();
-                if (!getAsUser)
-                {
-                    request = request.WithAppOnly();
-                }
-                await request.DeleteAsync();
-            }
-
-            // Add sharepoint fields with metadata
+            // Check if we need to update the external references.
+            var newAndUpdatedLisItemIds = new List<string>();
+            var tempExternalReference = new ExternalReferences();
             var i = 0;
-            var newListItems = new List<ListItem>();
             foreach (var listItem in listItems)
             {
-                try
+                var externalApplicationSpoColumnName = _globalSettings.ExternalReferencesMapping.FirstOrDefault(mapping => mapping.FieldName == nameof(tempExternalReference.ExternalApplication))?.SpoColumnName;
+                var existingListItem = existingListItems.FirstOrDefault(item =>
+                    item.Fields.AdditionalData.TryGetValue(externalApplicationSpoColumnName, out var value)
+                    && metadata.ExternalReferences[i].ExternalApplication == JsonSerializer.Deserialize<TaxonomyItemDto>(value.ToString())?.Label
+                );
+                if (existingListItem == null)
                 {
-                    var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
-                    if (!getAsUser)
+                    // Add new external reference
+                    try
                     {
-                        request = request.WithAppOnly();
+                        var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request();
+                        if (!getAsUser)
+                        {
+                            request = request.WithAppOnly();
+                        }
+                        var newListItem = await request.AddAsync(listItem);
+                        newAndUpdatedLisItemIds.Add(newListItem.Id);
                     }
-                    var newListItem = await request.AddAsync(listItem);
-                    newListItems.Add(newListItem);
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
+                        throw;
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogError($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
-                    throw;
+                    // Update existing external reference
+                    try
+                    {
+                        var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items[existingListItem.Id].Fields.Request();
+                        if (!getAsUser)
+                        {
+                            request = request.WithAppOnly();
+                        }
+                        await request.UpdateAsync(listItem.Fields);
+                        newAndUpdatedLisItemIds.Add(existingListItem.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
+                        throw;
+                    }
                 }
+                i++;
             }
-            i++;
 
             // update terms
-            await updateTermsForExternalReferencesAsync(metadata, newListItems, isForNewFile, getAsUser);
+            await updateTermsForExternalReferencesAsync(metadata, newAndUpdatedLisItemIds, isForNewFile, getAsUser);
         }
 
         private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
@@ -638,8 +655,7 @@ namespace CPS_API.Repositories
                             propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
                         }
 
-                        // TODO: Saving term does not work.
-                        // Implement SharePoint API to update the following properties.
+                        // Term is saved separately.
                         if (fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
                         {
                             continue;
@@ -833,7 +849,7 @@ namespace CPS_API.Repositories
             return false;
         }
 
-        private async Task updateTermsForExternalReferencesAsync(FileInformation metadata, List<ListItem> newListItems, bool isForNewFile = false, bool getAsUser = false)
+        private async Task updateTermsForExternalReferencesAsync(FileInformation metadata, List<string> listItemIds, bool isForNewFile = false, bool getAsUser = false)
         {
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
@@ -892,7 +908,7 @@ namespace CPS_API.Repositories
                             }
                         }
 
-                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, newListItems[i].Id, fieldMapping.SpoColumnName, value, getAsUser);
+                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, listItemIds[i], fieldMapping.SpoColumnName, value, getAsUser);
                     }
                     catch
                     {
