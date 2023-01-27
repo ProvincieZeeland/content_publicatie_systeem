@@ -661,13 +661,6 @@ namespace CPS_API.Repositories
                             continue;
                         }
 
-                        // TODO: Saving ExternalReference (linkTitle) does not work.
-                        // Implement SharePoint API to update the following properties.
-                        if (fieldMapping.FieldName == nameof(externalReference.ExternalReference))
-                        {
-                            continue;
-                        }
-
                         // Keep the existing value, if value equals null.
                         if (value == null)
                         {
@@ -774,7 +767,6 @@ namespace CPS_API.Repositories
             {
                 return metadata.AdditionalMetadata[fieldMapping.FieldName];
             }
-            return null;
         }
 
         private PropertyInfo getMetadataPropertyInfo(FileInformation metadata, FieldMapping fieldMapping)
@@ -918,6 +910,7 @@ namespace CPS_API.Repositories
                 i++;
             }
         }
+
         private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, object? value, bool getAsUser)
         {
             var site = await _driveRepository.GetSiteAsync(siteId, getAsUser);
