@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
@@ -42,11 +43,15 @@ namespace CPS_API.Repositories
 
         private readonly StorageTableService _storageTableService;
 
+        private readonly GlobalSettings _globalSettings;
+
         public DriveRepository(GraphServiceClient graphClient,
-                               StorageTableService storageTableService)
+                               StorageTableService storageTableService,
+                                IOptions<GlobalSettings> settings)
         {
             _graphClient = graphClient;
             _storageTableService = storageTableService;
+            _globalSettings = settings.Value;
         }
 
         public async Task<Site> GetSiteAsync(string siteId, bool getAsUser = false)
@@ -278,10 +283,10 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
+                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }

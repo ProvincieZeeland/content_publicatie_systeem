@@ -2,17 +2,17 @@
 {
     public class ObjectIdentifiers
     {
-        public string ObjectId { get; set; }
+        public string? ObjectId { get; set; }
 
-        public string SiteId { get; set; }
+        public string? SiteId { get; set; }
 
-        public string ListId { get; set; }
+        public string? ListId { get; set; }
 
-        public string ListItemId { get; set; }
+        public string? ListItemId { get; set; }
 
-        public string DriveId { get; set; }
+        public string? DriveId { get; set; }
 
-        public string DriveItemId { get; set; }
+        public string? DriveItemId { get; set; }
 
         public string? ExternalReferenceListId { get; set; }
 

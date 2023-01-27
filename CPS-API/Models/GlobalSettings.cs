@@ -6,9 +6,21 @@
 
         public string FileStorageConnectionstring { get; set; } = string.Empty;
 
-        public string ObjectIdentifiersTable { get; set; } = string.Empty;
+        public string ObjectIdentifiersTableName { get; set; } = string.Empty;
 
-        public string AppSettingsTable { get; set; } = string.Empty;
+        public string SettingsTableName { get; set; } = string.Empty;
+
+        public string SettingsPartitionKey { get; set; } = string.Empty;
+
+        public string SettingsSequenceRowKey { get; set; } = string.Empty;
+
+        public string SettingsLastSynchronisationNewRowKey { get; set; } = string.Empty;
+
+        public string SettingsLastSynchronisationChangedRowKey { get; set; } = string.Empty;
+
+        public string SettingsLastSynchronisationDeletedRowKey { get; set; } = string.Empty;
+
+        public string ContentContainerName { get; set; } = string.Empty;
 
         public string CallbackUrl { get; set; } = string.Empty;
 

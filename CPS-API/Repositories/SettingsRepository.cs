@@ -1,5 +1,6 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
@@ -21,17 +22,21 @@ namespace CPS_API.Repositories
     {
         private readonly StorageTableService _storageTableService;
 
-        public SettingsRepository(StorageTableService storageTableService)
+        private readonly GlobalSettings _globalSettings;
+
+        public SettingsRepository(StorageTableService storageTableService,
+                                  IOptions<GlobalSettings> settings)
         {
-            this._storageTableService = storageTableService;
+            _storageTableService = storageTableService;
+            _globalSettings = settings.Value;
         }
 
         private CloudTable? GetSettingsTable()
         {
-            var table = this._storageTableService.GetTable(Constants.SettingsTableName);
+            var table = this._storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{Helpers.Constants.SettingsTableName}\" not found");
+                throw new Exception($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
             }
             return table;
         }
@@ -44,7 +49,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsSequenceRowKey, settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, settingsTable);
             if (currentSetting == null) throw new Exception("Error while getting SequenceNumber");
             return currentSetting.SequenceNumber;
         }
@@ -57,7 +62,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationNewRowKey, settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationNew;
         }
@@ -70,7 +75,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationChangedRowKey, settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationChanged;
         }
@@ -83,7 +88,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(Constants.SettingsPartitionKey, Constants.SettingsLastSynchronisationDeletedRowKey, settingsTable);
+            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationDeletedRowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationDeleted;
         }

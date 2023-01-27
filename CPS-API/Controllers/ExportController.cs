@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -232,7 +231,7 @@ namespace CPS_API.Controllers
             var fileName = $"{objectIdentifiersEntity.ObjectId}.{name}";
             try
             {
-                await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
                 //todo: get full filelocation for sending to callback?
             }
             catch (Exception ex)
@@ -253,7 +252,7 @@ namespace CPS_API.Controllers
             var metadataName = fileName + ".xml";
             try
             {
-                await _fileStorageService.CreateAsync(Helpers.Constants.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -355,7 +354,7 @@ namespace CPS_API.Controllers
         {
             try
             {
-                await _fileStorageService.DeleteAsync(Helpers.Constants.ContentContainerName, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -365,10 +364,10 @@ namespace CPS_API.Controllers
 
         private CloudTable GetObjectIdentifiersTable()
         {
-            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
+                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }

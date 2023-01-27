@@ -80,7 +80,7 @@ namespace CPS_API.Repositories
 
             // Increase sequencenr and store in table
             var sequence = currentSequenceNumber.Value + 1;
-            var newSetting = new SettingsEntity(sequence);
+            var newSetting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, sequence);
             bool succeeded;
             try
             {
@@ -184,10 +184,10 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetObjectIdentifiersTable()
         {
-            var table = _storageTableService.GetTable(Helpers.Constants.ObjectIdentifiersTableName);
+            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{Helpers.Constants.ObjectIdentifiersTableName}\" not found");
+                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }
