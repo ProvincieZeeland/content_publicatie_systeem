@@ -8,7 +8,7 @@ namespace CPS_API.Repositories
 {
     public interface IObjectIdRepository
     {
-        Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids);
+        Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids, bool getAsUser = false);
 
         Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId);
 
@@ -16,7 +16,7 @@ namespace CPS_API.Repositories
 
         Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
 
-        Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids);
+        Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false);
     }
 
     public class ObjectIdRepository : IObjectIdRepository
@@ -37,10 +37,10 @@ namespace CPS_API.Repositories
             _globalSettings = settings.Value;
         }
 
-        public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids)
+        public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids, bool getAsUser = false)
         {
             // Add any missing location IDs before looking for existing.
-            ids = await FindMissingIds(ids);
+            ids = await FindMissingIds(ids, getAsUser);
 
             // Check if the ID's are valid.
             if (ids.SiteId.IsNullOrEmpty())
@@ -112,25 +112,34 @@ namespace CPS_API.Repositories
             return objectId;
         }
 
-        public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids)
+        public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false)
         {
             if ((ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
                 && (!ids.SiteId.IsNullOrEmpty() && !ids.ListId.IsNullOrEmpty()))
             {
-                // Find driveID + driveItemID for object
+                // Find driveID for object
                 try
                 {
-                    var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId);
+                    var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId, getAsUser);
                     ids.DriveId = drive.Id;
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error while getting driveId", ex);
+                }
+
+                // Find driveItemID for object
+                try
+                {
                     if (!ids.ListItemId.IsNullOrEmpty())
                     {
-                        var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId);
+                        var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser: getAsUser);
                         ids.DriveItemId = driveItem.Id;
                     }
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting driveId + driveItemId", ex);
+                    throw new Exception("Error while getting driveItemId", ex);
                 }
             }
 
@@ -140,7 +149,7 @@ namespace CPS_API.Repositories
                 // Find sharepoint Ids from drive
                 try
                 {
-                    var driveItem = await _driveRepository.GetDriveItemIdsAsync(ids.DriveId, ids.DriveItemId);
+                    var driveItem = await _driveRepository.GetDriveItemIdsAsync(ids.DriveId, ids.DriveItemId, getAsUser);
                     ids.SiteId = driveItem.SharepointIds.SiteId;
                     ids.ListId = driveItem.SharepointIds.ListId;
                     ids.ListItemId = driveItem.SharepointIds.ListItemId;

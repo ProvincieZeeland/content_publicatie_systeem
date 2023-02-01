@@ -91,7 +91,7 @@ namespace CPS_API.Repositories
             {
                 request = request.WithAppOnly();
             }
-            return await request.Select("*").GetAsync();
+            return await request.GetAsync();
         }
 
         public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false)

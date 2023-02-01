@@ -457,7 +457,7 @@ namespace CPS_API.Repositories
 
         public async Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
         {
-            metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
             await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser: getAsUser);
             await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
         }
@@ -472,7 +472,7 @@ namespace CPS_API.Repositories
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
-            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
             var request = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
             if (!getAsUser)
             {
@@ -570,7 +570,7 @@ namespace CPS_API.Repositories
             if (listItems == null) throw new NullReferenceException(nameof(listItems));
 
             // Get existing sharepoint fields with metadata
-            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
             var existingListItems = await getExternalReferenceListItems(metadata.Ids, getAsUser);
 
             // Check if we need to update the external references.
