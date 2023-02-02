@@ -228,7 +228,7 @@ namespace CPS_API.Controllers
             }
             if (stream == null) throw new Exception("Error while getting content");
 
-            var fileName = $"{objectIdentifiersEntity.ObjectId}.{name}";
+            var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
             try
             {
                 await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
@@ -249,10 +249,10 @@ namespace CPS_API.Controllers
                 throw new Exception("Error while exporting metadata to xml");
             }
 
-            var metadataName = fileName + ".xml";
+            var metadataName = objectIdentifiersEntity.ObjectId + ".xml";
             try
             {
-                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.CreateAsync(_globalSettings.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -355,6 +355,7 @@ namespace CPS_API.Controllers
             try
             {
                 await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.DeleteAsync(_globalSettings.MetadataContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {

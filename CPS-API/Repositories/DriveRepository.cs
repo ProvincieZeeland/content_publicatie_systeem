@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
 {
@@ -25,8 +24,6 @@ namespace CPS_API.Repositories
         Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
-
-        Task<List<string>> GetKnownDrivesAsync();
 
         Task<List<DeltaDriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false);
 
@@ -112,20 +109,6 @@ namespace CPS_API.Repositories
                 request = request.WithAppOnly();
             }
             return await request.Select("sharepointids").GetAsync();
-        }
-
-        public async Task<List<string>> GetKnownDrivesAsync()
-        {
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
-
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(new TableQuery<ObjectIdentifiersEntity>(), null);
-            var objectIdentifiersEntities = result.Results;
-            if (objectIdentifiersEntities == null)
-            {
-                return null;
-            }
-
-            return objectIdentifiersEntities.Where(item => item.DriveId != null).Select(item => item.DriveId).Distinct().ToList();
         }
 
         public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false)
@@ -220,8 +203,8 @@ namespace CPS_API.Repositories
 
         private async Task<List<DeltaDriveItem>> GetDeltaAsync(DateTime startDate, bool getAsUser = false)
         {
-            // Get known drives
-            var driveIds = await GetKnownDrivesAsync();
+            // Get all public drives
+            var driveIds = _globalSettings.PublicDriveIds;
             if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
 
             // For each drive:
@@ -279,16 +262,6 @@ namespace CPS_API.Repositories
                 LastModifiedDateTime = item.LastModifiedDateTime,
                 Deleted = item.Deleted
             };
-        }
-
-        private CloudTable? GetObjectIdentifiersTable()
-        {
-            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
-            if (table == null)
-            {
-                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
-            }
-            return table;
         }
 
         public async Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false)
