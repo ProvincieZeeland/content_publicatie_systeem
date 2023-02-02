@@ -1,6 +1,8 @@
-﻿using CPS_API.Helpers;
+﻿using System.Net;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -123,6 +125,14 @@ namespace CPS_API.Repositories
                     var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId, getAsUser);
                     ids.DriveId = drive.Id;
                 }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && ex.Error?.Message == "Invalid hostname for this tenancy")
+                {
+                    throw new FileNotFoundException("The specified site was not found", ex);
+                }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    throw new FileNotFoundException((ex.Error == null ? ex.Message : ex.Error.Message) ?? "Drive not found", ex);
+                }
                 catch (Exception ex)
                 {
                     throw new Exception("Error while getting driveId", ex);
@@ -136,6 +146,10 @@ namespace CPS_API.Repositories
                         var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser: getAsUser);
                         ids.DriveItemId = driveItem.Id;
                     }
+                }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
+                {
+                    throw new FileNotFoundException("The specified listItem was not found", ex);
                 }
                 catch (Exception ex)
                 {
@@ -153,6 +167,14 @@ namespace CPS_API.Repositories
                     ids.SiteId = driveItem.SharepointIds.SiteId;
                     ids.ListId = driveItem.SharepointIds.ListId;
                     ids.ListItemId = driveItem.SharepointIds.ListItemId;
+                }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && ex.Error?.Message == "The provided drive id appears to be malformed, or does not represent a valid drive.")
+                {
+                    throw new FileNotFoundException("The specified drive was not found", ex);
+                }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
+                {
+                    throw new FileNotFoundException("The specified driveItem was not found", ex);
                 }
                 catch (Exception ex)
                 {
