@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Text.Json;
 using CPS_API.Models;
 using Microsoft.Graph;
+using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
@@ -73,6 +74,14 @@ namespace CPS_API.Repositories
                 driveItem = await _driveRepository.GetDriveItemAsync(objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId, getAsUser);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw ex;
+            }
+            catch (MsalUiRequiredException ex)
+            {
+                throw ex;
+            }
+            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
                 throw ex;
             }
@@ -335,6 +344,14 @@ namespace CPS_API.Repositories
                 listItem = await getListItem(metadata.Ids, getAsUser);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw ex;
+            }
+            catch (MsalUiRequiredException ex)
+            {
+                throw ex;
+            }
+            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
                 throw ex;
             }
