@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Net;
 using System.Reflection;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using CPS_API.Models;
 using Microsoft.Graph;
@@ -930,17 +931,30 @@ namespace CPS_API.Repositories
 
         private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, object? value, bool getAsUser)
         {
+            if (_globalSettings.CertificateThumbprint.IsNullOrEmpty())
+            {
+                return;
+            }
+
             var site = await _driveRepository.GetSiteAsync(siteId, getAsUser);
             if (site == null) throw new Exception("Error while getting site");
             var displayName = site.DisplayName.Replace(" ", "");
             var baseUrl = $"{_globalSettings.RootSiteUrl}/sites/{displayName}";
 
-            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, _globalSettings.CertificatePath, _globalSettings.CertificatePassword, _globalSettings.TenantId))
-            using (ClientContext context = await authenticationManager.GetContextAsync(baseUrl))
+            try
             {
-                var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, value, getAsUser);
-                listItem.Update();
-                context.ExecuteQuery();
+                using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
+                using (ClientContext context = await authenticationManager.GetContextAsync(baseUrl))
+                {
+                    var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, value, getAsUser);
+                    listItem.Update();
+                    context.ExecuteQuery();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error while updating terms (SpoColumnName = {SpoColumnName}, baseUrl = {baseUrl}). Error: {ex.Message}");
+                throw new Exception("Error while updating terms");
             }
         }
 

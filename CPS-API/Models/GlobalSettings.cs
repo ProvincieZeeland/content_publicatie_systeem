@@ -44,9 +44,7 @@
 
         public string TenantId { get; set; } = string.Empty;
 
-        public string CertificatePath { get; set; } = string.Empty;
-
-        public string CertificatePassword { get; set; } = string.Empty;
+        public string CertificateThumbprint { get; set; } = string.Empty;
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
     }
