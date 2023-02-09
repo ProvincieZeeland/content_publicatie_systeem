@@ -1015,7 +1015,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var termGroup = termStore.GetTermGroupByName("Provincie Zeeland");
+            var termGroup = termStore.GetTermGroupByName("Content Publicatiesysteem");
             await context.ExecuteQueryAsync();
             if (termGroup == null)
             {
