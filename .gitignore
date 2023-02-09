@@ -1,0 +1,10 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/CPS-API/.vs
+/CPS-API/bin
+/CPS-API/obj
+/CPS-API/CPS-API.csproj.user
+/.vs/content_publicatie_systeem/FileContentIndex/623200e2-350a-49de-8e4d-fd6c2a1793e2.vsidx
+/CPS-API/appsettings.Development.json
