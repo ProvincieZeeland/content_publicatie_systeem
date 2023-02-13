@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "CPS_Jobs": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7220",
+      "launchBrowser": false
+    }
+  }
+}
