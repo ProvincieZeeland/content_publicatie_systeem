@@ -21,7 +21,9 @@ namespace CPS_Jobs
                     sharedOptions.DefaultScheme = Constants.Bearer;
                     sharedOptions.DefaultChallengeScheme = Constants.Bearer;
                 })
-                .AddMicrosoftIdentityWebApi(configuration);
+                .AddMicrosoftIdentityWebApi(configuration)
+                .EnableTokenAcquisitionToCallDownstreamApi()
+                .AddInMemoryTokenCaches();
         }
     }
 

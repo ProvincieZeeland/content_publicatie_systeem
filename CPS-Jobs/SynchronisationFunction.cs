@@ -8,6 +8,7 @@ using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace CPS_Jobs
 {
@@ -28,35 +29,47 @@ namespace CPS_Jobs
         {
             log.LogInformation($"CPS Timer trigger function started at: {DateTime.Now}");
 
-            List<Task> tasks = new List<Task>();
+            string scope = _configuration.GetValue<string>("Settings:Scope");
+            string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
 
+            if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
+            if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
+
+
+            List<Task> tasks = new List<Task>();
             // Start New sync            
-            tasks.Add(callService("/Export/new"));
+            tasks.Add(callService(baseUrl, scope, "/Export/new", log));
 
             // Start Update sync  
-            tasks.Add(callService("/Export/updated"));
+            tasks.Add(callService(baseUrl, scope, "/Export/updated", log));
 
             // Start Delete sync  
-            tasks.Add(callService("/Export/deleted"));
+            tasks.Add(callService(baseUrl, scope, "/Export/deleted", log));
 
             // Wait for all to finish
             await Task.WhenAll(tasks);
         }
 
-        private async Task callService(string url)
+        private async Task callService(string baseUrl, string scope, string url, ILogger log)
         {
-            string token = await _tokenAcquisition.GetAccessTokenForAppAsync(_configuration.GetValue<string>("Settings:Scope"));
-            string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
-
-            using (var client = new HttpClient())
+            try
             {
-                var method = HttpMethod.Post;
-                var request = new HttpRequestMessage(method, baseUrl + url);
-                request.Headers.Accept.Clear();
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                string token = await _tokenAcquisition.GetAccessTokenForAppAsync(scope);
+                using (var client = new HttpClient())
+                {
+                    var method = HttpMethod.Get;
+                    var request = new HttpRequestMessage(method, baseUrl + url);
+                    request.Headers.Accept.Clear();
+                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-                await client.SendAsync(request);
+                    await client.SendAsync(request);
+                }
+            }
+            catch 
+            {
+                log.LogError("Could not start sync for url " + url);
+                throw;
             }
         }
     }
