@@ -130,9 +130,9 @@ namespace CPS_API.Repositories
             if (file.Metadata.AdditionalMetadata == null) throw new NullReferenceException(nameof(file.Metadata.AdditionalMetadata));
 
             var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
-                                    item.Classification == file.Metadata.AdditionalMetadata.Classification
-                                    && item.Source == file.Metadata.AdditionalMetadata.Source
-                                    );
+                                    item.Classification.Equals(file.Metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
+                                    && item.Source.Equals(file.Metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
+                                  );
             if (locationMapping == null) throw new Exception($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
             ids.DriveId = locationMapping.ExternalReferenceListId;
 
