@@ -389,7 +389,7 @@ namespace CPS_API.Repositories
 
             metadata.FileExtension = "pdf";
             if (!fileName.IsNullOrEmpty() && fileName.Contains('.'))
-                metadata.FileExtension = Path.GetExtension(fileName);
+                metadata.FileExtension = Path.GetExtension(fileName).Replace(".", "");
 
             if (listItem.CreatedDateTime.HasValue)
                 metadata.CreatedOn = listItem.CreatedDateTime.Value.DateTime;
