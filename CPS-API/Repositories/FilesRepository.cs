@@ -32,6 +32,8 @@ namespace CPS_API.Repositories
         Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
 
         Task<bool> FileContainsMetadata(ObjectIdentifiers ids);
+
+        Task UpdateFileName(string objectId, string fileName, bool getAsUser = false);
     }
 
     public class FilesRepository : IFilesRepository
@@ -719,6 +721,28 @@ namespace CPS_API.Repositories
             }
 
             return listItems;
+        }
+
+        public async Task UpdateFileName(string objectId, string fileName, bool getAsUser = false)
+        {
+            if (objectId == null) throw new ArgumentNullException("objectId");
+            if (fileName == null) throw new ArgumentNullException("fileName");
+
+            // Get SharePoint ID's
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (objectId == null) throw new Exception("Error while getting sharePointIds");
+
+            // Update fileName
+            var driveItem = new DriveItem
+            {
+                Name = fileName
+            };
+            var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            await request.UpdateAsync(driveItem);
         }
 
         #region Terms
