@@ -242,11 +242,11 @@ namespace CPS_API.Controllers
 
         [HttpPut]
         [Route("filename/{objectId}")]
-        public async Task<IActionResult> UpdateFileName(string objectId, [FromBody] string fileName)
+        public async Task<IActionResult> UpdateFileName(string objectId, [FromBody] FileNameData data)
         {
             try
             {
-                await _filesRepository.UpdateFileName(objectId, fileName);
+                await _filesRepository.UpdateFileName(objectId, data.FileName);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
