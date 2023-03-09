@@ -743,6 +743,22 @@ namespace CPS_API.Repositories
                 request = request.WithAppOnly();
             }
             await request.UpdateAsync(driveItem);
+
+            // Update title
+            var title = Path.GetFileNameWithoutExtension(fileName);
+
+            var fields = new FieldValueSet();
+            fields.AdditionalData = new Dictionary<string, object>();
+            var fieldMapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == "Title");
+            fields.AdditionalData[fieldMapping.SpoColumnName] = title;
+
+            // update sharepoint fields with metadata
+            var request2 = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
+            if (!getAsUser)
+            {
+                request2 = request2.WithAppOnly();
+            }
+            await request2.UpdateAsync(fields);
         }
 
         #region Terms
