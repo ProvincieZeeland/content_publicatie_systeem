@@ -246,6 +246,8 @@ namespace CPS_API.Repositories
                 }
             }
 
+            // Delta can contain doubles
+            driveItems = driveItems.DistinctBy(item => item.Id).ToList();
 
             return driveItems;
         }
