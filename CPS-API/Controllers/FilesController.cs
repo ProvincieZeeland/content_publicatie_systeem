@@ -239,5 +239,33 @@ namespace CPS_API.Controllers
 
             return Ok();
         }
+
+        [HttpPut]
+        [Route("filename/{objectId}")]
+        public async Task<IActionResult> UpdateFileName(string objectId, [FromBody] FileNameData data)
+        {
+            try
+            {
+                await _filesRepository.UpdateFileName(objectId, data.FileName);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message ?? "Error while updating fileName");
+            }
+
+            return Ok();
+        }
     }
 }
