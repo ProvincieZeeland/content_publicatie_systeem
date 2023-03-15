@@ -88,6 +88,7 @@ namespace CPS_API.Controllers
             // generate xml from metadata
             // upload file to storage container
             // upload xml to storage container
+            var itemsSuccesfulAdded = true;
             foreach (var newItem in newItems)
             {
                 try
@@ -117,11 +118,12 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // TODO: Log failed synchronisation.
+                    itemsSuccesfulAdded = false;
+                    _logger.LogError($"Error while adding file (DriveId: {newItem?.DriveId}, DriveItemId: {newItem?.Id}) to FileStorage: {ex.Message}");
                 }
             }
 
-            return Ok();
+            return itemsSuccesfulAdded ? Ok() : StatusCode(500, "Not all new items are added");
         }
 
         [HttpGet]
@@ -156,6 +158,7 @@ namespace CPS_API.Controllers
             // generate xml from metadata
             // upload file to storage container
             // upload xml to storage container
+            var itemsSuccesfulUpdated = true;
             foreach (var updatedItem in updatedItems)
             {
                 try
@@ -185,11 +188,12 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // TODO: Log failed synchronisation.
+                    itemsSuccesfulUpdated = false;
+                    _logger.LogError($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) to FileStorage: {ex.Message}");
                 }
             }
 
-            return Ok();
+            return itemsSuccesfulUpdated ? Ok() : StatusCode(500, "Not all new items are updated");
         }
 
         private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
@@ -298,6 +302,7 @@ namespace CPS_API.Controllers
             // For each file:
             // delete file from storage container
             // delete xml from storage container
+            var itemsSuccesfulDeleted = true;
             foreach (var deletedItem in deletedItems)
             {
                 try
@@ -323,11 +328,12 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // TODO: Log failed synchronisation.
+                    itemsSuccesfulDeleted = false;
+                    _logger.LogError($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) to FileStorage: {ex.Message}");
                 }
             }
 
-            return Ok();
+            return itemsSuccesfulDeleted ? Ok() : StatusCode(500, "Not all new items are deleted");
         }
 
         private async Task CallCallbackUrl(string url, string body = "")

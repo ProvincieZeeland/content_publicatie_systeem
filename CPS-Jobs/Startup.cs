@@ -1,4 +1,6 @@
-﻿using Microsoft.Azure.Functions.Extensions.DependencyInjection;
+﻿using CPS_Jobs.Helpers;
+using CPS_Jobs.Repositories;
+using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Identity.Web;
 
@@ -14,6 +16,9 @@ namespace CPS_Jobs
         public override void Configure(IFunctionsHostBuilder builder)
         {
             var configuration = builder.GetContext().Configuration;
+
+            builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
+            builder.Services.AddSingleton<StorageTableService, StorageTableService>();
 
             builder.Services
                 .AddAuthentication(sharedOptions =>
