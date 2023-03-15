@@ -33,13 +33,16 @@ namespace CPS_API.Controllers
 
         private readonly XmlExportSerivce _xmlExportSerivce;
 
+        private readonly ILogger _logger;
+
         public ExportController(IDriveRepository driveRepository,
                                 ISettingsRepository settingsRepository,
                                 FileStorageService fileStorageService,
                                 StorageTableService storageTableService,
                                 IFilesRepository filesRepository,
                                 IOptions<GlobalSettings> settings,
-                                XmlExportSerivce xmlExportSerivce)
+                                XmlExportSerivce xmlExportSerivce,
+                                ILogger<FilesRepository> logger)
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
@@ -48,6 +51,7 @@ namespace CPS_API.Controllers
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
             _xmlExportSerivce = xmlExportSerivce;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         // GET
@@ -60,6 +64,7 @@ namespace CPS_API.Controllers
             try
             {
                 startDate = await _settingsRepository.GetLastSynchronisationNewAsync();
+                startDate = new DateTime(2023, 3, 14);
             }
             catch (Exception ex)
             {
@@ -336,16 +341,21 @@ namespace CPS_API.Controllers
                     request.Headers.Accept.Clear();
                     request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _globalSettings.CallbackAccessToken);
-                    if (body.IsNullOrEmpty())
+                    if (!body.IsNullOrEmpty())
                     {
                         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                     }
 
-                    await client.SendAsync(request);
+                    var response = await client.SendAsync(request);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogError($"Error while sending sync callback: " + response.ToString());
+                    }
                 }
                 catch (Exception ex)
                 {
                     // Log error to callback service, otherwise ignore it
+                    _logger.LogError($"Error while sending sync callback: " + ex.Message);
                 }
             }
         }
