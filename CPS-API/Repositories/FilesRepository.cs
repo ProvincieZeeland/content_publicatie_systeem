@@ -32,6 +32,8 @@ namespace CPS_API.Repositories
         Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false);
 
         Task<bool> FileContainsMetadata(ObjectIdentifiers ids);
+
+        Task UpdateFileName(string objectId, string fileName, bool getAsUser = false);
     }
 
     public class FilesRepository : IFilesRepository
@@ -216,7 +218,7 @@ namespace CPS_API.Repositories
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                await UpdateMetadataWithoutExternalReferencesAsync(file.Metadata, isForNewFile: true);
+                await UpdateMetadataWithoutExternalReferencesAsync(file.Metadata, isForNewFile: true, ignoreRequiredFields: formFile != null);
             }
             catch (FieldRequiredException)
             {
@@ -480,13 +482,13 @@ namespace CPS_API.Repositories
             await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
         }
 
-        public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
+        public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
             if (metadata == null) throw new ArgumentNullException("metadata");
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
 
             // map received metadata to SPO object
-            var fields = mapMetadata(metadata, isForNewFile);
+            var fields = mapMetadata(metadata, isForNewFile, ignoreRequiredFields);
             if (fields == null) throw new NullReferenceException(nameof(fields));
 
             // update sharepoint fields with metadata
@@ -499,10 +501,10 @@ namespace CPS_API.Repositories
             await request.UpdateAsync(fields);
 
             // update terms
-            await updateTermsForMetadataAsync(metadata, isForNewFile, getAsUser);
+            await updateTermsForMetadataAsync(metadata, isForNewFile, ignoreRequiredFields, getAsUser);
         }
 
-        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false)
+        private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
@@ -532,7 +534,7 @@ namespace CPS_API.Repositories
                     }
 
                     var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
-                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile);
+                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
                     if (defaultValue != null)
                     {
                         value = defaultValue;
@@ -540,11 +542,14 @@ namespace CPS_API.Repositories
 
                     if (propertyInfo.PropertyType == typeof(DateTime?))
                     {
-                        var stringValue = value.ToString();
+                        var stringValue = value?.ToString();
                         var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
                         if (!dateParsed)
                         {
-                            throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            if (!ignoreRequiredFields)
+                            {
+                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                            }
                         }
                         else if (dateValue == DateTime.MinValue)
                         {
@@ -721,9 +726,47 @@ namespace CPS_API.Repositories
             return listItems;
         }
 
+        public async Task UpdateFileName(string objectId, string fileName, bool getAsUser = false)
+        {
+            if (objectId == null) throw new ArgumentNullException("objectId");
+            if (fileName == null) throw new ArgumentNullException("fileName");
+
+            // Get SharePoint ID's
+            var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (objectId == null) throw new Exception("Error while getting sharePointIds");
+
+            // Update fileName
+            var driveItem = new DriveItem
+            {
+                Name = fileName
+            };
+            var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            await request.UpdateAsync(driveItem);
+
+            // Update title
+            var title = Path.GetFileNameWithoutExtension(fileName);
+
+            var fields = new FieldValueSet();
+            fields.AdditionalData = new Dictionary<string, object>();
+            var fieldMapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == "Title");
+            fields.AdditionalData[fieldMapping.SpoColumnName] = title;
+
+            // update sharepoint fields with metadata
+            var request2 = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
+            if (!getAsUser)
+            {
+                request2 = request2.WithAppOnly();
+            }
+            await request2.UpdateAsync(fields);
+        }
+
         #region Terms
 
-        private async Task updateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
+        private async Task updateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
@@ -751,13 +794,16 @@ namespace CPS_API.Repositories
                     }
 
                     var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
-                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile);
+                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
                     if (defaultValue != null)
                     {
                         value = defaultValue;
                     }
 
-                    await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, value, getAsUser);
+                    if (!ignoreRequiredFields || value != null)
+                    {
+                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, value, getAsUser);
+                    }
                 }
                 catch (FieldRequiredException)
                 {
@@ -803,7 +849,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private object? getMetadataDefaultValue(object? value, PropertyInfo propertyInfo, FieldMapping fieldMapping, bool isForNewFile)
+        private object? getMetadataDefaultValue(object? value, PropertyInfo propertyInfo, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields)
         {
             var fieldIsEmpty = isMetadataFieldEmpty(value, propertyInfo);
             if (fieldMapping.Required && fieldIsEmpty)
@@ -819,7 +865,7 @@ namespace CPS_API.Repositories
                         return fieldMapping.DefaultValue;
                     }
                 }
-                else
+                else if (!ignoreRequiredFields)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                 }
