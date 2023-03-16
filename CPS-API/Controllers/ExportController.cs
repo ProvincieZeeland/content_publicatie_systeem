@@ -64,7 +64,6 @@ namespace CPS_API.Controllers
             try
             {
                 startDate = await _settingsRepository.GetLastSynchronisationNewAsync();
-                startDate = new DateTime(2023, 3, 14);
             }
             catch (Exception ex)
             {
@@ -88,7 +87,8 @@ namespace CPS_API.Controllers
             // generate xml from metadata
             // upload file to storage container
             // upload xml to storage container
-            var itemsSuccesfulAdded = true;
+            var itemsAdded = 0;
+            var notAddedItems = new List<DeltaDriveItem>();
             foreach (var newItem in newItems)
             {
                 try
@@ -115,15 +115,28 @@ namespace CPS_API.Controllers
 
                         await CallCallbackUrl(callbackUrl, body);
                     }
+
+                    if (succeeded)
+                    {
+                        itemsAdded++;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    itemsSuccesfulAdded = false;
+                    notAddedItems.Add(newItem);
                     _logger.LogError($"Error while adding file (DriveId: {newItem?.DriveId}, DriveItemId: {newItem?.Id}) to FileStorage: {ex.Message}");
                 }
             }
 
-            return itemsSuccesfulAdded ? Ok() : StatusCode(500, "Not all new items are added");
+            // If all files are succesfully added then we update the last synchronisation date.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey);
+            setting.LastSynchronisationNew = DateTime.UtcNow;
+            await _settingsRepository.SaveSettingAsync(setting);
+
+            var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.\r\n").ToList();
+            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
+            message = $"{itemsAdded} items added" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
+            return Ok(message);
         }
 
         [HttpGet]
@@ -158,7 +171,8 @@ namespace CPS_API.Controllers
             // generate xml from metadata
             // upload file to storage container
             // upload xml to storage container
-            var itemsSuccesfulUpdated = true;
+            var itemsUpdated = 0;
+            var notUpdatedItems = new List<DeltaDriveItem>();
             foreach (var updatedItem in updatedItems)
             {
                 try
@@ -185,15 +199,28 @@ namespace CPS_API.Controllers
 
                         await CallCallbackUrl(callbackUrl, body);
                     }
+
+                    if (succeeded)
+                    {
+                        itemsUpdated++;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    itemsSuccesfulUpdated = false;
-                    _logger.LogError($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) to FileStorage: {ex.Message}");
+                    notUpdatedItems.Add(updatedItem);
+                    _logger.LogError($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
                 }
             }
 
-            return itemsSuccesfulUpdated ? Ok() : StatusCode(500, "Not all new items are updated");
+            // If all files are succesfully updated then we update the last synchronisation date.           
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey);
+            setting.LastSynchronisationNew = DateTime.UtcNow;
+            await _settingsRepository.SaveSettingAsync(setting);
+
+            var notDeletedItemsAsStr = notUpdatedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
+            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
+            message = $"{itemsUpdated} items updated" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
+            return Ok(message);
         }
 
         private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
@@ -302,7 +329,8 @@ namespace CPS_API.Controllers
             // For each file:
             // delete file from storage container
             // delete xml from storage container
-            var itemsSuccesfulDeleted = true;
+            var itemsDeleted = 0;
+            var notDeletedItems = new List<DeltaDriveItem>();
             foreach (var deletedItem in deletedItems)
             {
                 try
@@ -325,15 +353,24 @@ namespace CPS_API.Controllers
                         var callbackUrl = _globalSettings.CallbackUrl + $"/delete/{objectIdentifiersEntity.ObjectId}";
                         await CallCallbackUrl(callbackUrl);
                     }
+                    itemsDeleted++;
                 }
                 catch (Exception ex)
                 {
-                    itemsSuccesfulDeleted = false;
-                    _logger.LogError($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) to FileStorage: {ex.Message}");
+                    notDeletedItems.Add(deletedItem);
+                    _logger.LogError($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
                 }
             }
 
-            return itemsSuccesfulDeleted ? Ok() : StatusCode(500, "Not all new items are deleted");
+            // If all files are succesfully deleted then we update the last synchronisation date.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationDeletedRowKey);
+            setting.LastSynchronisationNew = DateTime.UtcNow;
+            await _settingsRepository.SaveSettingAsync(setting);
+
+            var notDeletedItemsAsStr = notDeletedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
+            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
+            message = $"{itemsDeleted} items deleted" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
+            return Ok(message);
         }
 
         private async Task CallCallbackUrl(string url, string body = "")
