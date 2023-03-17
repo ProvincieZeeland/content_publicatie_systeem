@@ -59,29 +59,40 @@ namespace CPS_API.Controllers
         [Route("new")]
         public async Task<IActionResult> SynchroniseNewDocuments()
         {
-            // Get last synchronisation date.
-            DateTime? startDate;
+            // Get last synchronisation token.
+            Dictionary<string, string> tokens;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationNewAsync();
+                tokens = await _settingsRepository.GetLastTokensForNewAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error while getting LastTokenForNew");
+            }
+
+            // Get last synchronisation date.
+            DateTime? lastSynchronisation;
+            try
+            {
+                lastSynchronisation = await _settingsRepository.GetLastSynchronisationNewAsync();
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
-            if (startDate == null) startDate = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
 
             // Get all new files from known locations
-            List<DeltaDriveItem> newItems;
+            DeltaResponse deltaResponse;
             try
             {
-                newItems = await _driveRepository.GetNewItems(startDate.Value);
+                deltaResponse = await _driveRepository.GetNewItems(lastSynchronisation.Value, tokens);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while getting new documents");
             }
-            if (newItems == null) return StatusCode(500, "Error while getting new documents");
+            if (deltaResponse == null) return StatusCode(500, "Error while getting new documents");
 
             // For each file:
             // generate xml from metadata
@@ -89,7 +100,7 @@ namespace CPS_API.Controllers
             // upload xml to storage container
             var itemsAdded = 0;
             var notAddedItems = new List<DeltaDriveItem>();
-            foreach (var newItem in newItems)
+            foreach (var newItem in deltaResponse.Items)
             {
                 try
                 {
@@ -133,8 +144,13 @@ namespace CPS_API.Controllers
             setting.LastSynchronisationNew = DateTime.UtcNow;
             await _settingsRepository.SaveSettingAsync(setting);
 
-            var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.\r\n").ToList();
-            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
+            // If all files are succesfully added then we update the token.
+            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey);
+            setting.LastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            await _settingsRepository.SaveSettingAsync(setting);
+
+            var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.").ToList();
+            var message = String.Join("\r\n", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
             message = $"{itemsAdded} items added" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
             return Ok(message);
         }
@@ -143,29 +159,40 @@ namespace CPS_API.Controllers
         [Route("updated")]
         public async Task<IActionResult> SynchroniseUpdatedDocuments()
         {
-            // Get last synchronisation date.
-            DateTime? startDate;
+            // Get last synchronisation token.
+            Dictionary<string, string> tokens;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationChangedAsync();
+                tokens = await _settingsRepository.GetLastTokensForChangedAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error while getting LastTokenForChanged");
+            }
+
+            // Get last synchronisation date.
+            DateTime? lastSynchronisation;
+            try
+            {
+                lastSynchronisation = await _settingsRepository.GetLastSynchronisationChangedAsync();
             }
             catch (Exception ex)
             {
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
-            if (startDate == null) startDate = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
 
             // Get all updated files from known locations
-            List<DeltaDriveItem> updatedItems;
+            DeltaResponse deltaResponse;
             try
             {
-                updatedItems = await _driveRepository.GetUpdatedItems(startDate.Value);
+                deltaResponse = await _driveRepository.GetUpdatedItems(lastSynchronisation.Value, tokens);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, "Error while getting updated documents");
             }
-            if (updatedItems == null) return StatusCode(500, "Error while getting updated documents");
+            if (deltaResponse == null) return StatusCode(500, "Error while getting updated documents");
 
             // For each file:
             // generate xml from metadata
@@ -173,7 +200,7 @@ namespace CPS_API.Controllers
             // upload xml to storage container
             var itemsUpdated = 0;
             var notUpdatedItems = new List<DeltaDriveItem>();
-            foreach (var updatedItem in updatedItems)
+            foreach (var updatedItem in deltaResponse.Items)
             {
                 try
                 {
@@ -214,7 +241,12 @@ namespace CPS_API.Controllers
 
             // If all files are succesfully updated then we update the last synchronisation date.           
             var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey);
-            setting.LastSynchronisationNew = DateTime.UtcNow;
+            setting.LastSynchronisationChanged = DateTime.UtcNow;
+            await _settingsRepository.SaveSettingAsync(setting);
+
+            // If all files are succesfully updated then we update the token.
+            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey);
+            setting.LastTokenForChanged = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
             var notDeletedItemsAsStr = notUpdatedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
@@ -302,36 +334,35 @@ namespace CPS_API.Controllers
         [Route("deleted")]
         public async Task<IActionResult> SynchroniseDeletedDocuments()
         {
-            // Get last synchronisation date.
-            DateTime? startDate;
+            // Get last synchronisation token.
+            Dictionary<string, string> tokens;
             try
             {
-                startDate = await _settingsRepository.GetLastSynchronisationDeletedAsync();
+                tokens = await _settingsRepository.GetLastTokensForDeletedAsync();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, "Error while getting LastSynchronisation");
+                return StatusCode(500, "Error while getting LastTokenForDeleted");
             }
-            if (startDate == null) startDate = DateTime.Now.Date;
 
             // Get all deleted files from known locations
-            List<DeltaDriveItem> deletedItems;
+            DeltaResponse deltaResponse;
             try
             {
-                deletedItems = await _driveRepository.GetDeletedItems(startDate.Value);
+                deltaResponse = await _driveRepository.GetDeletedItems(tokens);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, "Error while getting deleted documents");
             }
-            if (deletedItems == null) return StatusCode(500, "Error while getting deleted documents");
+            if (deltaResponse == null) return StatusCode(500, "Error while getting deleted documents");
 
             // For each file:
             // delete file from storage container
             // delete xml from storage container
             var itemsDeleted = 0;
             var notDeletedItems = new List<DeltaDriveItem>();
-            foreach (var deletedItem in deletedItems)
+            foreach (var deletedItem in deltaResponse.Items)
             {
                 try
                 {
@@ -362,9 +393,9 @@ namespace CPS_API.Controllers
                 }
             }
 
-            // If all files are succesfully deleted then we update the last synchronisation date.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationDeletedRowKey);
-            setting.LastSynchronisationNew = DateTime.UtcNow;
+            // If all files are succesfully deleted then we update the token.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey);
+            setting.LastTokenForDeleted = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray()); ;
             await _settingsRepository.SaveSettingAsync(setting);
 
             var notDeletedItemsAsStr = notDeletedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();

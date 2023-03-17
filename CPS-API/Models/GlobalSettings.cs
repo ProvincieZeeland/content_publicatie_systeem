@@ -18,7 +18,11 @@
 
         public string SettingsLastSynchronisationChangedRowKey { get; set; } = string.Empty;
 
-        public string SettingsLastSynchronisationDeletedRowKey { get; set; } = string.Empty;
+        public string SettingsLastTokenForNewRowKey { get; set; } = string.Empty;
+
+        public string SettingsLastTokenForChangedRowKey { get; set; } = string.Empty;
+
+        public string SettingsLastTokenForDeletedRowKey { get; set; } = string.Empty;
 
         public string ContentContainerName { get; set; } = string.Empty;
 

@@ -10,7 +10,11 @@ namespace CPS_API.Models
 
         public DateTime? LastSynchronisationChanged { get; set; }
 
-        public DateTime? LastSynchronisationDeleted { get; set; }
+        public string LastTokenForNew { get; set; }
+
+        public string LastTokenForChanged { get; set; }
+
+        public string LastTokenForDeleted { get; set; }
 
         public SettingsEntity()
         {
