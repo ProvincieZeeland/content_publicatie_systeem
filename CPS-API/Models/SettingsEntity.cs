@@ -16,6 +16,12 @@ namespace CPS_API.Models
 
         public string LastTokenForDeleted { get; set; }
 
+        public bool? IsNewSynchronisationRunning { get; set; }
+
+        public bool? IsChangedSynchronisationRunning { get; set; }
+
+        public bool? IsDeletedSynchronisationRunning { get; set; }
+
         public SettingsEntity()
         {
 

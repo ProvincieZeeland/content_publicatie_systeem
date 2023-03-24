@@ -59,6 +59,26 @@ namespace CPS_API.Controllers
         [Route("new")]
         public async Task<IActionResult> SynchroniseNewDocuments()
         {
+            // Other synchronisation still running?
+            bool? isSynchronisationRunning;
+            try
+            {
+                isSynchronisationRunning = await _settingsRepository.GetIsNewSynchronisationRunningAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error while getting IsNewSynchronisationRunning");
+            }
+            if (isSynchronisationRunning == true)
+            {
+                return Ok("Other new synchronisation job is running.");
+            }
+
+            // Set running synchronisation.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey);
+            setting.IsNewSynchronisationRunning = true;
+            await _settingsRepository.SaveSettingAsync(setting);
+
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
@@ -67,6 +87,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                NewSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForNew");
             }
 
@@ -78,6 +99,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
@@ -90,9 +112,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting new documents");
             }
-            if (deltaResponse == null) return StatusCode(500, "Error while getting new documents");
+            if (deltaResponse == null)
+            {
+                NewSynchronisationStopped();
+                return StatusCode(500, "Error while getting new documents");
+            }
 
             // For each file:
             // generate xml from metadata
@@ -140,7 +167,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully added then we update the last synchronisation date.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey);
+            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey);
             setting.LastSynchronisationNew = DateTime.UtcNow;
             await _settingsRepository.SaveSettingAsync(setting);
 
@@ -149,16 +176,45 @@ namespace CPS_API.Controllers
             setting.LastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
+            NewSynchronisationStopped();
+
             var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.").ToList();
             var message = String.Join("\r\n", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
             message = $"{itemsAdded} items added" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
             return Ok(message);
         }
 
+        private async Task NewSynchronisationStopped()
+        {
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey);
+            setting.IsNewSynchronisationRunning = false;
+            await _settingsRepository.SaveSettingAsync(setting);
+        }
+
         [HttpGet]
         [Route("updated")]
         public async Task<IActionResult> SynchroniseUpdatedDocuments()
         {
+            // Other synchronisation still running?
+            bool? isSynchronisationRunning;
+            try
+            {
+                isSynchronisationRunning = await _settingsRepository.GetIsChangedSynchronisationRunningAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error while getting IsChangedSynchronisationRunning");
+            }
+            if (isSynchronisationRunning == true)
+            {
+                return Ok("Other update synchronisation job is running.");
+            }
+
+            // Set running synchronisation.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
+            setting.IsChangedSynchronisationRunning = true;
+            await _settingsRepository.SaveSettingAsync(setting);
+
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
@@ -167,6 +223,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForChanged");
             }
 
@@ -178,6 +235,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
@@ -190,9 +248,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting updated documents");
             }
-            if (deltaResponse == null) return StatusCode(500, "Error while getting updated documents");
+            if (deltaResponse == null)
+            {
+                ChangedSynchronisationStopped();
+                return StatusCode(500, "Error while getting updated documents");
+            }
 
             // For each file:
             // generate xml from metadata
@@ -240,7 +303,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully updated then we update the last synchronisation date.           
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey);
+            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey);
             setting.LastSynchronisationChanged = DateTime.UtcNow;
             await _settingsRepository.SaveSettingAsync(setting);
 
@@ -249,10 +312,19 @@ namespace CPS_API.Controllers
             setting.LastTokenForChanged = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
+            ChangedSynchronisationStopped();
+
             var notDeletedItemsAsStr = notUpdatedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
             var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
             message = $"{itemsUpdated} items updated" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
             return Ok(message);
+        }
+
+        private async Task ChangedSynchronisationStopped()
+        {
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
+            setting.IsChangedSynchronisationRunning = false;
+            await _settingsRepository.SaveSettingAsync(setting);
         }
 
         private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
@@ -334,6 +406,26 @@ namespace CPS_API.Controllers
         [Route("deleted")]
         public async Task<IActionResult> SynchroniseDeletedDocuments()
         {
+            // Other synchronisation still running?
+            bool? isSynchronisationRunning;
+            try
+            {
+                isSynchronisationRunning = await _settingsRepository.GetIsDeletedSynchronisationRunningAsync();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error while getting IsDeleteddSynchronisationRunning");
+            }
+            if (isSynchronisationRunning == true)
+            {
+                return Ok("Other delete synchronisation job is running.");
+            }
+
+            // Set running synchronisation.
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
+            setting.IsDeletedSynchronisationRunning = true;
+            await _settingsRepository.SaveSettingAsync(setting);
+
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
@@ -342,6 +434,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                DeletedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForDeleted");
             }
 
@@ -353,9 +446,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                DeletedSynchronisationStopped();
                 return StatusCode(500, "Error while getting deleted documents");
             }
-            if (deltaResponse == null) return StatusCode(500, "Error while getting deleted documents");
+            if (deltaResponse == null)
+            {
+                DeletedSynchronisationStopped();
+                return StatusCode(500, "Error while getting deleted documents");
+            }
 
             // For each file:
             // delete file from storage container
@@ -394,14 +492,23 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully deleted then we update the token.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey);
+            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey);
             setting.LastTokenForDeleted = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray()); ;
             await _settingsRepository.SaveSettingAsync(setting);
+
+            DeletedSynchronisationStopped();
 
             var notDeletedItemsAsStr = notDeletedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
             var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
             message = $"{itemsDeleted} items deleted" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
             return Ok(message);
+        }
+
+        private async Task DeletedSynchronisationStopped()
+        {
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
+            setting.IsDeletedSynchronisationRunning = false;
+            await _settingsRepository.SaveSettingAsync(setting);
         }
 
         private async Task CallCallbackUrl(string url, string body = "")

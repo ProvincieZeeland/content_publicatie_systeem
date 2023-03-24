@@ -24,6 +24,12 @@
 
         public string SettingsLastTokenForDeletedRowKey { get; set; } = string.Empty;
 
+        public string SettingsIsNewSynchronisationRunningRowKey { get; set; } = string.Empty;
+
+        public string SettingsIsChangedSynchronisationRunningRowKey { get; set; } = string.Empty;
+
+        public string SettingsIsDeletedSynchronisationRunningRowKey { get; set; } = string.Empty;
+
         public string ContentContainerName { get; set; } = string.Empty;
 
         public string MetadataContainerName { get; set; } = string.Empty;

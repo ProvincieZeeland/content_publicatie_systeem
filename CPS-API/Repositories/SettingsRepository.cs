@@ -21,6 +21,12 @@ namespace CPS_API.Repositories
 
         Task<Dictionary<string, string>> GetLastTokensForDeletedAsync();
 
+        Task<bool?> GetIsNewSynchronisationRunningAsync();
+
+        Task<bool?> GetIsChangedSynchronisationRunningAsync();
+
+        Task<bool?> GetIsDeletedSynchronisationRunningAsync();
+
         Task<bool> SaveSettingAsync(SettingsEntity setting);
 
         Task<long?> SaveSequenceNumberAsync();
@@ -52,10 +58,7 @@ namespace CPS_API.Repositories
         public async Task<long?> GetSequenceNumberAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return null;
-            }
+            if (settingsTable == null) return null;
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, settingsTable);
             if (currentSetting == null) throw new Exception("Error while getting SequenceNumber");
@@ -65,10 +68,7 @@ namespace CPS_API.Repositories
         public async Task<DateTime?> GetLastSynchronisationNewAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return null;
-            }
+            if (settingsTable == null) return null;
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey, settingsTable);
             if (currentSetting == null) return null;
@@ -78,10 +78,7 @@ namespace CPS_API.Repositories
         public async Task<DateTime?> GetLastSynchronisationChangedAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return null;
-            }
+            if (settingsTable == null) return null;
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey, settingsTable);
             if (currentSetting == null) return null;
@@ -91,10 +88,7 @@ namespace CPS_API.Repositories
         public async Task<Dictionary<string, string>> GetLastTokensForNewAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return new Dictionary<string, string>();
-            }
+            if (settingsTable == null) return new Dictionary<string, string>();
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
@@ -106,10 +100,7 @@ namespace CPS_API.Repositories
         public async Task<Dictionary<string, string>> GetLastTokensForChangedAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return new Dictionary<string, string>();
-            }
+            if (settingsTable == null) return new Dictionary<string, string>();
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
@@ -121,16 +112,43 @@ namespace CPS_API.Repositories
         public async Task<Dictionary<string, string>> GetLastTokensForDeletedAsync()
         {
             var settingsTable = GetSettingsTable();
-            if (settingsTable == null)
-            {
-                return new Dictionary<string, string>();
-            }
+            if (settingsTable == null) return new Dictionary<string, string>();
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
             return currentSetting.LastTokenForDeleted.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
                .ToDictionary(split => split[0], split => split[1]);
+        }
+
+        public async Task<bool?> GetIsNewSynchronisationRunningAsync()
+        {
+            var settingsTable = GetSettingsTable();
+            if (settingsTable == null) return null;
+
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey, settingsTable);
+            if (currentSetting == null) return null;
+            return currentSetting.IsNewSynchronisationRunning;
+        }
+
+        public async Task<bool?> GetIsChangedSynchronisationRunningAsync()
+        {
+            var settingsTable = GetSettingsTable();
+            if (settingsTable == null) return null;
+
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey, settingsTable);
+            if (currentSetting == null) return null;
+            return currentSetting.IsChangedSynchronisationRunning;
+        }
+
+        public async Task<bool?> GetIsDeletedSynchronisationRunningAsync()
+        {
+            var settingsTable = GetSettingsTable();
+            if (settingsTable == null) return null;
+
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey, settingsTable);
+            if (currentSetting == null) return null;
+            return currentSetting.IsDeletedSynchronisationRunning;
         }
 
         public async Task<bool> SaveSettingAsync(SettingsEntity setting)
