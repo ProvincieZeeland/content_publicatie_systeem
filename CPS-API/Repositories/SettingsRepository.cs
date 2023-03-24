@@ -1,6 +1,8 @@
-﻿using CPS_API.Helpers;
+﻿using System.Diagnostics;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
@@ -20,6 +22,8 @@ namespace CPS_API.Repositories
         Task<Dictionary<string, string>> GetLastTokensForDeletedAsync();
 
         Task<bool> SaveSettingAsync(SettingsEntity setting);
+
+        Task<long?> SaveSequenceNumberAsync();
     }
 
     public class SettingsRepository : ISettingsRepository
@@ -37,7 +41,7 @@ namespace CPS_API.Repositories
 
         private CloudTable? GetSettingsTable()
         {
-            var table = this._storageTableService.GetTable(_globalSettings.SettingsTableName);
+            var table = _storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (table == null)
             {
                 throw new Exception($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
@@ -47,52 +51,52 @@ namespace CPS_API.Repositories
 
         public async Task<long?> GetSequenceNumberAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, settingsTable);
             if (currentSetting == null) throw new Exception("Error while getting SequenceNumber");
             return currentSetting.SequenceNumber;
         }
 
         public async Task<DateTime?> GetLastSynchronisationNewAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationNew;
         }
 
         public async Task<DateTime?> GetLastSynchronisationChangedAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return null;
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationChanged;
         }
 
         public async Task<Dictionary<string, string>> GetLastTokensForNewAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return new Dictionary<string, string>();
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
             return currentSetting.LastTokenForNew.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
@@ -101,13 +105,13 @@ namespace CPS_API.Repositories
 
         public async Task<Dictionary<string, string>> GetLastTokensForChangedAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return new Dictionary<string, string>();
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
             return currentSetting.LastTokenForChanged.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
@@ -116,13 +120,13 @@ namespace CPS_API.Repositories
 
         public async Task<Dictionary<string, string>> GetLastTokensForDeletedAsync()
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return new Dictionary<string, string>();
             }
 
-            var currentSetting = await this._storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
             return currentSetting.LastTokenForDeleted.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
@@ -131,14 +135,58 @@ namespace CPS_API.Repositories
 
         public async Task<bool> SaveSettingAsync(SettingsEntity setting)
         {
-            var settingsTable = this.GetSettingsTable();
+            var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
                 return false;
             }
 
-            await this._storageTableService.SaveAsync(settingsTable, setting);
+            await _storageTableService.SaveAsync(settingsTable, setting);
             return true;
+        }
+
+        public async Task<long?> SaveSequenceNumberAsync()
+        {
+            var leaseContainer = await _storageTableService.GetLeaseContainer();
+            if (leaseContainer == null)
+            {
+                throw new Exception("Error while getting leaseContainer");
+            }
+            var settingsTable = GetSettingsTable();
+            if (settingsTable == null)
+            {
+                throw new Exception("Error while getting settingsTable");
+            }
+
+            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey);
+
+            // Try to get the new sequence number and saving it in the storage table.
+            var s = new Stopwatch();
+            s.Start();
+            while (s.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                try
+                {
+                    setting.SequenceNumber = await GetSequenceNumberAsync() + 1;
+                    await _storageTableService.SaveAsyncWithLease(leaseContainer, settingsTable, _globalSettings.SettingsPartitionKey, setting);
+                    return setting.SequenceNumber;
+                }
+                catch (AcquiringLeaseException ex)
+                {
+
+                }
+                catch (StorageException ex)
+                {
+                    // Lease still active? (status 409 or 412)
+                    // Then try again for 30 seconds.
+                    if (ex.RequestInformation.HttpStatusCode != 409 && ex.RequestInformation.HttpStatusCode != 412)
+                    {
+                        throw;
+                    }
+                }
+            }
+            s.Stop();
+            return null;
         }
     }
 }

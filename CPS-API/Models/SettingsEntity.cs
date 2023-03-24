@@ -26,12 +26,5 @@ namespace CPS_API.Models
             this.PartitionKey = partitionKey;
             this.RowKey = rowKey;
         }
-
-        public SettingsEntity(string partitionKey, string rowKey, long sequenceNumber)
-        {
-            this.PartitionKey = partitionKey;
-            this.RowKey = rowKey;
-            this.SequenceNumber = sequenceNumber;
-        }
     }
 }
