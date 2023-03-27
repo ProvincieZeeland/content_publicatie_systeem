@@ -184,6 +184,10 @@ namespace CPS_API.Repositories
 
                 ids.DriveItemId = driveItem.Id;
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code == "nameAlreadyExists")
+            {
+                throw new NameAlreadyExistsException($"The specified fileName ({file.Metadata.FileName}) already exists");
+            }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 // TODO: Log error in App Insights
