@@ -530,7 +530,15 @@ namespace CPS_API.Controllers
                     var response = await client.SendAsync(request);
                     if (!response.IsSuccessStatusCode)
                     {
-                        _logger.LogError($"Error while sending sync callback: " + response.ToString());
+                        var sb = new StringBuilder();
+                        sb.Append("Error while sending sync callback");
+                        sb.Append("Request:");
+                        sb.Append(request.ToString());
+                        sb.Append("Body: ");
+                        sb.Append(body);
+                        sb.Append("Response:");
+                        sb.Append(response.ToString());
+                        _logger.LogError(sb.ToString());
                     }
                 }
                 catch (Exception ex)
