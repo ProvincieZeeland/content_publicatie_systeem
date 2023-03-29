@@ -63,7 +63,7 @@ namespace CPS_API.Controllers
             bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsNewSynchronisationRunningAsync();
+                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsNewSynchronisationRunningRowKey);
             }
             catch (Exception ex)
             {
@@ -83,7 +83,7 @@ namespace CPS_API.Controllers
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensForNewAsync();
+                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForNewRowKey);
             }
             catch (Exception ex)
             {
@@ -95,7 +95,7 @@ namespace CPS_API.Controllers
             DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetLastSynchronisationNewAsync();
+                lastSynchronisation = await _settingsRepository.GetLastSynchronisationAsync(_globalSettings.SettingsLastSynchronisationNewRowKey);
             }
             catch (Exception ex)
             {
@@ -199,7 +199,7 @@ namespace CPS_API.Controllers
             bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsChangedSynchronisationRunningAsync();
+                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
             }
             catch (Exception ex)
             {
@@ -219,7 +219,7 @@ namespace CPS_API.Controllers
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensForChangedAsync();
+                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForChangedRowKey);
             }
             catch (Exception ex)
             {
@@ -231,7 +231,7 @@ namespace CPS_API.Controllers
             DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetLastSynchronisationChangedAsync();
+                lastSynchronisation = await _settingsRepository.GetLastSynchronisationAsync(_globalSettings.SettingsLastSynchronisationChangedRowKey);
             }
             catch (Exception ex)
             {
@@ -410,7 +410,7 @@ namespace CPS_API.Controllers
             bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsDeletedSynchronisationRunningAsync();
+                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
             }
             catch (Exception ex)
             {
@@ -430,7 +430,7 @@ namespace CPS_API.Controllers
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensForDeletedAsync();
+                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForDeletedRowKey);
             }
             catch (Exception ex)
             {

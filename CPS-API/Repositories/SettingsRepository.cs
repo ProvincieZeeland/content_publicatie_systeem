@@ -11,21 +11,11 @@ namespace CPS_API.Repositories
     {
         Task<long?> GetSequenceNumberAsync();
 
-        Task<DateTime?> GetLastSynchronisationNewAsync();
+        Task<DateTime?> GetLastSynchronisationAsync(string rowKey);
 
-        Task<DateTime?> GetLastSynchronisationChangedAsync();
+        Task<Dictionary<string, string>> GetLastTokensAsync(string rowKey);
 
-        Task<Dictionary<string, string>> GetLastTokensForNewAsync();
-
-        Task<Dictionary<string, string>> GetLastTokensForChangedAsync();
-
-        Task<Dictionary<string, string>> GetLastTokensForDeletedAsync();
-
-        Task<bool?> GetIsNewSynchronisationRunningAsync();
-
-        Task<bool?> GetIsChangedSynchronisationRunningAsync();
-
-        Task<bool?> GetIsDeletedSynchronisationRunningAsync();
+        Task<bool?> GetIsSynchronisationRunningAsync(string rowKey);
 
         Task<bool> SaveSettingAsync(SettingsEntity setting);
 
@@ -65,88 +55,34 @@ namespace CPS_API.Repositories
             return currentSetting.SequenceNumber;
         }
 
-        public async Task<DateTime?> GetLastSynchronisationNewAsync()
+        public async Task<DateTime?> GetLastSynchronisationAsync(string rowKey)
         {
             var settingsTable = GetSettingsTable();
             if (settingsTable == null) return null;
 
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey, settingsTable);
-            if (currentSetting == null) return null;
-            return currentSetting.LastSynchronisationNew;
-        }
-
-        public async Task<DateTime?> GetLastSynchronisationChangedAsync()
-        {
-            var settingsTable = GetSettingsTable();
-            if (settingsTable == null) return null;
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.LastSynchronisationChanged;
         }
 
-        public async Task<Dictionary<string, string>> GetLastTokensForNewAsync()
+        public async Task<Dictionary<string, string>> GetLastTokensAsync(string rowKey)
         {
             var settingsTable = GetSettingsTable();
             if (settingsTable == null) return new Dictionary<string, string>();
 
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey, settingsTable);
-            if (currentSetting == null) return new Dictionary<string, string>();
-            return currentSetting.LastTokenForNew.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
-               .Select(part => part.Split('='))
-               .ToDictionary(split => split[0], split => split[1]);
-        }
-
-        public async Task<Dictionary<string, string>> GetLastTokensForChangedAsync()
-        {
-            var settingsTable = GetSettingsTable();
-            if (settingsTable == null) return new Dictionary<string, string>();
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey, settingsTable);
-            if (currentSetting == null) return new Dictionary<string, string>();
-            return currentSetting.LastTokenForChanged.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
-               .Select(part => part.Split('='))
-               .ToDictionary(split => split[0], split => split[1]);
-        }
-
-        public async Task<Dictionary<string, string>> GetLastTokensForDeletedAsync()
-        {
-            var settingsTable = GetSettingsTable();
-            if (settingsTable == null) return new Dictionary<string, string>();
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
             return currentSetting.LastTokenForDeleted.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
                .ToDictionary(split => split[0], split => split[1]);
         }
 
-        public async Task<bool?> GetIsNewSynchronisationRunningAsync()
+        public async Task<bool?> GetIsSynchronisationRunningAsync(string rowKey)
         {
             var settingsTable = GetSettingsTable();
             if (settingsTable == null) return null;
 
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey, settingsTable);
-            if (currentSetting == null) return null;
-            return currentSetting.IsNewSynchronisationRunning;
-        }
-
-        public async Task<bool?> GetIsChangedSynchronisationRunningAsync()
-        {
-            var settingsTable = GetSettingsTable();
-            if (settingsTable == null) return null;
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey, settingsTable);
-            if (currentSetting == null) return null;
-            return currentSetting.IsChangedSynchronisationRunning;
-        }
-
-        public async Task<bool?> GetIsDeletedSynchronisationRunningAsync()
-        {
-            var settingsTable = GetSettingsTable();
-            if (settingsTable == null) return null;
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey, settingsTable);
+            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return null;
             return currentSetting.IsDeletedSynchronisationRunning;
         }
