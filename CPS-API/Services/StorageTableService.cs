@@ -16,8 +16,6 @@ namespace CPS_API.Helpers
         Task DeleteAsync(CloudTable table, List<ITableEntity> entities);
 
         Task<CloudBlobContainer> GetLeaseContainer();
-
-        Task SaveAsyncWithLease(CloudBlobContainer leaseContainer, CloudTable table, string partitionKey, ITableEntity entity);
     }
 
     public class StorageTableService : IStorageTableService
@@ -84,28 +82,6 @@ namespace CPS_API.Helpers
             var leaseContainer = blobClient.GetContainerReference("leaseobjects");
             await leaseContainer.CreateIfNotExistsAsync();
             return leaseContainer;
-        }
-
-        public async Task SaveAsyncWithLease(CloudBlobContainer leaseContainer, CloudTable table, string partitionKey, ITableEntity entity)
-        {
-            // Create blob for acquiring lease.
-            var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", partitionKey));
-            await blob.UploadTextAsync("");
-
-            // Acquire lease.
-            var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
-            if (string.IsNullOrEmpty(leaseId))
-            {
-                throw new AcquiringLeaseException("Error while acquiring lease");
-            }
-            try
-            {
-                await SaveAsync(table, entity);
-            }
-            finally
-            {
-                await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
-            }
         }
     }
 }

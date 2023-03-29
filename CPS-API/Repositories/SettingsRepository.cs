@@ -185,13 +185,31 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    setting.SequenceNumber = await GetSequenceNumberAsync() + 1;
-                    await _storageTableService.SaveAsyncWithLease(leaseContainer, settingsTable, _globalSettings.SettingsPartitionKey, setting);
+                    // Create blob for acquiring lease.
+                    var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
+                    await blob.UploadTextAsync("");
+
+                    // Acquire lease.
+                    var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
+                    if (string.IsNullOrEmpty(leaseId))
+                    {
+                        throw new AcquiringLeaseException("Error while acquiring lease");
+                    }
+                    try
+                    {
+                        // Get new sequence number after acquiring lease.
+                        setting.SequenceNumber = await GetSequenceNumberAsync() + 1;
+                        await _storageTableService.SaveAsync(settingsTable, setting);
+                    }
+                    finally
+                    {
+                        await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
+                    }
                     return setting.SequenceNumber;
                 }
                 catch (AcquiringLeaseException ex)
                 {
-
+                    // Lease is still active, continue loop.
                 }
                 catch (StorageException ex)
                 {
