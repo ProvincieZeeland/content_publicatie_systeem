@@ -1,4 +1,5 @@
-﻿using CPS_API.Helpers;
+﻿using System.Text.RegularExpressions;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
@@ -25,11 +26,11 @@ namespace CPS_API.Repositories
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<List<DeltaDriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false);
+        Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
-        Task<List<DeltaDriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false);
+        Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
-        Task<List<DeltaDriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false);
+        Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false);
 
         Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false);
     }
@@ -174,34 +175,34 @@ namespace CPS_API.Repositories
             await request.DeleteAsync();
         }
 
-        public async Task<List<DeltaDriveItem>> GetNewItems(DateTime startDate, bool getAsUser = false)
+        public async Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate, getAsUser);
-            var newItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime >= startDate).ToList();
-            newItems = newItems.Where(item => item.Folder == null).ToList();
-            newItems = newItems.OrderBy(item => item.CreatedDateTime).ToList();
-            return newItems;
+            var response = await GetDeltaAsync(tokens, getAsUser);
+            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime >= lastSynchronisation).ToList();
+            response.Items = response.Items.Where(item => item.Folder == null).ToList();
+            response.Items = response.Items.OrderBy(item => item.CreatedDateTime).ToList();
+            return response;
         }
 
-        public async Task<List<DeltaDriveItem>> GetUpdatedItems(DateTime startDate, bool getAsUser = false)
+        public async Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate, getAsUser);
-            var updatedItems = driveItems.Where(item => item.Deleted == null && item.CreatedDateTime < startDate).ToList();
-            updatedItems = updatedItems.Where(item => item.Folder == null).ToList();
-            updatedItems = updatedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
-            return updatedItems;
+            var response = await GetDeltaAsync(tokens, getAsUser);
+            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation).ToList();
+            response.Items = response.Items.Where(item => item.Folder == null).ToList();
+            response.Items = response.Items.OrderBy(item => item.LastModifiedDateTime).ToList();
+            return response;
         }
 
-        public async Task<List<DeltaDriveItem>> GetDeletedItems(DateTime startDate, bool getAsUser = false)
+        public async Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false)
         {
-            var driveItems = await GetDeltaAsync(startDate, getAsUser);
-            var deletedItems = driveItems.Where(item => item.Deleted != null).ToList();
-            deletedItems = deletedItems.Where(item => item.Folder == null).ToList();
-            deletedItems = deletedItems.OrderBy(item => item.LastModifiedDateTime).ToList();
-            return deletedItems;
+            var response = await GetDeltaAsync(tokens, getAsUser);
+            response.Items = response.Items.Where(item => item.Deleted != null).ToList();
+            response.Items = response.Items.Where(item => item.Folder == null).ToList();
+            response.Items = response.Items.OrderBy(item => item.LastModifiedDateTime).ToList();
+            return response;
         }
 
-        private async Task<List<DeltaDriveItem>> GetDeltaAsync(DateTime startDate, bool getAsUser = false)
+        private async Task<DeltaResponse> GetDeltaAsync(Dictionary<string, string> tokens, bool getAsUser = false)
         {
             // Get all public drives
             var driveIds = _globalSettings.PublicDriveIds;
@@ -210,12 +211,18 @@ namespace CPS_API.Repositories
             // For each drive:
             // Call graph delta and get changed items since time
             var driveItems = new List<DeltaDriveItem>();
+            var nextTokens = new Dictionary<string, string>();
             foreach (var driveId in driveIds)
             {
-                var queryOptions = new List<QueryOption>()
+                List<QueryOption>? queryOptions = null;
+                var gettingTokenSucceeded = tokens.TryGetValue(driveId, out var token);
+                if (gettingTokenSucceeded)
                 {
-                    new QueryOption("token", startDate.ToString("yyyy-MM-ddTHH:mm:ss.fffffff"))
-                };
+                    queryOptions = new List<QueryOption>()
+                    {
+                        new QueryOption("token", token)
+                    };
+                }
 
                 IDriveItemDeltaCollectionPage delta;
                 try
@@ -244,12 +251,26 @@ namespace CPS_API.Repositories
                 {
                     throw new Exception("Error while getting changed driveItems with delta");
                 }
+
+                var nextTokenExists = delta.AdditionalData.TryGetValue("@odata.deltaLink", out var nextTokenCall);
+                if (nextTokenExists)
+                {
+                    var pattern = @".*\?token=(.*)";
+                    var match = Regex.Match(nextTokenCall.ToString(), pattern);
+                    if (match.Success && match.Groups.Count == 2)
+                    {
+                        nextTokens.Add(driveId, match.Groups[1]?.Value);
+                    }
+                }
             }
 
             // Delta can contain doubles
             driveItems = driveItems.DistinctBy(item => item.DriveId + item.Id).ToList();
 
-            return driveItems;
+            return new DeltaResponse(
+                items: driveItems,
+                nextTokens: nextTokens
+            );
         }
 
         private DeltaDriveItem MapDriveItemToDeltaItem(string driveId, DriveItem item)

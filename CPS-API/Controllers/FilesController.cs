@@ -141,7 +141,7 @@ namespace CPS_API.Controllers
                         var defaultAsStr = fieldMapping.DefaultValue?.ToString();
                         if (!defaultAsStr.IsNullOrEmpty())
                         {
-                            if (fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedBy))
+                            if (fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(file.Metadata.MimeType) || fieldMapping.FieldName == nameof(file.Metadata.FileExtension))
                             {
                                 file.Metadata[fieldMapping.FieldName] = fieldMapping.DefaultValue;
                             }

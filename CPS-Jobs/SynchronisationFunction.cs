@@ -4,11 +4,9 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace CPS_Jobs
 {
@@ -17,12 +15,12 @@ namespace CPS_Jobs
         private readonly ITokenAcquisition _tokenAcquisition;
         private readonly IConfiguration _configuration;
 
-        public SynchronisationFunction(ITokenAcquisition tokenAcquisition, IConfiguration config)
+        public SynchronisationFunction(ITokenAcquisition tokenAcquisition,
+                                       IConfiguration config)
         {
             _tokenAcquisition = tokenAcquisition;
             _configuration = config;
         }
-
 
         [FunctionName("SynchronisationFunction")]
         public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer, ILogger log)
@@ -35,9 +33,8 @@ namespace CPS_Jobs
             if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
             if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
 
-
             List<Task> tasks = new List<Task>();
-            // Start New sync            
+            // Start New sync     
             tasks.Add(callService(baseUrl, scope, "/Export/new", log));
 
             // Start Update sync  
@@ -54,6 +51,7 @@ namespace CPS_Jobs
         {
             try
             {
+                HttpResponseMessage response;
                 string token = await _tokenAcquisition.GetAccessTokenForAppAsync(scope);
                 using (var client = new HttpClient())
                 {
@@ -63,10 +61,10 @@ namespace CPS_Jobs
                     request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-                    await client.SendAsync(request);
+                    response = await client.SendAsync(request);
                 }
             }
-            catch 
+            catch
             {
                 log.LogError("Could not start sync for url " + url);
                 throw;

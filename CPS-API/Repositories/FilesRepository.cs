@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using CPS_API.Models;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
@@ -182,6 +183,10 @@ namespace CPS_API.Repositories
                 }
 
                 ids.DriveItemId = driveItem.Id;
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code == "nameAlreadyExists")
+            {
+                throw new NameAlreadyExistsException($"The specified fileName ({file.Metadata.FileName}) already exists");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
@@ -381,17 +386,8 @@ namespace CPS_API.Repositories
 
             var fileName = listItem.Name.IsNullOrEmpty() ? driveItem.Name : listItem.Name;
 
-            metadata.MimeType = "application/pdf";
-            if (driveItem.File != null && driveItem.File.MimeType != null)
-            {
-                metadata.MimeType = driveItem.File.MimeType;
-            }
             metadata.FileName = fileName;
             metadata.AdditionalMetadata = new FileMetadata();
-
-            metadata.FileExtension = "pdf";
-            if (!fileName.IsNullOrEmpty() && fileName.Contains('.'))
-                metadata.FileExtension = Path.GetExtension(fileName).Replace(".", "");
 
             if (listItem.CreatedDateTime.HasValue)
                 metadata.CreatedOn = listItem.CreatedDateTime.Value.DateTime;
@@ -430,7 +426,7 @@ namespace CPS_API.Repositories
                     value = term?.Label;
                 }
 
-                if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+                if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
                 {
                     metadata[fieldMapping.FieldName] = value;
                 }
@@ -480,6 +476,7 @@ namespace CPS_API.Repositories
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
             await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser: getAsUser);
             await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
+            await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName);
         }
 
         public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
@@ -747,12 +744,29 @@ namespace CPS_API.Repositories
             }
             await request.UpdateAsync(driveItem);
 
+            // Update mimetype
+            new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var mimeType);
+
+            var tempMetadata = new FileInformation();
+            tempMetadata.AdditionalMetadata = new FileMetadata();
+            var fields = new FieldValueSet();
+            fields.AdditionalData = new Dictionary<string, object>();
+            if (mimeType != null)
+            {
+                var mapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == nameof(tempMetadata.MimeType));
+                fields.AdditionalData[mapping.SpoColumnName] = mimeType;
+            }
+
+            // Update fileExtension
+            var fileExtension = Path.GetExtension(fileName).Replace(".", "");
+
+            var fieldMapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == nameof(tempMetadata.FileExtension));
+            fields.AdditionalData[fieldMapping.SpoColumnName] = fileExtension;
+
             // Update title
             var title = Path.GetFileNameWithoutExtension(fileName);
 
-            var fields = new FieldValueSet();
-            fields.AdditionalData = new Dictionary<string, object>();
-            var fieldMapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == "Title");
+            fieldMapping = _globalSettings.MetadataMapping.FirstOrDefault(mapping => mapping.FieldName == nameof(tempMetadata.AdditionalMetadata.Title));
             fields.AdditionalData[fieldMapping.SpoColumnName] = title;
 
             // update sharepoint fields with metadata
@@ -823,7 +837,7 @@ namespace CPS_API.Repositories
             {
                 return metadata.Ids.ObjectId;
             }
-            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
             {
                 return metadata[fieldMapping.FieldName];
             }
@@ -839,7 +853,7 @@ namespace CPS_API.Repositories
             {
                 return metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
             }
-            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy))
+            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
             {
                 return metadata.GetType().GetProperty(fieldMapping.FieldName);
             }

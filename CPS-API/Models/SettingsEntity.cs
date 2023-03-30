@@ -10,18 +10,27 @@ namespace CPS_API.Models
 
         public DateTime? LastSynchronisationChanged { get; set; }
 
-        public DateTime? LastSynchronisationDeleted { get; set; }
+        public string LastTokenForNew { get; set; }
+
+        public string LastTokenForChanged { get; set; }
+
+        public string LastTokenForDeleted { get; set; }
+
+        public bool? IsNewSynchronisationRunning { get; set; }
+
+        public bool? IsChangedSynchronisationRunning { get; set; }
+
+        public bool? IsDeletedSynchronisationRunning { get; set; }
 
         public SettingsEntity()
         {
 
         }
 
-        public SettingsEntity(string partitionKey, string rowKey, long sequenceNumber)
+        public SettingsEntity(string partitionKey, string rowKey)
         {
             this.PartitionKey = partitionKey;
             this.RowKey = rowKey;
-            this.SequenceNumber = sequenceNumber;
         }
     }
 }

@@ -73,26 +73,13 @@ namespace CPS_API.Repositories
                 return existingObjectId;
             }
 
-            // Get sequencenr for objectId from table
-            var currentSequenceNumber = await _settingsRepository.GetSequenceNumberAsync();
-            if (currentSequenceNumber == null)
-            {
-                throw new Exception("Current sequence not found");
-            }
-
             // Increase sequencenr and store in table
-            var sequence = currentSequenceNumber.Value + 1;
-            var newSetting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, sequence);
-            bool succeeded;
+            long? sequence = null;
             try
             {
-                succeeded = await _settingsRepository.SaveSettingAsync(newSetting);
+                sequence = await _settingsRepository.SaveSequenceNumberAsync();
             }
             catch (Exception ex)
-            {
-                throw new Exception($"Error while saving new sequence {sequence}");
-            }
-            if (!succeeded)
             {
                 throw new Exception($"Error while saving new sequence {sequence}");
             }
