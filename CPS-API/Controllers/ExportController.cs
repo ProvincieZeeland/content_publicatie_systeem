@@ -33,7 +33,6 @@ namespace CPS_API.Controllers
 
         private readonly GlobalSettings _globalSettings;
 
-        private readonly ILogger _logger;
         private readonly TelemetryClient _telemetryClient;
 
         public ExportController(IDriveRepository driveRepository,
@@ -43,7 +42,6 @@ namespace CPS_API.Controllers
                                 IFilesRepository filesRepository,
                                 IOptions<GlobalSettings> settings,
                                 XmlExportSerivce xmlExportSerivce,
-                                ILogger<FilesRepository> logger,
                                 TelemetryClient telemetryClient)
         {
             _driveRepository = driveRepository;
@@ -53,7 +51,6 @@ namespace CPS_API.Controllers
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
             _xmlExportSerivce = xmlExportSerivce;
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _telemetryClient = telemetryClient;
         }
 
@@ -171,7 +168,6 @@ namespace CPS_API.Controllers
 
                     _telemetryClient.TrackException(ex, properties);
                     notAddedItems.Add(newItem);
-                    _logger.LogError($"Error while adding file (DriveId: {newItem?.DriveId}, DriveItemId: {newItem?.Id}) to FileStorage: {ex.Message}");
                 }
             }
 
@@ -311,8 +307,8 @@ namespace CPS_API.Controllers
                     };
 
                     _telemetryClient.TrackException(ex, properties);
+                    _telemetryClient.TrackEvent($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
                     notUpdatedItems.Add(updatedItem);
-                    _logger.LogError($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
                 }
             }
 
@@ -503,8 +499,8 @@ namespace CPS_API.Controllers
                     };
 
                     _telemetryClient.TrackException(ex, properties);
+                    _telemetryClient.TrackEvent($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
                     notDeletedItems.Add(deletedItem);
-                    _logger.LogError($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
                 }
             }
 
@@ -545,16 +541,6 @@ namespace CPS_API.Controllers
                     var response = await client.SendAsync(request);
                     if (!response.IsSuccessStatusCode)
                     {
-                        var sb = new StringBuilder();
-                        sb.Append("Error while sending sync callback");
-                        sb.Append("Request:");
-                        sb.Append(request.ToString());
-                        sb.Append("Body: ");
-                        sb.Append(body);
-                        sb.Append("Response:");
-                        sb.Append(response.ToString());
-                        _logger.LogError(sb.ToString());
-
                         var properties = new Dictionary<string, string>
                         {
                             ["Body"] = body,
@@ -573,9 +559,8 @@ namespace CPS_API.Controllers
                         ["Body"] = body
                     };
 
+                    // Log error, otherwise ignore it
                     _telemetryClient.TrackException(ex, properties);
-                    // Log error to callback service, otherwise ignore it
-                    _logger.LogError($"Error while sending sync callback: " + ex.Message);
                 }
             }
         }

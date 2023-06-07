@@ -41,6 +41,9 @@
         public string CertificateThumbprint { get; set; } = string.Empty;
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
+
+        public List<string> AdditionalContentIds { get; set; } = new List<string>();
+
         public string TermStoreName { get; set; } = string.Empty;
     }
     public class FieldMapping

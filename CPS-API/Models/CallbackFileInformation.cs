@@ -25,15 +25,13 @@
 
         public CallbackFileInformation(FileInformation fileInfo)
         {
-            if (fileInfo == null) return;
-
-            MimeType = fileInfo.MimeType;
-            FileName = fileInfo.FileName;
-            FileExtension = fileInfo.FileExtension;
-            CreatedOn = fileInfo.CreatedOn;
-            ModifiedOn = fileInfo.ModifiedOn;
-            SourceCreatedOn = fileInfo.SourceCreatedOn;
-            SourceModifiedOn = fileInfo.SourceModifiedOn;
+            MimeType = fileInfo.MimeType ?? string.Empty;
+            FileName = fileInfo.FileName ?? string.Empty;
+            FileExtension = fileInfo.FileExtension ?? string.Empty;
+            CreatedOn = fileInfo.CreatedOn ?? DateTime.MinValue;
+            ModifiedOn = fileInfo.ModifiedOn ?? DateTime.MinValue;
+            SourceCreatedOn = fileInfo.SourceCreatedOn ?? DateTime.MinValue;
+            SourceModifiedOn = fileInfo.SourceModifiedOn ?? DateTime.MinValue;
             AdditionalMetadata = new CallbackFileMetadata(fileInfo.AdditionalMetadata);
         }
     }

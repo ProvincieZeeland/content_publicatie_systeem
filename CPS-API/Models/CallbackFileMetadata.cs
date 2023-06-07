@@ -27,17 +27,15 @@
 
         public CallbackFileMetadata(FileMetadata metadata)
         {
-            if (metadata == null) return;
-
-            Author = metadata.Author;
-            Title = metadata.Title;
-            DocumentType = metadata.DocumentType;
-            ZeesterDocumentType = metadata.ZeesterDocumentType;
-            ZeesterReference = metadata.ZeesterReference;
-            RetentionPeriod = metadata.RetentionPeriod;
-            Classification = metadata.Classification;
-            PublicationDate = metadata.PublicationDate;
-            ArchiveDate = metadata.ArchiveDate;
+            Author = metadata.Author ?? string.Empty;
+            Title = metadata.Title ?? string.Empty;
+            DocumentType = metadata.DocumentType ?? string.Empty;
+            ZeesterDocumentType = metadata.ZeesterDocumentType ?? string.Empty;
+            ZeesterReference = metadata.ZeesterReference ?? string.Empty;
+            RetentionPeriod = metadata.RetentionPeriod ?? 0;
+            Classification = metadata.Classification ?? string.Empty;
+            PublicationDate = metadata.PublicationDate ?? DateTime.MinValue;
+            ArchiveDate = metadata.ArchiveDate ?? DateTime.MinValue;
         }
     }
 }
