@@ -385,7 +385,7 @@ namespace CPS_API.Repositories
                 }
 
                 // Term to string
-                if (value != null && (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source)))
+                if (value != null && !string.IsNullOrEmpty(fieldMapping.TermsetName))
                 {
                     var jsonString = value.ToString();
                     var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
@@ -421,7 +421,7 @@ namespace CPS_API.Repositories
                     }
 
                     // Term to string
-                    if (value != null && fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
+                    if (value != null && !string.IsNullOrEmpty(fieldMapping.TermsetName))
                     {
                         var jsonString = value.ToString();
                         var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
@@ -891,7 +891,7 @@ namespace CPS_API.Repositories
                     try
                     {
                         // Only try to edit the terms.
-                        if (!string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
+                        if (string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
 
                         object? value;
                         PropertyInfo propertyInfo;

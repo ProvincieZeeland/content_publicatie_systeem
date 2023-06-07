@@ -1,4 +1,4 @@
-﻿using CPS_API.Services;
+﻿using CPS_API.Helpers;
 using System.Text.Json.Serialization;
 
 namespace CPS_API.Models
@@ -25,19 +25,7 @@ namespace CPS_API.Models
 
             set
             {
-                var property = this.GetType().GetProperty(fieldname);
-                if (property == null) throw new ArgumentException("Unknown property " + fieldname);
-
-                FieldPropertyHelper.SetFieldValue(this, property, value);
-                //if (property.PropertyType == typeof(string))
-                //{
-                //    var stringValue = value?.ToString();
-                //    property.SetValue(this, stringValue, null);
-                //}
-                //else
-                //{
-                //    property.SetValue(this, value, null);
-                //}
+                FieldPropertyHelper.SetFieldValue(this, fieldname, value);
             }
         }
     }

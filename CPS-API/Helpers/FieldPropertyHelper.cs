@@ -2,12 +2,24 @@
 using System.Globalization;
 using System.Reflection;
 
-namespace CPS_API.Services
+namespace CPS_API.Helpers
 {
     public static class FieldPropertyHelper
     {
-        public static void SetFieldValue(object parent, PropertyInfo property, object? value)
+        public static T GetFieldValue<T>(object parent, string fieldname)
         {
+            var property = parent.GetType().GetProperty(fieldname);
+            if (property != null)
+                return (T)property.GetValue(parent);
+
+            return default(T);
+        }
+
+        public static void SetFieldValue(object parent, string fieldname, object? value)
+        {
+            var property = parent.GetType().GetProperty(fieldname);
+            if (property == null) throw new ArgumentException("Unknown property " + fieldname);
+        
             if (property.PropertyType == typeof(int?))
             {
                 var stringValue = value?.ToString();

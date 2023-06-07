@@ -63,31 +63,25 @@ namespace CPS_API.Controllers
         public async Task<IActionResult> SynchroniseNewDocuments()
         {
             // Other synchronisation still running?
-            bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsNewSynchronisationRunningRowKey);
+                bool? isSynchronisationRunning = await _settingsRepository.GetSetting<bool?>(Constants.SettingsIsNewSynchronisationRunningField);
+                if (isSynchronisationRunning.HasValue && isSynchronisationRunning.Value) return Ok("Other new synchronisation job is running.");
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsNewSynchronisationRunning");
             }
-            if (isSynchronisationRunning == true)
-            {
-                return Ok("Other new synchronisation job is running.");
-            }
 
             // Set running synchronisation.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey);
-            setting.IsNewSynchronisationRunning = true;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, true);
 
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForNewRowKey);
+                tokens = await _settingsRepository.GetLastTokensAsync(Constants.SettingsLastTokenForNewField);
             }
             catch (Exception ex)
             {
@@ -100,7 +94,7 @@ namespace CPS_API.Controllers
             DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetLastSynchronisationAsync(_globalSettings.SettingsLastSynchronisationNewRowKey);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationNewField);
             }
             catch (Exception ex)
             {
@@ -182,14 +176,11 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully added then we update the last synchronisation date.
-            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationNewRowKey);
-            setting.LastSynchronisationNew = DateTime.UtcNow;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow);
 
             // If all files are succesfully added then we update the token.
-            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForNewRowKey);
-            setting.LastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(setting);
+            string lastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, lastTokenForNew);
 
             await NewSynchronisationStopped();
 
@@ -201,9 +192,8 @@ namespace CPS_API.Controllers
 
         private async Task NewSynchronisationStopped()
         {
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsNewSynchronisationRunningRowKey);
-            setting.IsNewSynchronisationRunning = false;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+            _telemetryClient.TrackEvent("New item synchronisation has stopped");
         }
 
         [HttpGet]
@@ -211,31 +201,28 @@ namespace CPS_API.Controllers
         public async Task<IActionResult> SynchroniseUpdatedDocuments()
         {
             // Other synchronisation still running?
-            bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
+                bool? isSynchronisationRunning = await _settingsRepository.GetSetting<bool?>(Constants.SettingsIsChangedSynchronisationRunningField);
+                if (isSynchronisationRunning.HasValue && isSynchronisationRunning.Value)
+                {
+                    return Ok("Other update synchronisation job is running.");
+                }
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsChangedSynchronisationRunning");
             }
-            if (isSynchronisationRunning == true)
-            {
-                return Ok("Other update synchronisation job is running.");
-            }
 
             // Set running synchronisation.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
-            setting.IsChangedSynchronisationRunning = true;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, true);
 
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForChangedRowKey);
+                tokens = await _settingsRepository.GetLastTokensAsync(Constants.SettingsLastTokenForChangedField);
             }
             catch (Exception ex)
             {
@@ -248,7 +235,7 @@ namespace CPS_API.Controllers
             DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetLastSynchronisationAsync(_globalSettings.SettingsLastSynchronisationChangedRowKey);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationChangedField);
             }
             catch (Exception ex)
             {
@@ -329,15 +316,12 @@ namespace CPS_API.Controllers
                 }
             }
 
-            // If all files are succesfully updated then we update the last synchronisation date.           
-            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastSynchronisationChangedRowKey);
-            setting.LastSynchronisationChanged = DateTime.UtcNow;
-            await _settingsRepository.SaveSettingAsync(setting);
+            // If all files are succesfully updated then we update the last synchronisation date.      
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow);
 
             // If all files are succesfully updated then we update the token.
-            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForChangedRowKey);
-            setting.LastTokenForChanged = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(setting);
+            string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, lastToken);
 
             await ChangedSynchronisationStopped();
 
@@ -349,9 +333,8 @@ namespace CPS_API.Controllers
 
         private async Task ChangedSynchronisationStopped()
         {
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsChangedSynchronisationRunningRowKey);
-            setting.IsChangedSynchronisationRunning = false;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
+            _telemetryClient.TrackEvent("Changed item synchronisation has stopped");
         }
 
         private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
@@ -433,31 +416,28 @@ namespace CPS_API.Controllers
         public async Task<IActionResult> SynchroniseDeletedDocuments()
         {
             // Other synchronisation still running?
-            bool? isSynchronisationRunning;
             try
             {
-                isSynchronisationRunning = await _settingsRepository.GetIsSynchronisationRunningAsync(_globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
+                bool? isSynchronisationRunning = await _settingsRepository.GetSetting<bool?>(Constants.SettingsIsDeletedSynchronisationRunningField);
+                if (isSynchronisationRunning.HasValue && isSynchronisationRunning.Value)
+                {
+                    return Ok("Other delete synchronisation job is running.");
+                }
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsDeleteddSynchronisationRunning");
             }
-            if (isSynchronisationRunning == true)
-            {
-                return Ok("Other delete synchronisation job is running.");
-            }
 
             // Set running synchronisation.
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
-            setting.IsDeletedSynchronisationRunning = true;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, true);
 
             // Get last synchronisation token.
             Dictionary<string, string> tokens;
             try
             {
-                tokens = await _settingsRepository.GetLastTokensAsync(_globalSettings.SettingsLastTokenForDeletedRowKey);
+                tokens = await _settingsRepository.GetLastTokensAsync(Constants.SettingsLastTokenForDeletedField);
             }
             catch (Exception ex)
             {
@@ -529,9 +509,8 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully deleted then we update the token.
-            setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey);
-            setting.LastTokenForDeleted = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(setting);
+            string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForDeletedField, lastToken);
 
             await DeletedSynchronisationStopped();
 
@@ -543,9 +522,8 @@ namespace CPS_API.Controllers
 
         private async Task DeletedSynchronisationStopped()
         {
-            var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsIsDeletedSynchronisationRunningRowKey);
-            setting.IsDeletedSynchronisationRunning = false;
-            await _settingsRepository.SaveSettingAsync(setting);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
+            _telemetryClient.TrackEvent("Deleted item synchronisation has stopped");
         }
 
         private async Task CallCallbackUrl(string url, string body = "")

@@ -78,7 +78,7 @@ namespace CPS_API.Repositories
             long? sequence = null;
             try
             {
-                sequence = await _settingsRepository.SaveSequenceNumberAsync();
+                sequence = await _settingsRepository.IncreaseSequenceNumberAsync();
             }
             catch (Exception ex)
             {
