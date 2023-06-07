@@ -1,4 +1,4 @@
-﻿namespace CPS_API.Models
+﻿namespace CPS_API.Models.Exceptions
 {
     public class NameAlreadyExistsException : Exception
     {

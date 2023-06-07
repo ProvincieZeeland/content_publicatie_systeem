@@ -40,11 +40,11 @@
 
         public LoggingLevel LoggingLevel { get; set; }
 
-        public IEnumerable<FieldMapping> MetadataMapping { get; set; }
+        public List<FieldMapping> MetadataMapping { get; set; } = new List<FieldMapping>();
 
-        public List<FieldMapping> ExternalReferencesMapping { get; set; }
+        public List<FieldMapping> ExternalReferencesMapping { get; set; } = new List<FieldMapping>();
 
-        public List<LocationMapping> LocationMapping { get; set; }
+        public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
         public string RootSiteUrl { get; set; } = string.Empty;
 
@@ -57,6 +57,7 @@
         public string CertificateThumbprint { get; set; } = string.Empty;
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
+        public string TermStoreName { get; set; } = string.Empty;
     }
 
     public class AppSettings
@@ -76,6 +77,8 @@
 
         public string SpoColumnName { get; set; } = string.Empty;
 
+        public string TermsetName { get; set; } = string.Empty;
+
         public object? DefaultValue { get; set; }
 
         public bool Required { get; set; }
@@ -85,16 +88,16 @@
 
     public class LocationMapping
     {
-        public string Classification { get; set; }
+        public string Classification { get; set; } = string.Empty;
 
-        public string Source { get; set; }
+        public string Source { get; set; } = string.Empty;
 
         // Afhankelijk van SPO inrichting > wordt mogelijk anders
-        public string SiteId { get; set; }
+        public string SiteId { get; set; } = string.Empty;
 
-        public string ListId { get; set; }
+        public string ListId { get; set; } = string.Empty;
 
-        public string ExternalReferenceListId { get; set; }
+        public string ExternalReferenceListId { get; set; } = string.Empty;
 
         // optioneel
         public string folderName { get; set; } = string.Empty;

@@ -4,6 +4,8 @@ using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
@@ -22,9 +24,7 @@ namespace CPS_API.Repositories
 
         Task<string> GetUrlAsync(string objectId, bool getAsUser = false);
 
-        Task<ObjectIdentifiers> CreateFileAsync(CpsFile file);
-
-        Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile);
+        Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile? formFile = null);
 
         Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false);
 
@@ -68,7 +68,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex is not FileNotFoundException)
             {
-                throw new Exception("Error while getting objectIdentifiers");
+                throw new CpsException("Error while getting objectIdentifiers", ex);
             }
             if (objectIdentifiers == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
@@ -79,19 +79,15 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                throw ex;
+                throw;
             }
-            catch (MsalUiRequiredException ex)
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
-                throw ex;
-            }
-            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
-            {
-                throw ex;
+                throw;
             }
             catch (Exception ex) when (ex.InnerException is not UnauthorizedAccessException && ex.Message != "Access denied")
             {
-                throw new Exception("Error while getting driveItem");
+                throw new CpsException("Error while getting driveItem", ex);
             }
             if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
 
@@ -106,9 +102,9 @@ namespace CPS_API.Repositories
             {
                 metadata = await GetMetadataAsync(objectId);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw new Exception("Error while getting metadata");
+                throw new CpsException("Error while getting metadata", ex);
             }
             if (metadata == null) throw new FileNotFoundException($"Metadata (objectId = {objectId}) does not exist!");
 
@@ -118,33 +114,28 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file)
+        public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile? formFile = null)
         {
-            return await CreateFileAsync(file, null);
-        }
-
-        public async Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile formFile)
-        {
-            if (file.Metadata == null) throw new NullReferenceException(nameof(file.Metadata));
-
-            var ids = new ObjectIdentifiers();
+            if (file == null || file.Metadata == null) throw new ArgumentNullException(nameof(file.Metadata));
+            if (file.Metadata.AdditionalMetadata == null) throw new ArgumentNullException(nameof(file.Metadata.AdditionalMetadata));
 
             // Get driveid or site matching classification & source           
-            if (file.Metadata.AdditionalMetadata == null) throw new NullReferenceException(nameof(file.Metadata.AdditionalMetadata));
-
             var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
                                     item.Classification.Equals(file.Metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
                                     && item.Source.Equals(file.Metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
                                   );
-            if (locationMapping == null) throw new Exception($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
+            if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
+
+
+            var ids = new ObjectIdentifiers();
             ids.DriveId = locationMapping.ExternalReferenceListId;
 
             var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
-            if (drive == null) throw new Exception("Drive not found for new file.");
+            if (drive == null) throw new CpsException("Drive not found for new file.");
             ids.DriveId = drive.Id;
 
             // Add new file to SharePoint
-            DriveItem driveItem;
+            DriveItem? driveItem;
             try
             {
                 if (formFile != null)
@@ -157,7 +148,7 @@ namespace CPS_API.Repositories
                         }
                         else
                         {
-                            throw new Exception("File cannot be empty");
+                            throw new CpsException("File cannot be empty");
                         }
                     }
                 }
@@ -172,14 +163,14 @@ namespace CPS_API.Repositories
                         }
                         else
                         {
-                            throw new Exception("File cannot be empty");
+                            throw new CpsException("File cannot be empty");
                         }
                     }
                 }
 
                 if (driveItem == null)
                 {
-                    throw new Exception("Error while adding new file");
+                    throw new CpsException("Error while adding new file");
                 }
 
                 ids.DriveItemId = driveItem.Id;
@@ -190,14 +181,11 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                // TODO: Log error in App Insights
                 throw;
             }
-            // todo: handle file exists exception
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-                throw new Exception("Error while adding new file");
+                throw new CpsException("Error while adding new file", ex);
             }
 
             // Generate objectId
@@ -205,18 +193,16 @@ namespace CPS_API.Repositories
             try
             {
                 objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
-                if (objectId.IsNullOrEmpty()) throw new Exception("ObjectId is empty");
+                if (objectId.IsNullOrEmpty()) throw new CpsException("ObjectId is empty");
 
                 ids.ObjectId = objectId;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
-                throw new Exception("Error while generating ObjectId");
+                throw new CpsException("Error while generating ObjectId", ex);
             }
 
             file.Metadata.Ids = ids;
@@ -227,8 +213,6 @@ namespace CPS_API.Repositories
             }
             catch (FieldRequiredException)
             {
-                // TODO: Log error in App Insights
-
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
@@ -236,12 +220,10 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
-                throw new Exception("Error while updating metadata", ex);
+                throw new CpsException("Error while updating metadata", ex);
             }
 
             // Update ExternalReferences in Sharepoint with Graph
@@ -251,8 +233,6 @@ namespace CPS_API.Repositories
             }
             catch (FieldRequiredException)
             {
-                // TODO: Log error in App Insights
-
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
@@ -260,12 +240,10 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
 
-                throw new Exception("Error while updating external references");
+                throw new CpsException("Error while updating external references", ex);
             }
 
             // Done
@@ -286,11 +264,9 @@ namespace CPS_API.Repositories
             {
                 ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-
-                throw new Exception("Error while getting objectIdentifiers");
+                throw new CpsException("Error while getting objectIdentifiers", ex);
             }
             if (ids == null) throw new FileNotFoundException("ObjectIdentifiers not found");
 
@@ -307,9 +283,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                // TODO: Log error in App Insights
-
-                throw new Exception("Error while updating driveItem", ex);
+                throw new CpsException("Error while updating driveItem", ex);
             }
 
             // Update metadata in Sharepoint with Graph
@@ -321,15 +295,11 @@ namespace CPS_API.Repositories
                 }
                 catch (FieldRequiredException)
                 {
-                    // TODO: Log error in App Insights
-
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    // TODO: Log error in App Insights
-
-                    throw new Exception("Error while updating metadata", ex);
+                    throw new CpsException("Error while updating metadata", ex);
                 }
             }
         }
@@ -341,7 +311,7 @@ namespace CPS_API.Repositories
             var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
             if (ids == null)
             {
-                throw new Exception("Error while getting objectIdentifiers");
+                throw new CpsException("Error while getting objectIdentifiers");
             }
             var metadata = new FileInformation();
             metadata.Ids = new ObjectIdentifiers(ids);
@@ -353,19 +323,15 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                throw ex;
+                throw;
             }
-            catch (MsalUiRequiredException ex)
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
-                throw ex;
+                throw;
             }
-            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            catch (Exception ex)
             {
-                throw ex;
-            }
-            catch (Exception)
-            {
-                throw new Exception("Error while getting listItem");
+                throw new CpsException("Error while getting listItem", ex);
             }
             if (listItem == null) throw new FileNotFoundException($"LisItem (objectId = {objectId}) does not exist!");
 
@@ -376,11 +342,11 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                throw ex;
+                throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw new Exception("Error while getting driveItem");
+                throw new CpsException("Error while getting driveItem", ex);
             }
             if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
 
@@ -486,7 +452,7 @@ namespace CPS_API.Repositories
 
             // map received metadata to SPO object
             var fields = mapMetadata(metadata, isForNewFile, ignoreRequiredFields);
-            if (fields == null) throw new NullReferenceException(nameof(fields));
+            if (fields == null) throw new CpsException("Failed to map fields for metadata");
 
             // update sharepoint fields with metadata
             var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
@@ -519,7 +485,8 @@ namespace CPS_API.Repositories
                     var value = getMetadataValue(metadata, fieldMapping);
 
                     // Term is saved separately.
-                    if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
+                    if (!string.IsNullOrEmpty(fieldMapping.TermsetName))
+                    // if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
                     {
                         continue;
                     }
@@ -587,7 +554,7 @@ namespace CPS_API.Repositories
 
             // map received metadata to SPO object
             var listItems = mapExternalReferences(metadata, getAsUser: getAsUser);
-            if (listItems == null) throw new NullReferenceException(nameof(listItems));
+            if (listItems == null) throw new CpsException("Failed to map external references");
 
             // Get existing sharepoint fields with metadata
             var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
@@ -617,7 +584,7 @@ namespace CPS_API.Repositories
                         var newListItem = await request.AddAsync(listItem);
                         newAndUpdatedLisItemIds.Add(newListItem.Id);
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         _logger.LogError($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
                         throw;
@@ -636,7 +603,7 @@ namespace CPS_API.Repositories
                         await request.UpdateAsync(listItem.Fields);
                         newAndUpdatedLisItemIds.Add(existingListItem.Id);
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         _logger.LogError($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
                         throw;
@@ -712,9 +679,9 @@ namespace CPS_API.Repositories
 
                         fields.AdditionalData[fieldMapping.SpoColumnName] = value;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                        throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName, ex);
                     }
                 }
                 listItems.Add(new ListItem { Fields = fields });
@@ -730,7 +697,7 @@ namespace CPS_API.Repositories
 
             // Get SharePoint ID's
             var ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
-            if (objectId == null) throw new Exception("Error while getting sharePointIds");
+            if (ids == null) throw new CpsException("Error while getting sharePointIds");
 
             // Update fileName
             var driveItem = new DriveItem
@@ -788,16 +755,10 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    if (fieldMapping.ReadOnly)
-                    {
-                        continue;
-                    }
+                    if (fieldMapping.ReadOnly) continue;
 
                     // Only try to edit the terms.
-                    if (fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.DocumentType) && fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.Classification) && fieldMapping.FieldName != nameof(metadata.AdditionalMetadata.Source))
-                    {
-                        continue;
-                    }
+                    if (string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
 
                     var value = getMetadataValue(metadata, fieldMapping);
 
@@ -816,7 +777,7 @@ namespace CPS_API.Repositories
 
                     if (!ignoreRequiredFields || value != null)
                     {
-                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, value, getAsUser);
+                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, fieldMapping.TermsetName, value, getAsUser);
                     }
                 }
                 catch (FieldRequiredException)
@@ -832,7 +793,6 @@ namespace CPS_API.Repositories
 
         private object? getMetadataValue(FileInformation metadata, FieldMapping fieldMapping)
         {
-            PropertyInfo propertyInfo;
             if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
             {
                 return metadata.Ids.ObjectId;
@@ -931,10 +891,7 @@ namespace CPS_API.Repositories
                     try
                     {
                         // Only try to edit the terms.
-                        if (fieldMapping.FieldName != nameof(externalReference.ExternalApplication))
-                        {
-                            continue;
-                        }
+                        if (!string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
 
                         object? value;
                         PropertyInfo propertyInfo;
@@ -978,7 +935,7 @@ namespace CPS_API.Repositories
                             }
                         }
 
-                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, listItemIds[i], fieldMapping.SpoColumnName, value, getAsUser);
+                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, listItemIds[i], fieldMapping.SpoColumnName, fieldMapping.TermsetName, value, getAsUser);
                     }
                     catch
                     {
@@ -989,7 +946,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, object? value, bool getAsUser)
+        private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, string termsetName, object? value, bool getAsUser)
         {
             if (_globalSettings.CertificateThumbprint.IsNullOrEmpty())
             {
@@ -997,28 +954,25 @@ namespace CPS_API.Repositories
             }
 
             var site = await _driveRepository.GetSiteAsync(siteId, getAsUser);
-            if (site == null) throw new Exception("Error while getting site");
-            var displayName = site.DisplayName.Replace(" ", "");
-            var baseUrl = $"{_globalSettings.RootSiteUrl}/sites/{displayName}";
-
+            if (site == null || string.IsNullOrEmpty(site.WebUrl)) throw new CpsException("Error while getting site");
             try
             {
                 using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
-                using (ClientContext context = await authenticationManager.GetContextAsync(baseUrl))
+                using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
                 {
-                    var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, value, getAsUser);
+                    var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, termsetName, value, getAsUser);
                     listItem.Update();
                     context.ExecuteQuery();
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error while updating terms (SpoColumnName = {SpoColumnName}, baseUrl = {baseUrl}). Error: {ex.Message}");
-                throw new Exception("Error while updating terms");
+                _logger.LogError($"Error while updating terms (SpoColumnName = {SpoColumnName}, baseUrl = {site.WebUrl}). Error: {ex.Message}");
+                throw new CpsException("Error while updating terms");
             }
         }
 
-        private async Task<Microsoft.SharePoint.Client.ListItem> getTermsForListItem(ClientContext context, string listId, string listItemId, string spoColumnName, object value, bool getAsUser = false)
+        private async Task<Microsoft.SharePoint.Client.ListItem> getTermsForListItem(ClientContext context, string listId, string listItemId, string spoColumnName, string termsetName, object value, bool getAsUser = false)
         {
             // Get TermId for value
             var taxonomySession = TaxonomySession.GetTaxonomySession(context);
@@ -1030,8 +984,8 @@ namespace CPS_API.Repositories
             );
             await context.ExecuteQueryAsync();
 
-            var term = await getTermSet(context, spoColumnName, value);
-            if (term == null) throw new Exception("Term not found");
+            var term = await getTermSet(context, termsetName, value);
+            if (term == null) throw new CpsException("Term not found");
 
             var list = context.Web.Lists.GetById(Guid.Parse(listId));
             var listItem = list.GetItemById(listItemId);
@@ -1054,7 +1008,7 @@ namespace CPS_API.Repositories
             return listItem;
         }
 
-        private async Task<Term> getTermSet(ClientContext context, string spoColumnName, object value)
+        private async Task<Term> getTermSet(ClientContext context, string termsetName, object value)
         {
             var taxonomySession = TaxonomySession.GetTaxonomySession(context);
             context.Load(taxonomySession,
@@ -1075,7 +1029,7 @@ namespace CPS_API.Repositories
                 return null;
             }
 
-            var termGroup = termStore.GetTermGroupByName("Content Publicatiesysteem");
+            var termGroup = termStore.GetTermGroupByName(_globalSettings.TermStoreName);
             await context.ExecuteQueryAsync();
             if (termGroup == null)
             {
@@ -1085,7 +1039,7 @@ namespace CPS_API.Repositories
             context.Load(termGroup.TermSets);
             await context.ExecuteQueryAsync();
 
-            var termSet = termGroup.TermSets.FirstOrDefault(item => item.Name == spoColumnName);
+            var termSet = termGroup.TermSets.FirstOrDefault(item => item.Name == termsetName);
             if (termSet == null)
             {
                 return null;
@@ -1107,7 +1061,7 @@ namespace CPS_API.Repositories
         public async Task<bool> FileContainsMetadata(ObjectIdentifiers ids)
         {
             var listItem = await getListItem(ids);
-            if (listItem == null) throw new Exception($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
+            if (listItem == null) throw new CpsException($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
 
             // When metadata is unknown, we skip the synchronisation.
             // The file is a new incomplete file or something went wrong while adding the file.
@@ -1139,7 +1093,7 @@ namespace CPS_API.Repositories
                         var tempFileInfo = new FileInformation();
                         propertyInfo = tempFileInfo.GetType().GetProperty(fieldMapping.FieldName);
                     }
-                    if (propertyInfo == null) throw new Exception("Error while getting type of metadata");
+                    if (propertyInfo == null) throw new CpsException("Error while getting type of metadata");
 
                     var stringValue = value.ToString();
                     var stringDefaultValue = defaultValue.ToString();

@@ -1,6 +1,7 @@
 ﻿using System.Text.RegularExpressions;
 using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
@@ -38,17 +39,11 @@ namespace CPS_API.Repositories
     public class DriveRepository : IDriveRepository
     {
         private readonly GraphServiceClient _graphClient;
-
-        private readonly StorageTableService _storageTableService;
-
         private readonly GlobalSettings _globalSettings;
 
-        public DriveRepository(GraphServiceClient graphClient,
-                               StorageTableService storageTableService,
-                                IOptions<GlobalSettings> settings)
+        public DriveRepository(GraphServiceClient graphClient, IOptions<GlobalSettings> settings)
         {
             _graphClient = graphClient;
-            _storageTableService = storageTableService;
             _globalSettings = settings.Value;
         }
 
@@ -131,37 +126,30 @@ namespace CPS_API.Repositories
                 // 10 MB; recommended fragment size is between 5-10 MiB
                 var chunkSize = (320 * 1024) * 32;
                 var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
-                var totalLength = fileStream.Length;
-
-                // Create a callback that is invoked after each slice is uploaded
-                IProgress<long> progress = new Progress<long>(prog =>
-                {
-                    Console.WriteLine($"Uploaded {prog} bytes of {totalLength} bytes");
-                });
 
                 DriveItem driveItem = null;
                 try
                 {
                     // Upload the file
-                    var uploadResult = await fileUploadTask.UploadAsync(progress);
+                    var uploadResult = await fileUploadTask.UploadAsync();
                     if (uploadResult.UploadSucceeded)
                         driveItem = uploadResult.ItemResponse;
                 }
                 catch (ServiceException ex)
                 {
-                    throw new Exception("Failed to upload file.", ex);
+                    throw new CpsException("Failed to upload file.", ex);
                 }
 
                 if (driveItem == null)
                 {
-                    throw new Exception("Failed to upload file.");
+                    throw new CpsException("Failed to upload file.");
                 }
 
                 return driveItem;
             }
             else
             {
-                throw new Exception("Cannot upload empty file stream.");
+                throw new CpsException("Cannot upload empty file stream.");
             }
         }
 
@@ -206,7 +194,7 @@ namespace CPS_API.Repositories
         {
             // Get all public drives
             var driveIds = _globalSettings.PublicDriveIds;
-            if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
+            if (driveIds.IsNullOrEmpty()) throw new CpsException("Drives not found");
 
             // For each drive:
             // Call graph delta and get changed items since time
@@ -249,7 +237,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting changed driveItems with delta");
+                    throw new CpsException("Error while getting changed driveItems with delta", ex);
                 }
 
                 var nextTokenExists = delta.AdditionalData.TryGetValue("@odata.deltaLink", out var nextTokenCall);

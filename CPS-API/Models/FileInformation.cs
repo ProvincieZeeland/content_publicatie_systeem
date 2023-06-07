@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using CPS_API.Services;
+using System.Text.Json.Serialization;
 
 namespace CPS_API.Models
 {
@@ -36,35 +37,36 @@ namespace CPS_API.Models
                 var property = this.GetType().GetProperty(fieldname);
                 if (property == null) throw new ArgumentException("Unknown property " + fieldname);
 
-                if (property.PropertyType == typeof(DateTime?))
-                {
-                    var stringValue = value?.ToString();
-                    if (stringValue == null)
-                    {
-                        property.SetValue(this, null, null);
-                    }
-                    else
-                    {
-                        var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
-                        if (dateParsed)
-                        {
-                            property.SetValue(this, dateValue, null);
-                        }
-                        else
-                        {
-                            property.SetValue(this, null, null);
-                        }
-                    }
-                }
-                else if (property.PropertyType == typeof(string))
-                {
-                    var stringValue = value?.ToString();
-                    property.SetValue(this, stringValue, null);
-                }
-                else
-                {
-                    property.SetValue(this, value, null);
-                }
+                FieldPropertyHelper.SetFieldValue(this, property, value);
+                //if (property.PropertyType == typeof(DateTime?))
+                //{
+                //    var stringValue = value?.ToString();
+                //    if (stringValue == null)
+                //    {
+                //        property.SetValue(this, null, null);
+                //    }
+                //    else
+                //    {
+                //        var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
+                //        if (dateParsed)
+                //        {
+                //            property.SetValue(this, dateValue, null);
+                //        }
+                //        else
+                //        {
+                //            property.SetValue(this, null, null);
+                //        }
+                //    }
+                //}
+                //else if (property.PropertyType == typeof(string))
+                //{
+                //    var stringValue = value?.ToString();
+                //    property.SetValue(this, stringValue, null);
+                //}
+                //else
+                //{
+                //    property.SetValue(this, value, null);
+                //}
             }
         }
     }

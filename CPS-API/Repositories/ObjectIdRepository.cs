@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
@@ -47,23 +48,23 @@ namespace CPS_API.Repositories
             // Check if the ID's are valid.
             if (ids.SiteId.IsNullOrEmpty())
             {
-                throw new Exception(nameof(ids.SiteId) + " not found");
+                throw new CpsException(nameof(ids.SiteId) + " not found");
             }
             if (ids.ListId.IsNullOrEmpty())
             {
-                throw new Exception(nameof(ids.ListId) + " not found");
+                throw new CpsException(nameof(ids.ListId) + " not found");
             }
             if (ids.ListItemId.IsNullOrEmpty())
             {
-                throw new Exception(nameof(ids.ListItemId) + " not found");
+                throw new CpsException(nameof(ids.ListItemId) + " not found");
             }
             if (ids.DriveId.IsNullOrEmpty())
             {
-                throw new Exception(nameof(ids.DriveId) + " not found");
+                throw new CpsException(nameof(ids.DriveId) + " not found");
             }
             if (ids.DriveItemId.IsNullOrEmpty())
             {
-                throw new Exception(nameof(ids.DriveItemId) + " not found");
+                throw new CpsException(nameof(ids.DriveItemId) + " not found");
             }
 
             // Check if objectIdentifiers already in table, if so; return objectId.
@@ -81,7 +82,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error while saving new sequence {sequence}");
+                throw new CpsException($"Error while saving new sequence {sequence}", ex);
             }
 
             // Create new objectId
@@ -95,7 +96,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while saving SharePoint ids", ex);
+                throw new CpsException("Error while saving SharePoint ids", ex);
             }
 
             return objectId;
@@ -122,7 +123,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting driveId", ex);
+                    throw new CpsException("Error while getting driveId", ex);
                 }
 
                 // Find driveItemID for object
@@ -140,7 +141,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting driveItemId", ex);
+                    throw new CpsException("Error while getting driveItemId", ex);
                 }
             }
 
@@ -165,7 +166,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting SharePoint Ids", ex);
+                    throw new CpsException("Error while getting SharePoint Ids", ex);
                 }
             }
 
@@ -184,7 +185,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting SharePoint Ids", ex);
+                    throw new CpsException("Error while getting SharePoint Ids", ex);
                 }
             }
 
@@ -205,7 +206,7 @@ namespace CPS_API.Repositories
             var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
+                throw new CpsException($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }

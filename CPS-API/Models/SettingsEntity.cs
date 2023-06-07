@@ -1,4 +1,6 @@
-﻿using Microsoft.WindowsAzure.Storage.Table;
+﻿using CPS_API.Services;
+using Microsoft.WindowsAzure.Storage.Table;
+using System.Runtime.Serialization;
 
 namespace CPS_API.Models
 {
@@ -32,5 +34,27 @@ namespace CPS_API.Models
             this.PartitionKey = partitionKey;
             this.RowKey = rowKey;
         }
+
+        //todo: update code to Azure.Storage.Table, instead of old WindowsAzure.Storage
+        //[IgnoreDataMember]
+        //public object? this[string fieldname]
+        //{
+        //    get
+        //    {
+        //        var property = this.GetType().GetProperty(fieldname);
+        //        if (property != null)
+        //            return property.GetValue(this);
+        //        else
+        //            throw new ArgumentException("Unknown property " + fieldname);
+        //    }
+
+        //    set
+        //    {
+        //        var property = this.GetType().GetProperty(fieldname);
+        //        if (property == null) throw new ArgumentException("Unknown property " + fieldname);
+
+        //        FieldPropertyHelper.SetFieldValue(this, property, value);
+        //    }
+        //}
     }
 }

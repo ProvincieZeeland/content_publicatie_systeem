@@ -1,7 +1,11 @@
 ﻿using System.Diagnostics;
+using CamlBuilder;
 using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
+using CPS_API.Services;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -40,7 +44,7 @@ namespace CPS_API.Repositories
             var table = _storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
+                throw new CpsException($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
             }
             return table;
         }
@@ -51,9 +55,19 @@ namespace CPS_API.Repositories
             if (settingsTable == null) return null;
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey, settingsTable);
-            if (currentSetting == null) throw new Exception("Error while getting SequenceNumber");
+            if (currentSetting == null) throw new CpsException("Error while getting SequenceNumber");
             return currentSetting.SequenceNumber;
         }
+
+        private T GetPropertyValue<T>(object parent, string fieldname)
+        {
+            var property = parent.GetType().GetProperty(fieldname);
+            if (property != null)
+                return (T)property.GetValue(parent);
+
+            return default(T);
+        }
+
 
         public async Task<DateTime?> GetLastSynchronisationAsync(string rowKey)
         {
@@ -62,7 +76,8 @@ namespace CPS_API.Repositories
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return null;
-            return currentSetting.LastSynchronisationChanged;
+
+            return GetPropertyValue<DateTime?>(currentSetting, rowKey);
         }
 
         public async Task<Dictionary<string, string>> GetLastTokensAsync(string rowKey)
@@ -72,7 +87,10 @@ namespace CPS_API.Repositories
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return new Dictionary<string, string>();
-            return currentSetting.LastTokenForDeleted.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+
+            string value = GetPropertyValue<string>(currentSetting, rowKey);
+            if (string.IsNullOrEmpty(value)) return new Dictionary<string, string>();
+            return value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
                .ToDictionary(split => split[0], split => split[1]);
         }
@@ -84,7 +102,8 @@ namespace CPS_API.Repositories
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, rowKey, settingsTable);
             if (currentSetting == null) return null;
-            return currentSetting.IsDeletedSynchronisationRunning;
+            bool? value = GetPropertyValue<bool?>(currentSetting, rowKey);
+            return value.HasValue && value.Value;
         }
 
         public async Task<bool> SaveSettingAsync(SettingsEntity setting)
@@ -104,12 +123,12 @@ namespace CPS_API.Repositories
             var leaseContainer = await _storageTableService.GetLeaseContainer();
             if (leaseContainer == null)
             {
-                throw new Exception("Error while getting leaseContainer");
+                throw new CpsException("Error while getting leaseContainer");
             }
             var settingsTable = GetSettingsTable();
             if (settingsTable == null)
             {
-                throw new Exception("Error while getting settingsTable");
+                throw new CpsException("Error while getting settingsTable");
             }
 
             var setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsSequenceRowKey);
@@ -143,7 +162,7 @@ namespace CPS_API.Repositories
                     }
                     return setting.SequenceNumber;
                 }
-                catch (AcquiringLeaseException ex)
+                catch (AcquiringLeaseException)
                 {
                     // Lease is still active, continue loop.
                 }

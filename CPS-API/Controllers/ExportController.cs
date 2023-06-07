@@ -1,14 +1,18 @@
-﻿using System.Net.Http.Headers;
+﻿using System;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
 using CPS_API.Services;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph.ExternalConnectors;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -20,20 +24,17 @@ namespace CPS_API.Controllers
     public class ExportController : Controller
     {
         private readonly IDriveRepository _driveRepository;
-
         private readonly ISettingsRepository _settingsRepository;
+        private readonly IFilesRepository _filesRepository;
 
         private readonly FileStorageService _fileStorageService;
-
         private readonly StorageTableService _storageTableService;
-
-        private readonly IFilesRepository _filesRepository;
+        private readonly XmlExportSerivce _xmlExportSerivce;
 
         private readonly GlobalSettings _globalSettings;
 
-        private readonly XmlExportSerivce _xmlExportSerivce;
-
         private readonly ILogger _logger;
+        private readonly TelemetryClient _telemetryClient;
 
         public ExportController(IDriveRepository driveRepository,
                                 ISettingsRepository settingsRepository,
@@ -42,7 +43,8 @@ namespace CPS_API.Controllers
                                 IFilesRepository filesRepository,
                                 IOptions<GlobalSettings> settings,
                                 XmlExportSerivce xmlExportSerivce,
-                                ILogger<FilesRepository> logger)
+                                ILogger<FilesRepository> logger,
+                                TelemetryClient telemetryClient)
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
@@ -52,6 +54,7 @@ namespace CPS_API.Controllers
             _globalSettings = settings.Value;
             _xmlExportSerivce = xmlExportSerivce;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _telemetryClient = telemetryClient;
         }
 
         // GET
@@ -67,6 +70,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsNewSynchronisationRunning");
             }
             if (isSynchronisationRunning == true)
@@ -87,7 +91,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                NewSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await NewSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForNew");
             }
 
@@ -99,7 +104,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                NewSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
@@ -112,12 +118,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                NewSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting new documents");
             }
             if (deltaResponse == null)
             {
-                NewSynchronisationStopped();
+                _telemetryClient.TrackException(new CpsException("Delta response is null"));
+                await NewSynchronisationStopped();
                 return StatusCode(500, "Error while getting new documents");
             }
 
@@ -138,9 +146,9 @@ namespace CPS_API.Controllers
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception("Error while getting objectIdentifiers");
+                        throw new CpsException("Error while getting objectIdentifiers", ex);
                     }
-                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
                     // Callback for changed file.
@@ -161,6 +169,13 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = newItem?.DriveId,
+                        ["DriveItemId"] = newItem?.Id
+                    };
+
+                    _telemetryClient.TrackException(ex, properties);
                     notAddedItems.Add(newItem);
                     _logger.LogError($"Error while adding file (DriveId: {newItem?.DriveId}, DriveItemId: {newItem?.Id}) to FileStorage: {ex.Message}");
                 }
@@ -176,7 +191,7 @@ namespace CPS_API.Controllers
             setting.LastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
-            NewSynchronisationStopped();
+            await NewSynchronisationStopped();
 
             var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.").ToList();
             var message = String.Join("\r\n", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
@@ -203,6 +218,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsChangedSynchronisationRunning");
             }
             if (isSynchronisationRunning == true)
@@ -223,7 +239,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                ChangedSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForChanged");
             }
 
@@ -235,7 +252,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                ChangedSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
@@ -248,12 +266,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                ChangedSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting updated documents");
             }
             if (deltaResponse == null)
             {
-                ChangedSynchronisationStopped();
+                _telemetryClient.TrackException(new CpsException("Delta response is null"));
+                await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting updated documents");
             }
 
@@ -274,9 +294,9 @@ namespace CPS_API.Controllers
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception("Error while getting objectIdentifiers");
+                        throw new CpsException("Error while getting objectIdentifiers", ex);
                     }
-                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
@@ -297,6 +317,13 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = updatedItem?.DriveId,
+                        ["DriveItemId"] = updatedItem?.Id
+                    };
+
+                    _telemetryClient.TrackException(ex, properties);
                     notUpdatedItems.Add(updatedItem);
                     _logger.LogError($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
                 }
@@ -312,7 +339,7 @@ namespace CPS_API.Controllers
             setting.LastTokenForChanged = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
-            ChangedSynchronisationStopped();
+            await ChangedSynchronisationStopped();
 
             var notDeletedItemsAsStr = notUpdatedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
             var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
@@ -335,9 +362,9 @@ namespace CPS_API.Controllers
                 var ids = new ObjectIdentifiers(objectIdentifiersEntity);
                 metadataExists = await _filesRepository.FileContainsMetadata(ids);
             }
-            catch
+            catch (Exception ex)
             {
-                throw new Exception("Error while getting metadata");
+                throw new CpsException("Error while getting metadata", ex);
             }
             // When metadata is unknown, we skip the synchronisation.
             // The file is a new incomplete file or something went wrong while adding the file.
@@ -353,9 +380,9 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while getting metadata");
+                throw new CpsException("Error while getting metadata", ex);
             }
-            if (metadata == null) throw new Exception("Error while getting metadata");
+            if (metadata == null) throw new CpsException("Error while getting metadata");
 
             Stream? stream;
             try
@@ -364,19 +391,18 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while getting content");
+                throw new CpsException("Error while getting content", ex);
             }
-            if (stream == null) throw new Exception("Error while getting content");
+            if (stream == null) throw new CpsException("Error while getting content");
 
             var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
             try
             {
                 await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
-                //todo: get full filelocation for sending to callback?
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while uploading document");
+                throw new CpsException("Error while uploading document", ex);
             }
 
             string metadataXml;
@@ -386,7 +412,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while exporting metadata to xml");
+                throw new CpsException("Error while exporting metadata to xml", ex);
             }
 
             var metadataName = objectIdentifiersEntity.ObjectId + ".xml";
@@ -396,7 +422,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while uploading metadata");
+                throw new CpsException("Error while uploading metadata", ex);
             }
 
             return true;
@@ -414,6 +440,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex);
                 return StatusCode(500, "Error while getting IsDeleteddSynchronisationRunning");
             }
             if (isSynchronisationRunning == true)
@@ -434,7 +461,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                DeletedSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await DeletedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastTokenForDeleted");
             }
 
@@ -446,12 +474,14 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                DeletedSynchronisationStopped();
+                _telemetryClient.TrackException(ex);
+                await DeletedSynchronisationStopped();
                 return StatusCode(500, "Error while getting deleted documents");
             }
             if (deltaResponse == null)
             {
-                DeletedSynchronisationStopped();
+                _telemetryClient.TrackException(new CpsException("Delta response is null"));
+                await DeletedSynchronisationStopped();
                 return StatusCode(500, "Error while getting deleted documents");
             }
 
@@ -471,9 +501,9 @@ namespace CPS_API.Controllers
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception("Error while getting objectIdentifiers");
+                        throw new CpsException("Error while getting objectIdentifiers", ex);
                     }
-                    if (objectIdentifiersEntity == null) throw new Exception("Error while getting objectIdentifiers");
+                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
                     await DeleteFileAndXmlFromFileStorage(objectIdentifiersEntity);
 
                     // Callback for changed file.
@@ -486,6 +516,13 @@ namespace CPS_API.Controllers
                 }
                 catch (Exception ex)
                 {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = deletedItem?.DriveId,
+                        ["DriveItemId"] = deletedItem?.Id
+                    };
+
+                    _telemetryClient.TrackException(ex, properties);
                     notDeletedItems.Add(deletedItem);
                     _logger.LogError($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
                 }
@@ -493,10 +530,10 @@ namespace CPS_API.Controllers
 
             // If all files are succesfully deleted then we update the token.
             setting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsLastTokenForDeletedRowKey);
-            setting.LastTokenForDeleted = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray()); ;
+            setting.LastTokenForDeleted = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
             await _settingsRepository.SaveSettingAsync(setting);
 
-            DeletedSynchronisationStopped();
+            await DeletedSynchronisationStopped();
 
             var notDeletedItemsAsStr = notDeletedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
             var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
@@ -539,10 +576,26 @@ namespace CPS_API.Controllers
                         sb.Append("Response:");
                         sb.Append(response.ToString());
                         _logger.LogError(sb.ToString());
+
+                        var properties = new Dictionary<string, string>
+                        {
+                            ["Body"] = body,
+                            ["Request"] = request.ToString(),
+                            ["Response"] = response.ToString(),
+
+                        };
+
+                        _telemetryClient.TrackException(new CpsException("Callback failed"), properties);
                     }
                 }
                 catch (Exception ex)
                 {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["Body"] = body
+                    };
+
+                    _telemetryClient.TrackException(ex, properties);
                     // Log error to callback service, otherwise ignore it
                     _logger.LogError($"Error while sending sync callback: " + ex.Message);
                 }
@@ -558,7 +611,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while deleting document");
+                throw new CpsException("Error while deleting document", ex);
             }
         }
 
@@ -567,7 +620,7 @@ namespace CPS_API.Controllers
             var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new Exception($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
+                throw new CpsException($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
         }
