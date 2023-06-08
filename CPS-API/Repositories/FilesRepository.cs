@@ -495,7 +495,7 @@ namespace CPS_API.Repositories
             try
             {
                 var additionalObjectIds = mapAdditionalIds(metadata);
-                if (additionalObjectIds != null && additionalObjectIds.Count > 0)
+                if (!string.IsNullOrEmpty(additionalObjectIds))
                 {
                     await _objectIdRepository.SaveAdditionalIdentifiersAsync(metadata.Ids.ObjectId, additionalObjectIds);
                 }
@@ -754,27 +754,25 @@ namespace CPS_API.Repositories
             return listItems;
         }
 
-        private List<string> mapAdditionalIds(FileInformation metadata)
+        private string mapAdditionalIds(FileInformation metadata)
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
-            List<string> ids = new List<string>();
-            foreach (var idMapping in _globalSettings.AdditionalObjectIds)
+            try
             {
-                try
+                if (!string.IsNullOrEmpty(_globalSettings.AdditionalObjectId) &&
+                    metadata.AdditionalMetadata[_globalSettings.AdditionalObjectId] != null)
                 {
-                    if (metadata.AdditionalMetadata[idMapping] != null)
-                    {
-                        string id = metadata.AdditionalMetadata[idMapping].ToString();
-                        if (!string.IsNullOrEmpty(id)) ids.Add(id);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    throw new ArgumentException("Cannot parse additional ids", idMapping, ex);
+                    string id = metadata.AdditionalMetadata[_globalSettings.AdditionalObjectId].ToString();
+                    if (!string.IsNullOrEmpty(id)) return id;
                 }
             }
-            return ids;
+            catch (Exception ex)
+            {
+                throw new ArgumentException("Cannot parse additional ids", _globalSettings.AdditionalObjectId, ex);
+            }
+
+            return string.Empty;
         }
 
         public async Task UpdateFileName(string objectId, string fileName, bool getAsUser = false)

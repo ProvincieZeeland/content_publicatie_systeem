@@ -42,10 +42,11 @@
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
 
-        public List<string> AdditionalObjectIds { get; set; } = new List<string>();
+        public string AdditionalObjectId { get; set; } = string.Empty;
 
         public string TermStoreName { get; set; } = string.Empty;
     }
+
     public class FieldMapping
     {
         public string FieldName { get; set; } = string.Empty;

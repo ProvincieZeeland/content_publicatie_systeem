@@ -19,7 +19,7 @@ namespace CPS_API.Repositories
 
         Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
 
-        Task SaveAdditionalIdentifiersAsync(string objectId, List<string> additionalIds);
+        Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds);
 
         Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false);
     }
@@ -214,10 +214,15 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
         {
-            var objectIdentifiersEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(objectId);
-            if (objectIdentifiersEntity == null) objectIdentifiersEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+            ObjectIdentifiersEntity objectIdentifiersEntity = null;
+            if (!string.IsNullOrEmpty(_globalSettings.AdditionalObjectId))
+                objectIdentifiersEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(objectId);
 
-            if (objectIdentifiersEntity == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
+            if (objectIdentifiersEntity == null)
+                objectIdentifiersEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+
+            if (objectIdentifiersEntity == null)
+                throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
 
             return objectIdentifiersEntity;
         }
@@ -226,7 +231,7 @@ namespace CPS_API.Repositories
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
             objectId = objectId.ToUpper();
-            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.AdditionalObjectIds), QueryComparisons.LessThan, objectId);
+            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.AdditionalObjectId), QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
 
             var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
@@ -267,10 +272,10 @@ namespace CPS_API.Repositories
             await _storageTableService.SaveAsync(objectIdentifiersTable, document);
         }
 
-        public async Task SaveAdditionalIdentifiersAsync(string objectId, List<string> additionalIds)
+        public async Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds)
         {
             var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            ids.AdditionalObjectIds = String.Join(seperator, additionalIds);
+            ids.AdditionalObjectId = additionalIds;
 
             var objectIdentifiersTable = GetObjectIdentifiersTable();
             await _storageTableService.SaveAsync(objectIdentifiersTable, ids);

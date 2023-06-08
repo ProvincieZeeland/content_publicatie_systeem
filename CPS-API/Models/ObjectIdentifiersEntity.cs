@@ -18,7 +18,7 @@ namespace CPS_API.Models
 
         public string ExternalReferenceListId { get; set; }
 
-        public string? AdditionalObjectIds { get; set; }
+        public string? AdditionalObjectId { get; set; }
 
         public ObjectIdentifiersEntity()
         {
@@ -36,15 +36,7 @@ namespace CPS_API.Models
             DriveId = ids.DriveId;
             DriveItemId = ids.DriveItemId;
             ExternalReferenceListId = ids.ExternalReferenceListId;
-
-            if (ids.AdditionalObjectIds != null)
-            {
-                AdditionalObjectIds = String.Join(';', ids.AdditionalObjectIds);
-            }
-            else
-            {
-                AdditionalObjectIds = "";
-            }
+            AdditionalObjectId = ids.AdditionalObjectId;
         }
     }
 }
