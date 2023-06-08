@@ -120,6 +120,7 @@ namespace CPS_API.Controllers
 
         // PUT
         [HttpPut]
+        [RequestSizeLimit(4194304)] // 4 MB
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
             if (file.Content == null || file.Content.Length == 0) return StatusCode(400, "File is required");
@@ -248,6 +249,7 @@ namespace CPS_API.Controllers
 
         // POST
         [HttpPut]
+        [RequestSizeLimit(4194304)] // 4 MB
         [Route("content/{objectId}")]
         //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)
@@ -260,6 +262,48 @@ namespace CPS_API.Controllers
             try
             {
                 await _filesRepository.UpdateContentAsync(objectId, content);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(500, ex.Message ?? "Error while updating content");
+            }
+
+            return Ok();
+        }
+
+
+        [HttpPut]
+        [RequestSizeLimit(5368709120)] // 5 GB
+        [Route("largeContent/{objectId}")]
+        //[Route("{objectId}/content")]
+        public async Task<IActionResult> UpdateFileContent(string objectId)
+        {
+            if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required");
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
+            try
+            {
+                var formFile = Request.Form.Files.First();
+                await _filesRepository.UpdateContentAsync(objectId, formFile);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {

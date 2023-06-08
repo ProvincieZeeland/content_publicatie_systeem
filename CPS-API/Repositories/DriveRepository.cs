@@ -25,6 +25,8 @@ namespace CPS_API.Repositories
 
         Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
+        Task<DriveItem?> UpdateAsync(string driveId, string itemId, Stream fileStream, bool getAsUser = false);
+
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
@@ -117,6 +119,49 @@ namespace CPS_API.Repositories
                 var request = _graphClient.Drives[driveId].Root
                     .ItemWithPath(fileName).CreateUploadSession(properties)
                     .Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                var uploadSession = await request.PostAsync();
+
+                // 10 MB; recommended fragment size is between 5-10 MiB
+                var chunkSize = (320 * 1024) * 32;
+                var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
+
+                DriveItem driveItem = null;
+                try
+                {
+                    // Upload the file
+                    var uploadResult = await fileUploadTask.UploadAsync();
+                    if (uploadResult.UploadSucceeded)
+                        driveItem = uploadResult.ItemResponse;
+                }
+                catch (ServiceException ex)
+                {
+                    throw new CpsException("Failed to upload file.", ex);
+                }
+
+                if (driveItem == null)
+                {
+                    throw new CpsException("Failed to upload file.");
+                }
+
+                return driveItem;
+            }
+            else
+            {
+                throw new CpsException("Cannot upload empty file stream.");
+            }
+        }
+        public async Task<DriveItem?> UpdateAsync(string driveId, string itemId, Stream fileStream, bool getAsUser = false)
+        {
+            if (fileStream.Length > 0)
+            {
+                var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
+                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "fail");
+
+                var request = _graphClient.Drives[driveId].Items[itemId].CreateUploadSession(properties).Request();
                 if (!getAsUser)
                 {
                     request = request.WithAppOnly();

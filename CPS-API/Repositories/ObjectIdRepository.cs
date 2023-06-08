@@ -19,11 +19,15 @@ namespace CPS_API.Repositories
 
         Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids);
 
+        Task SaveAdditionalIdentifiersAsync(string objectId, List<string> additionalIds);
+
         Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false);
     }
 
     public class ObjectIdRepository : IObjectIdRepository
     {
+        private const string prefix = "ZLD";
+        private const string seperator = ";";
         private readonly ISettingsRepository _settingsRepository;
         private readonly StorageTableService _storageTableService;
         private readonly IDriveRepository _driveRepository;
@@ -86,7 +90,7 @@ namespace CPS_API.Repositories
             }
 
             // Create new objectId
-            var objectId = $"ZLD{DateTime.Now.Year}-{sequence}";
+            var objectId = $"{prefix}{DateTime.Now.Year}-{sequence}";
             ids.ObjectId = objectId;
 
             // Store objectId + backend ids in table
@@ -104,8 +108,8 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false)
         {
-            if ((ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty())
-                && (!ids.SiteId.IsNullOrEmpty() && !ids.ListId.IsNullOrEmpty()))
+            if ((string.IsNullOrEmpty(ids.DriveId) || string.IsNullOrEmpty(ids.DriveItemId))
+                && (!string.IsNullOrEmpty(ids.SiteId) && !string.IsNullOrEmpty(ids.ListId)))
             {
                 // Find driveID for object
                 try
@@ -129,7 +133,7 @@ namespace CPS_API.Repositories
                 // Find driveItemID for object
                 try
                 {
-                    if (!ids.ListItemId.IsNullOrEmpty())
+                    if (!string.IsNullOrEmpty(ids.ListItemId))
                     {
                         var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser: getAsUser);
                         ids.DriveItemId = driveItem.Id;
@@ -145,8 +149,8 @@ namespace CPS_API.Repositories
                 }
             }
 
-            if ((ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty())
-                && (!ids.DriveId.IsNullOrEmpty() && !ids.DriveItemId.IsNullOrEmpty()))
+            if ((string.IsNullOrEmpty(ids.SiteId) || string.IsNullOrEmpty(ids.ListId) || string.IsNullOrEmpty(ids.ListItemId))
+                && (!string.IsNullOrEmpty(ids.DriveId) && !string.IsNullOrEmpty(ids.DriveItemId)))
             {
                 // Find sharepoint Ids from drive
                 try
@@ -170,18 +174,15 @@ namespace CPS_API.Repositories
                 }
             }
 
-            if (!ids.ObjectId.IsNullOrEmpty() &&
-                (ids.SiteId.IsNullOrEmpty() || ids.ListId.IsNullOrEmpty() || ids.ListItemId.IsNullOrEmpty()
-                || ids.DriveId.IsNullOrEmpty() || ids.DriveItemId.IsNullOrEmpty()))
+            if (!string.IsNullOrEmpty(ids.ObjectId) &&
+                (string.IsNullOrEmpty(ids.SiteId) || string.IsNullOrEmpty(ids.ListId) || string.IsNullOrEmpty(ids.ListItemId)
+                || string.IsNullOrEmpty(ids.DriveId) || string.IsNullOrEmpty(ids.DriveItemId)))
             {
                 try
                 {
                     var idsFromStorageTable = await this.GetObjectIdentifiersAsync(ids.ObjectId);
-                    ids.DriveId = idsFromStorageTable.DriveId;
-                    ids.DriveItemId = idsFromStorageTable.DriveItemId;
-                    ids.SiteId = idsFromStorageTable.SiteId;
-                    ids.ListId = idsFromStorageTable.ListId;
-                    ids.ListItemId = idsFromStorageTable.ListItemId;
+                    if (idsFromStorageTable == null) throw new CpsException("Identifiers not found");
+                    ids = new ObjectIdentifiers(idsFromStorageTable);
                 }
                 catch (Exception ex)
                 {
@@ -213,13 +214,27 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
         {
-            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectId);
+            var objectIdentifiersEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(objectId);
+            if (objectIdentifiersEntity == null) objectIdentifiersEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+
             if (objectIdentifiersEntity == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
 
             return objectIdentifiersEntity;
         }
 
-        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string objectId)
+        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByAdditionalIdsAsync(string objectId)
+        {
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            objectId = objectId.ToUpper();
+            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.AdditionalObjectIds), QueryComparisons.LessThan, objectId);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
+
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
+            return result.Results?.FirstOrDefault();
+
+        }
+
+        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByObjectIdAsync(string objectId)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
@@ -250,6 +265,15 @@ namespace CPS_API.Repositories
 
             var document = new ObjectIdentifiersEntity(objectId, ids);
             await _storageTableService.SaveAsync(objectIdentifiersTable, document);
+        }
+
+        public async Task SaveAdditionalIdentifiersAsync(string objectId, List<string> additionalIds)
+        {
+            var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+            ids.AdditionalObjectIds = String.Join(seperator, additionalIds);
+
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            await _storageTableService.SaveAsync(objectIdentifiersTable, ids);
         }
     }
 }

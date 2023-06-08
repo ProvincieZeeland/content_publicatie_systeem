@@ -6,6 +6,7 @@ using System.Text.Json;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
@@ -14,6 +15,7 @@ using Microsoft.IdentityModel.Abstractions;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
+using PnP.Framework.Modernization.Publishing;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.ListItem;
 
@@ -26,8 +28,9 @@ namespace CPS_API.Repositories
         Task<string> GetUrlAsync(string objectId, bool getAsUser = false);
 
         Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile? formFile = null);
+        Task UpdateContentAsync(string objectId, IFormFile formFile, bool getAsUser = false);
 
-        Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false);
+        Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false, IFormFile? formFile = null);
 
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
@@ -190,11 +193,10 @@ namespace CPS_API.Repositories
             }
 
             // Generate objectId
-            string objectId;
             try
             {
-                objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
-                if (objectId.IsNullOrEmpty()) throw new CpsException("ObjectId is empty");
+                string objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
+                if (string.IsNullOrEmpty(objectId)) throw new CpsException("ObjectId is empty");
 
                 ids.ObjectId = objectId;
             }
@@ -247,11 +249,31 @@ namespace CPS_API.Repositories
                 throw new CpsException("Error while updating external references", ex);
             }
 
+            // Store any additional IDs passed along
+            try
+            {
+                var additionalObjectIds = mapAdditionalIds(file.Metadata);
+                await _objectIdRepository.SaveAdditionalIdentifiersAsync(ids.ObjectId, additionalObjectIds);
+            }
+            catch (Exception ex)
+            {
+                // Remove file from Sharepoint
+                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+
+                throw new CpsException("Error while updating additional IDs", ex);
+            }
+
             // Done
             return ids;
         }
 
-        public async Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false)
+
+        public async Task UpdateContentAsync(string objectId, IFormFile formFile, bool getAsUser = false)
+        {
+            await UpdateContentAsync(objectId, null, getAsUser, formFile);
+        }
+
+        public async Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false, IFormFile? formFile = null)
         {
             // Get File metadata
             // When updating content, all metadata gets remove for the file.
@@ -274,13 +296,36 @@ namespace CPS_API.Repositories
             // Create new version
             try
             {
-                using var stream = new MemoryStream(content);
-                var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request();
-                if (!getAsUser)
+                if (content != null && content.Length > 0)
                 {
-                    request = request.WithAppOnly();
+                    using (var stream = new MemoryStream(content))
+                    {
+                        var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request();
+                        if (!getAsUser)
+                        {
+                            request = request.WithAppOnly();
+                        }
+                        await request.PutAsync<DriveItem>(stream);
+                    }
                 }
-                await request.PutAsync<DriveItem>(stream);
+                else if (formFile != null)
+                {
+                    using (var fileStream = formFile.OpenReadStream())
+                    {
+                        if (fileStream.Length > 0)
+                        {
+                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, fileStream);
+                        }
+                        else
+                        {
+                            throw new CpsException("File cannot be empty");
+                        }
+                    }
+                }
+                else
+                {
+                    throw new CpsException("File cannot be empty");
+                }
             }
             catch (Exception ex)
             {
@@ -304,6 +349,7 @@ namespace CPS_API.Repositories
                 }
             }
         }
+
 
         #region Metadata
 
@@ -440,7 +486,25 @@ namespace CPS_API.Repositories
 
         public async Task UpdateMetadataAsync(FileInformation metadata, bool getAsUser = false)
         {
+            if (metadata == null) throw new ArgumentNullException("metadata");
+            if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
+
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
+
+            // Store any additional IDs passed along
+            try
+            {
+                var additionalObjectIds = mapAdditionalIds(metadata);
+                if (additionalObjectIds != null && additionalObjectIds.Count > 0)
+                {
+                    await _objectIdRepository.SaveAdditionalIdentifiersAsync(metadata.Ids.ObjectId, additionalObjectIds);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while updating additional IDs", ex);
+            }
+
             await UpdateMetadataWithoutExternalReferencesAsync(metadata, getAsUser: getAsUser);
             await UpdateExternalReferencesAsync(metadata, getAsUser: getAsUser);
             await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName);
@@ -487,7 +551,6 @@ namespace CPS_API.Repositories
 
                     // Term is saved separately.
                     if (!string.IsNullOrEmpty(fieldMapping.TermsetName))
-                    // if (fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.DocumentType) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Classification) || fieldMapping.FieldName == nameof(metadata.AdditionalMetadata.Source))
                     {
                         continue;
                     }
@@ -554,7 +617,7 @@ namespace CPS_API.Repositories
             }
 
             // map received metadata to SPO object
-            var listItems = mapExternalReferences(metadata, getAsUser: getAsUser);
+            var listItems = mapExternalReferences(metadata);
             if (listItems == null) throw new CpsException("Failed to map external references");
 
             // Get existing sharepoint fields with metadata
@@ -617,7 +680,7 @@ namespace CPS_API.Repositories
             await updateTermsForExternalReferencesAsync(metadata, newAndUpdatedLisItemIds, isForNewFile, getAsUser);
         }
 
-        private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool getAsUser = false)
+        private List<ListItem> mapExternalReferences(FileInformation metadata, bool isForNewFile = false)
         {
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
@@ -689,6 +752,29 @@ namespace CPS_API.Repositories
             }
 
             return listItems;
+        }
+
+        private List<string> mapAdditionalIds(FileInformation metadata)
+        {
+            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
+
+            List<string> ids = new List<string>();
+            foreach (var idMapping in _globalSettings.AdditionalObjectIds)
+            {
+                try
+                {
+                    if (metadata.AdditionalMetadata[idMapping] != null)
+                    {
+                        string id = metadata.AdditionalMetadata[idMapping].ToString();
+                        if (!string.IsNullOrEmpty(id)) ids.Add(id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new ArgumentException("Cannot parse additional ids", idMapping, ex);
+                }
+            }
+            return ids;
         }
 
         public async Task UpdateFileName(string objectId, string fileName, bool getAsUser = false)

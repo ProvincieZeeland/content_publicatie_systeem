@@ -42,7 +42,7 @@
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
 
-        public List<string> AdditionalContentIds { get; set; } = new List<string>();
+        public List<string> AdditionalObjectIds { get; set; } = new List<string>();
 
         public string TermStoreName { get; set; } = string.Empty;
     }

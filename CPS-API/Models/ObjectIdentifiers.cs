@@ -1,4 +1,6 @@
-﻿namespace CPS_API.Models
+﻿using Microsoft.IdentityModel.Tokens;
+
+namespace CPS_API.Models
 {
     public class ObjectIdentifiers
     {
@@ -15,6 +17,7 @@
         public string? DriveItemId { get; set; }
 
         public string? ExternalReferenceListId { get; set; }
+        public List<string>? AdditionalObjectIds { get; set; }
 
         public ObjectIdentifiers()
         {
@@ -30,6 +33,11 @@
             DriveId = entity.DriveId;
             DriveItemId = entity.DriveItemId;
             ExternalReferenceListId = entity.ExternalReferenceListId;
+
+            if (string.IsNullOrEmpty(entity.AdditionalObjectIds))
+                AdditionalObjectIds = new List<string>();
+            else
+                AdditionalObjectIds = entity.AdditionalObjectIds.Split(';').ToList<string>();
         }
     }
 }
