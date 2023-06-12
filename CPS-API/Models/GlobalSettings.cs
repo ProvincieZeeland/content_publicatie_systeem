@@ -22,19 +22,13 @@
 
         public string CallbackAccessToken { get; set; } = string.Empty;
 
-        public LoggingLevel LoggingLevel { get; set; }
-
         public List<FieldMapping> MetadataMapping { get; set; } = new List<FieldMapping>();
 
         public List<FieldMapping> ExternalReferencesMapping { get; set; } = new List<FieldMapping>();
 
         public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
-        public string RootSiteUrl { get; set; } = string.Empty;
-
         public string ClientId { get; set; } = string.Empty;
-
-        public string ClientSecret { get; set; } = string.Empty;
 
         public string TenantId { get; set; } = string.Empty;
 
@@ -55,11 +49,13 @@
 
         public string TermsetName { get; set; } = string.Empty;
 
-        public object? DefaultValue { get; set; }
+        public object? DefaultValue { get; set; } = null;
 
-        public bool Required { get; set; }
+        public bool Required { get; set; } = false;
 
-        public bool ReadOnly { get; set; }
+        public bool ReadOnly { get; set; } = false;
+
+        public bool AllowUpdate { get; set; } = true;
     }
 
     public class LocationMapping

@@ -26,6 +26,7 @@ namespace CPS_API.Controllers
         private readonly IDriveRepository _driveRepository;
         private readonly ISettingsRepository _settingsRepository;
         private readonly IFilesRepository _filesRepository;
+        private readonly IMetadataRepository _sharePointRepository;
 
         private readonly FileStorageService _fileStorageService;
         private readonly StorageTableService _storageTableService;
@@ -42,7 +43,8 @@ namespace CPS_API.Controllers
                                 IFilesRepository filesRepository,
                                 IOptions<GlobalSettings> settings,
                                 XmlExportSerivce xmlExportSerivce,
-                                TelemetryClient telemetryClient)
+                                TelemetryClient telemetryClient,
+                                IMetadataRepository sharePointRepository)
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
@@ -52,6 +54,7 @@ namespace CPS_API.Controllers
             _globalSettings = settings.Value;
             _xmlExportSerivce = xmlExportSerivce;
             _telemetryClient = telemetryClient;
+            _sharePointRepository = sharePointRepository;
         }
 
         // GET
@@ -339,7 +342,7 @@ namespace CPS_API.Controllers
             try
             {
                 var ids = new ObjectIdentifiers(objectIdentifiersEntity);
-                metadataExists = await _filesRepository.FileContainsMetadata(ids);
+                metadataExists = await _sharePointRepository.FileContainsMetadata(ids);
             }
             catch (Exception ex)
             {
@@ -355,7 +358,7 @@ namespace CPS_API.Controllers
             FileInformation? metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectIdentifiersEntity.ObjectId);
+                metadata = await _sharePointRepository.GetMetadataAsync(objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {

@@ -21,15 +21,18 @@ namespace CPS_API.Controllers
     {
         private readonly GraphServiceClient _graphServiceClient;
         private readonly IFilesRepository _filesRepository;
+        private readonly IMetadataRepository _sharePointRepository;
         private readonly TelemetryClient _telemetryClient;
 
         public HomeController(GraphServiceClient graphServiceClient,
                               IFilesRepository filesRepository,
-                              TelemetryClient telemetryClient)
+                              TelemetryClient telemetryClient,
+                              IMetadataRepository sharePointRepository)
         {
             _graphServiceClient = graphServiceClient;
             _filesRepository = filesRepository;
             _telemetryClient = telemetryClient;
+            _sharePointRepository = sharePointRepository;
         }
 
         public async Task<IActionResult> Index()
@@ -129,7 +132,7 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectId, true);
+                metadata = await _sharePointRepository.GetMetadataAsync(objectId, true);
             }
             catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {

@@ -21,16 +21,19 @@ namespace CPS_API.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IFilesRepository _filesRepository;
+        private readonly IMetadataRepository _sharePointRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly TelemetryClient _telemetryClient;
 
         public FilesController(IFilesRepository filesRepository,
                                IOptions<GlobalSettings> settings,
-                               TelemetryClient telemetry)
+                               TelemetryClient telemetry,
+                               IMetadataRepository sharePointRepository)
         {
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
             _telemetryClient = telemetry;
+            _sharePointRepository = sharePointRepository;
         }
 
         // GET
@@ -91,7 +94,7 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectId);
+                metadata = await _sharePointRepository.GetMetadataAsync(objectId);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -347,7 +350,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                await _filesRepository.UpdateMetadataAsync(fileInfo);
+                await _sharePointRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -384,7 +387,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                await _filesRepository.UpdateFileName(objectId, data.FileName);
+                await _sharePointRepository.UpdateFileName(objectId, data.FileName);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
