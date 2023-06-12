@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
@@ -13,9 +14,12 @@ using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
+using PnP.Core.Model.SharePoint;
+using PnP.Framework.Provisioning.Model;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.ListItem;
-
+using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
 
 namespace CPS_API.Repositories
 {
@@ -540,6 +544,9 @@ namespace CPS_API.Repositories
                 {
                     try
                     {
+                        // Term is saved separately.
+                        if (fieldMapping.ReadOnly || (!fieldMapping.AllowUpdate && !isForNewFile) || !string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
+
                         object? value;
                         PropertyInfo propertyInfo;
                         if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
@@ -551,12 +558,6 @@ namespace CPS_API.Repositories
                         {
                             value = externalReference[fieldMapping.FieldName];
                             propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
-                        }
-
-                        // Term is saved separately.
-                        if (fieldMapping.FieldName == nameof(externalReference.ExternalApplication))
-                        {
-                            continue;
                         }
 
                         // Keep the existing value, if value equals null.
@@ -619,40 +620,78 @@ namespace CPS_API.Repositories
         {
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
 
-            foreach (var fieldMapping in _globalSettings.MetadataMapping)
+            var site = await _driveRepository.GetSiteAsync(metadata.Ids.SiteId, getAsUser);
+
+            // Graph does not support full Term management yet, using PnP for SPO API instead
+            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
             {
-                try
+                using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
                 {
-                    // Only try to edit the terms.
-                    if (fieldMapping.ReadOnly || (!fieldMapping.AllowUpdate && !isForNewFile) || string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
+                    var termStore = getAllTerms(context);
+                    if (termStore == null) throw new CpsException("Term store not found!");
 
-                    var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
-                    var value = getMetadataValue(metadata, fieldMapping);
-
-                    // Keep the existing value, if value equals null.
-                    if ((!isForNewFile || ignoreRequiredFields) && isMetadataFieldEmpty(value, propertyInfo))
+                    Dictionary<string, FieldTaxonomyValue> newValues = new Dictionary<string, FieldTaxonomyValue>();
+                    foreach (var fieldMapping in _globalSettings.MetadataMapping)
                     {
-                        continue;
+                        try
+                        {
+                            // Only try to edit the terms.
+                            if (fieldMapping.ReadOnly || (!fieldMapping.AllowUpdate && !isForNewFile) || string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
+
+                            var propertyInfo = getMetadataPropertyInfo(metadata, fieldMapping);
+                            var value = getMetadataValue(metadata, fieldMapping);
+
+                            // Keep the existing value, if value equals null.
+                            if ((!isForNewFile || ignoreRequiredFields) && isMetadataFieldEmpty(value, propertyInfo))
+                            {
+                                continue;
+                            }
+
+                            var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
+                            if (defaultValue != null)
+                            {
+                                value = defaultValue;
+                            }
+
+                            if (value != null)
+                            {
+                                var mappedTermSet = termStore.TermSets.Where(s => s.Name == fieldMapping.TermsetName).FirstOrDefault();
+                                if (mappedTermSet != null)
+                                {
+                                    var mappedTerm = mappedTermSet.Terms.Where(t => t.Name.Equals(value.ToString(), StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
+                                    if (mappedTerm != null)
+                                    {
+                                        var termValue = new FieldTaxonomyValue
+                                        {
+                                            TermGuid = mappedTerm.Id.ToString(),
+                                            Label = mappedTerm.Name,
+                                            WssId = -1
+                                        };
+                                        newValues.Add(fieldMapping.SpoColumnName, termValue);
+                                    }
+                                    else
+                                    {
+                                        throw new CpsException("Term not found by value " + value.ToString());
+                                    }
+                                }
+                                else
+                                {
+                                    throw new CpsException("Termset not found by name " + fieldMapping.TermsetName);
+                                }
+                            }
+                        }
+                        catch (FieldRequiredException)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                        }
                     }
 
-                    var defaultValue = getMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
-                    if (defaultValue != null)
-                    {
-                        value = defaultValue;
-                    }
-
-                    if (value != null)
-                    {
-                        await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, fieldMapping.SpoColumnName, fieldMapping.TermsetName, value, getAsUser);
-                    }
-                }
-                catch (FieldRequiredException)
-                {
-                    throw;
-                }
-                catch
-                {
-                    throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                    // actually update fields
+                    updateTermFields(metadata.Ids.ListId, metadata.Ids.ListItemId, context, newValues);
                 }
             }
         }
@@ -661,88 +700,117 @@ namespace CPS_API.Repositories
         {
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
-            var i = 0;
-            foreach (var externalReference in metadata.ExternalReferences)
+            var site = await _driveRepository.GetSiteAsync(metadata.Ids.SiteId, getAsUser);
+
+            // Graph does not support full Term management yet, using PnP for SPO API instead
+            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
             {
-                foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
+                using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
                 {
-                    try
+                    var termStore = getAllTerms(context);
+                    if (termStore == null) throw new CpsException("Term store not found!");
+
+                    var i = 0;
+                    foreach (var externalReference in metadata.ExternalReferences)
                     {
-                        // Only try to edit the terms.
-                        if (fieldMapping.ReadOnly || (!fieldMapping.AllowUpdate && !isForNewFile) || string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
-
-                        object? value;
-                        PropertyInfo propertyInfo;
-                        if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                        Dictionary<string, FieldTaxonomyValue> newValues = new Dictionary<string, FieldTaxonomyValue>();
+                        foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
                         {
-                            value = metadata.Ids.ObjectId;
-                            propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
-                        }
-                        else
-                        {
-                            value = externalReference[fieldMapping.FieldName];
-                            propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
-                        }
-
-                        // Keep the existing value, if value equals null.
-                        var fieldIsEmpty = isMetadataFieldEmpty(value, propertyInfo);
-                        if ((!isForNewFile || ignoreRequiredFields) && fieldIsEmpty)
-                        {
-                            continue;
-                        }
-
-                        if (fieldMapping.Required && fieldIsEmpty)
-                        {
-                            if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                            try
                             {
-                                value = fieldMapping.DefaultValue;
+                                // Only try to edit the terms.
+                                if (fieldMapping.ReadOnly || (!fieldMapping.AllowUpdate && !isForNewFile) || string.IsNullOrEmpty(fieldMapping.TermsetName)) continue;
+
+                                object? value;
+                                PropertyInfo propertyInfo;
+                                if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
+                                {
+                                    value = metadata.Ids.ObjectId;
+                                    propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
+                                }
+                                else
+                                {
+                                    value = externalReference[fieldMapping.FieldName];
+                                    propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
+                                }
+
+                                // Keep the existing value, if value equals null.
+                                var fieldIsEmpty = isMetadataFieldEmpty(value, propertyInfo);
+                                if ((!isForNewFile || ignoreRequiredFields) && fieldIsEmpty)
+                                {
+                                    continue;
+                                }
+
+                                if (fieldMapping.Required && fieldIsEmpty)
+                                {
+                                    if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+                                    {
+                                        value = fieldMapping.DefaultValue;
+                                    }
+                                    else if (!ignoreRequiredFields)
+                                    {
+                                        throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                                    }
+                                }
+
+                                if (value != null)
+                                {
+                                    var mappedTermSet = termStore.TermSets.Where(s => s.Name == fieldMapping.TermsetName).FirstOrDefault();
+                                    if (mappedTermSet != null)
+                                    {
+                                        var mappedTerm = mappedTermSet.Terms.Where(t => t.Name.Equals(value.ToString(), StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
+                                        if (mappedTerm != null)
+                                        {
+                                            var termValue = new FieldTaxonomyValue
+                                            {
+                                                TermGuid = mappedTerm.Id.ToString(),
+                                                Label = mappedTerm.Name,
+                                                WssId = -1
+                                            };
+                                            newValues.Add(fieldMapping.SpoColumnName, termValue);
+                                        }
+                                        else
+                                        {
+                                            throw new CpsException("Term not found by value " + value.ToString());
+                                        }
+                                    }
+                                    else
+                                    {
+                                        throw new CpsException("Termset not found by name " + fieldMapping.TermsetName);
+                                    }
+                                }
                             }
-                            else if (!ignoreRequiredFields)
+                            catch
                             {
-                                throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
+                                throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
                             }
                         }
 
-                        if (value != null)
-                        {
-                            await updateTermsForsListItem(metadata.Ids.SiteId, metadata.Ids.ExternalReferenceListId, listItemIds[i], fieldMapping.SpoColumnName, fieldMapping.TermsetName, value, getAsUser);
-                        }
-                    }
-                    catch
-                    {
-                        throw new ArgumentException("Cannot parse received input to valid Sharepoint field data", fieldMapping.FieldName);
+                        // actually update fields
+                        updateTermFields(metadata.Ids.ExternalReferenceListId, listItemIds[i], context, newValues);
+                        i++;
                     }
                 }
-                i++;
             }
         }
 
-        private async Task updateTermsForsListItem(string siteId, string listId, string listItemId, string SpoColumnName, string termsetName, object? value, bool getAsUser)
+        private static void updateTermFields(string listId, string listItemId, ClientContext context, Dictionary<string, FieldTaxonomyValue> newValues)
         {
-            if (_globalSettings.CertificateThumbprint.IsNullOrEmpty())
-            {
-                return;
-            }
+            var list = context.Web.Lists.GetById(Guid.Parse(listId));
+            var listItem = list.GetItemById(listItemId);
 
-            var site = await _driveRepository.GetSiteAsync(siteId, getAsUser);
-            if (site == null || string.IsNullOrEmpty(site.WebUrl)) throw new CpsException("Error while getting site");
-            try
+            var fields = listItem.ParentList.Fields;
+            context.Load(fields);
+            context.ExecuteQuery();
+
+            foreach (var newTerm in newValues)
             {
-                using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
-                {
-                    using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
-                    {
-                        var listItem = await getTermsForListItem(context, listId, listItemId, SpoColumnName, termsetName, value, getAsUser);
-                        listItem.Update();
-                        context.ExecuteQuery();
-                    }
-                }
+                var field = context.CastTo<TaxonomyField>(fields.GetByInternalNameOrTitle(newTerm.Key));
+                context.Load(field);
+                field.SetFieldValueByValue(listItem, newTerm.Value);
             }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackEvent($"Error while updating terms (SpoColumnName = {SpoColumnName}, baseUrl = {site.WebUrl}). Error: {ex.Message}");
-                throw new CpsException("Error while updating terms");
-            }
+            listItem.Update();
+            context.ExecuteQuery();
         }
 
         #endregion
@@ -854,86 +922,38 @@ namespace CPS_API.Repositories
             return await request.GetAsync();
         }
 
-        private async Task<Term> getTermSet(ClientContext context, string termsetName, object value)
+        
+        private Microsoft.SharePoint.Client.Taxonomy.TermGroup getAllTerms(ClientContext context)
         {
             var taxonomySession = TaxonomySession.GetTaxonomySession(context);
-            context.Load(taxonomySession,
-                ts => ts.TermStores.Include(
-                    store => store.Name,
-                    store => store.Groups.Include(group => group.Name)
-                )
-            );
-            await context.ExecuteQueryAsync();
-            if (taxonomySession == null)
-            {
-                return null;
-            }
-
             var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();
-            if (termStore == null)
-            {
-                return null;
-            }
-
-            var termGroup = termStore.GetTermGroupByName(_globalSettings.TermStoreName);
-            await context.ExecuteQueryAsync();
-            if (termGroup == null)
-            {
-                return null;
-            }
-
-            context.Load(termGroup.TermSets);
-            await context.ExecuteQueryAsync();
-
-            var termSet = termGroup.TermSets.FirstOrDefault(item => item.Name == termsetName);
-            if (termSet == null)
-            {
-                return null;
-            }
-
-            var terms = termSet.GetAllTerms();
-            await context.ExecuteQueryAsync();
-
-            var term = terms.GetByName(value.ToString());
-            context.Load(term);
-            await context.ExecuteQueryAsync();
-            return term;
-        }
-
-        private async Task<Microsoft.SharePoint.Client.ListItem> getTermsForListItem(ClientContext context, string listId, string listItemId, string spoColumnName, string termsetName, object value, bool getAsUser = false)
-        {
-            // Get TermId for value
-            var taxonomySession = TaxonomySession.GetTaxonomySession(context);
-            context.Load(taxonomySession,
-                ts => ts.TermStores.Include(
-                    store => store.Name,
-                    store => store.Groups.Include(group => group.Name)
-                )
-            );
-            await context.ExecuteQueryAsync();
-
-            var term = await getTermSet(context, termsetName, value);
-            if (term == null) throw new CpsException("Term not found");
-
-            var list = context.Web.Lists.GetById(Guid.Parse(listId));
-            var listItem = list.GetItemById(listItemId);
-
-            var fields = listItem.ParentList.Fields;
-            context.Load(fields);
+            string name = _globalSettings.TermStoreName;
+            context.Load(termStore,
+                            store => store.Name,
+                            store => store.Groups.Where(g => g.Name == name && g.IsSystemGroup == false && g.IsSiteCollectionGroup == false)
+                                .Include(
+                                group => group.Id,
+                                group => group.Name,
+                                group => group.Description,
+                                group => group.TermSets.Include(
+                                    termSet => termSet.Id,
+                                    termSet => termSet.Name,
+                                    termSet => termSet.Description,
+                                    termSet => termSet.CustomProperties,
+                                    termSet => termSet.Terms.Include(
+                                        t => t.Id,
+                                        t => t.Description,
+                                        t => t.Name,
+                                        t => t.IsDeprecated,
+                                        t => t.Parent,
+                                        t => t.Labels,
+                                        t => t.LocalCustomProperties,
+                                        t => t.IsSourceTerm,
+                                        t => t.IsRoot,
+                                        t => t.IsKeyword))));
             context.ExecuteQuery();
 
-            var field = context.CastTo<TaxonomyField>(fields.GetByInternalNameOrTitle(spoColumnName));
-            context.Load(field);
-
-            var termValue = new TaxonomyFieldValue()
-            {
-                Label = term.Name,
-                TermGuid = term.Id.ToString(),
-                WssId = -1
-            };
-            field.SetFieldValueByValue(listItem, termValue);
-
-            return listItem;
+            return termStore.Groups.FirstOrDefault();
         }
 
         private async Task<List<ListItem>> getExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
