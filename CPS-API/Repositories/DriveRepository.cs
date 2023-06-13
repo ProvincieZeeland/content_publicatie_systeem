@@ -159,7 +159,7 @@ namespace CPS_API.Repositories
             if (fileStream.Length > 0)
             {
                 var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
-                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "fail");
+                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "replace");
 
                 var request = _graphClient.Drives[driveId].Items[itemId].CreateUploadSession(properties).Request();
                 if (!getAsUser)

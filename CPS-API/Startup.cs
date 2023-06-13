@@ -31,6 +31,7 @@ namespace CPS_API
             // Add services to the container.
             services.AddControllers();
             services.AddEndpointsApiExplorer();
+            services.AddMemoryCache();
 
             // Add Repos
             services.AddScoped<IFilesRepository, FilesRepository>();

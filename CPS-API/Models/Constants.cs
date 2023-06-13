@@ -11,5 +11,6 @@
         public const string SettingsIsNewSynchronisationRunningField = "IsNewSynchronisationRunning";
         public const string SettingsIsChangedSynchronisationRunningField = "IsChangedSynchronisationRunning";
         public const string SettingsIsDeletedSynchronisationRunningField = "IsDeletedSynchronisationRunning";
+        public const string CacheKeyTermGroup = "CacheKeyTermGroup";
     }
 }

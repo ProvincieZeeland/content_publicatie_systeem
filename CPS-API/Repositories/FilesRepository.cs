@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.IO;
+using System.Net;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
@@ -265,12 +266,6 @@ namespace CPS_API.Repositories
 
         public async Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false, IFormFile? formFile = null)
         {
-            // Get File metadata
-            // When updating content, all metadata gets remove for the file.
-            // After de content update, we perform a metadata update to keep the metadata.
-            // TODO: Is there a better solution?
-            var metadata = await _sharePointRepository.GetMetadataAsync(objectId);
-
             // Get objectIdentifiers
             ObjectIdentifiersEntity? ids;
             try
@@ -290,12 +285,14 @@ namespace CPS_API.Repositories
                 {
                     using (var stream = new MemoryStream(content))
                     {
-                        var request = _graphClient.Drives[ids.DriveId].Items[ids.DriveItemId].Content.Request();
-                        if (!getAsUser)
+                        if (stream.Length > 0)
                         {
-                            request = request.WithAppOnly();
+                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, stream);
                         }
-                        await request.PutAsync<DriveItem>(stream);
+                        else
+                        {
+                            throw new CpsException("File cannot be empty");
+                        }
                     }
                 }
                 else if (formFile != null)
@@ -320,23 +317,6 @@ namespace CPS_API.Repositories
             catch (Exception ex)
             {
                 throw new CpsException("Error while updating driveItem", ex);
-            }
-
-            // Update metadata in Sharepoint with Graph
-            if (metadata != null)
-            {
-                try
-                {
-                    await _sharePointRepository.UpdateMetadataWithoutExternalReferencesAsync(metadata, ignoreRequiredFields: true);
-                }
-                catch (FieldRequiredException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new CpsException("Error while updating metadata", ex);
-                }
             }
         }
     }

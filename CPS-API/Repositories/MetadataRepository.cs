@@ -20,6 +20,7 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.ListItem;
 using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace CPS_API.Repositories
 {
@@ -47,19 +48,22 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
         private readonly TelemetryClient _telemetryClient;
+        private readonly IMemoryCache _memoryCache;
 
         public MetadataRepository(
             GraphServiceClient graphClient,
             IObjectIdRepository objectIdRepository,
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
-            TelemetryClient telemetryClient)
+            TelemetryClient telemetryClient,
+            IMemoryCache memoryCache)
         {
             _graphClient = graphClient;
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
             _telemetryClient = telemetryClient;
+            _memoryCache = memoryCache;
         }
 
         public async Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false)
@@ -91,24 +95,37 @@ namespace CPS_API.Repositories
             }
             if (listItem == null) throw new FileNotFoundException($"LisItem (objectId = {objectId}) does not exist!");
 
-            DriveItem? driveItem;
+            string itemName = "";
             try
             {
-                driveItem = await getDriveItem(objectId, getAsUser);
-            }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting driveItem", ex);
-            }
-            if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
 
-            var fileName = listItem.Name.IsNullOrEmpty() ? driveItem.Name : listItem.Name;
+                listItem.Fields.AdditionalData.TryGetValue("FileLeafRef", out var fileRef);
+                itemName = fileRef.ToString();
+            }
+            catch
+            {
+                // do nothing > we will use drive item name instead
+            }
 
-            metadata.FileName = fileName;
+            if (string.IsNullOrEmpty(itemName))
+            {
+                try
+                {
+                    DriveItem? driveItem = await getDriveItem(objectId, getAsUser);
+                    if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
+                    itemName = driveItem.Name;
+                }
+                catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw new CpsException("Error while getting driveItem", ex);
+                }
+            }
+
+            metadata.FileName = itemName;
             metadata.AdditionalMetadata = new FileMetadata();
 
             if (listItem.CreatedDateTime.HasValue)
@@ -200,10 +217,9 @@ namespace CPS_API.Repositories
 
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
 
-            await UpdateAdditionalIdentifiers(metadata);
-            await UpdateMetadataWithoutExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
-            await UpdateExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
-
+            if (metadata.AdditionalMetadata != null) await UpdateAdditionalIdentifiers(metadata);
+            if (metadata.AdditionalMetadata != null) await UpdateMetadataWithoutExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
+            if (metadata.ExternalReferences != null) await UpdateExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
             if (!string.IsNullOrEmpty(metadata.FileName)) await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName);
         }
 
@@ -627,7 +643,7 @@ namespace CPS_API.Repositories
             {
                 using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
                 {
-                    var termStore = getAllTerms(context);
+                    var termStore = getAllTerms(context, metadata.Ids.SiteId);
                     if (termStore == null) throw new CpsException("Term store not found!");
 
                     Dictionary<string, FieldTaxonomyValue> newValues = new Dictionary<string, FieldTaxonomyValue>();
@@ -707,7 +723,7 @@ namespace CPS_API.Repositories
             {
                 using (ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl))
                 {
-                    var termStore = getAllTerms(context);
+                    var termStore = getAllTerms(context, metadata.Ids.SiteId);
                     if (termStore == null) throw new CpsException("Term store not found!");
 
                     var i = 0;
@@ -801,7 +817,6 @@ namespace CPS_API.Repositories
 
             var fields = listItem.ParentList.Fields;
             context.Load(fields);
-            context.ExecuteQuery();
 
             foreach (var newTerm in newValues)
             {
@@ -922,38 +937,38 @@ namespace CPS_API.Repositories
             return await request.GetAsync();
         }
 
-        
-        private Microsoft.SharePoint.Client.Taxonomy.TermGroup getAllTerms(ClientContext context)
-        {
-            var taxonomySession = TaxonomySession.GetTaxonomySession(context);
-            var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();
-            string name = _globalSettings.TermStoreName;
-            context.Load(termStore,
-                            store => store.Name,
-                            store => store.Groups.Where(g => g.Name == name && g.IsSystemGroup == false && g.IsSiteCollectionGroup == false)
-                                .Include(
-                                group => group.Id,
-                                group => group.Name,
-                                group => group.Description,
-                                group => group.TermSets.Include(
-                                    termSet => termSet.Id,
-                                    termSet => termSet.Name,
-                                    termSet => termSet.Description,
-                                    termSet => termSet.CustomProperties,
-                                    termSet => termSet.Terms.Include(
-                                        t => t.Id,
-                                        t => t.Description,
-                                        t => t.Name,
-                                        t => t.IsDeprecated,
-                                        t => t.Parent,
-                                        t => t.Labels,
-                                        t => t.LocalCustomProperties,
-                                        t => t.IsSourceTerm,
-                                        t => t.IsRoot,
-                                        t => t.IsKeyword))));
-            context.ExecuteQuery();
 
-            return termStore.Groups.FirstOrDefault();
+        private Microsoft.SharePoint.Client.Taxonomy.TermGroup getAllTerms(ClientContext context, string siteId)
+        {
+            if (!_memoryCache.TryGetValue(Models.Constants.CacheKeyTermGroup + siteId, out Microsoft.SharePoint.Client.Taxonomy.TermGroup cacheValue))
+            {
+                string name = _globalSettings.TermStoreName;
+                var taxonomySession = TaxonomySession.GetTaxonomySession(context);
+                var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();
+                context.Load(termStore,
+                                store => store.Name,
+                                store => store.Groups.Where(g => g.Name == name && g.IsSystemGroup == false && g.IsSiteCollectionGroup == false)
+                                    .Include(
+                                    group => group.Id,
+                                    group => group.Name,
+                                    group => group.TermSets.Include(
+                                        termSet => termSet.Id,
+                                        termSet => termSet.Name,
+                                        termSet => termSet.Terms.Include(
+                                            t => t.Id,
+                                            t => t.Name,
+                                            t => t.IsDeprecated,
+                                            t => t.Labels))));
+                context.ExecuteQuery();
+                cacheValue = termStore.Groups.FirstOrDefault();
+
+                var cacheEntryOptions = new MemoryCacheEntryOptions()
+                                            .SetSlidingExpiration(TimeSpan.FromSeconds(5))
+                                            .SetAbsoluteExpiration(TimeSpan.FromHours(1));
+
+                _memoryCache.Set(Models.Constants.CacheKeyTermGroup + siteId, cacheValue, cacheEntryOptions);
+            }
+            return cacheValue;
         }
 
         private async Task<List<ListItem>> getExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
