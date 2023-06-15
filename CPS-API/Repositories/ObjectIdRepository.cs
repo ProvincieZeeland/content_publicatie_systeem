@@ -267,6 +267,7 @@ namespace CPS_API.Repositories
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
+            if (!string.IsNullOrEmpty(ids.AdditionalObjectId)) ids.AdditionalObjectId = ids.AdditionalObjectId.ToUpper();
 
             var document = new ObjectIdentifiersEntity(objectId, ids);
             await _storageTableService.SaveAsync(objectIdentifiersTable, document);
@@ -275,7 +276,7 @@ namespace CPS_API.Repositories
         public async Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds)
         {
             var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            ids.AdditionalObjectId = additionalIds;
+            ids.AdditionalObjectId = additionalIds.ToUpper();
 
             var objectIdentifiersTable = GetObjectIdentifiersTable();
             await _storageTableService.SaveAsync(objectIdentifiersTable, ids);

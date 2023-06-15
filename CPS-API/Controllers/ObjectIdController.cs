@@ -36,7 +36,8 @@ namespace CPS_API.Controllers
                 ["ListItemId"] = ids.ListItemId,
                 ["ListId"] = ids.ListId,
                 ["DriveId"] = ids.DriveId,
-                ["DriveItemId"] = ids.DriveItemId
+                ["DriveItemId"] = ids.DriveItemId,
+                ["AdditionalObjectId"] = ids.AdditionalObjectId
             };
 
             try
