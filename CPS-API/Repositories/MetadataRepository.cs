@@ -831,17 +831,20 @@ namespace CPS_API.Repositories
         private object? getMetadataValue(FileInformation metadata, FieldMapping fieldMapping)
         {
             if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
-            {
                 return metadata.Ids.ObjectId;
-            }
-            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
-            {
+
+            if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) ||
+                fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) ||
+                fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) ||
+                fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) ||
+                fieldMapping.FieldName == nameof(metadata.MimeType) ||
+                fieldMapping.FieldName == nameof(metadata.FileExtension))
                 return metadata[fieldMapping.FieldName];
-            }
-            else
-            {
-                return metadata.AdditionalMetadata[fieldMapping.FieldName];
-            }
+
+            if (metadata.AdditionalMetadata == null)
+                return null;
+
+            return metadata.AdditionalMetadata[fieldMapping.FieldName];
         }
 
         private PropertyInfo getMetadataPropertyInfo(FileInformation metadata, FieldMapping fieldMapping)
@@ -969,7 +972,10 @@ namespace CPS_API.Repositories
 
         private async Task<List<ListItem>> getExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request().Expand("Fields").Filter($"Fields/ObjectID eq '{ids.ObjectId}'");
+            var field = _globalSettings.ExternalReferencesMapping.Where(s => s.FieldName.Equals("ObjectID", StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
+            if (field == null) throw new CpsException("Object ID field not found in external reference mapping");
+
+            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ExternalReferenceListId].Items.Request().Expand("Fields").Filter($"Fields/{field.SpoColumnName} eq '{ids.ObjectId}'");
             if (!getAsUser)
             {
                 request = request.WithAppOnly();

@@ -544,12 +544,22 @@ namespace CPS_API.Controllers
                     var response = await client.SendAsync(request);
                     if (!response.IsSuccessStatusCode)
                     {
+                        string responseContent = "";
+                        if(response.Content != null)
+                        {
+                            try
+                            {
+                                responseContent = await response.Content.ReadAsStringAsync();
+                            }
+                            catch { }
+                        }
+
                         var properties = new Dictionary<string, string>
                         {
                             ["Body"] = body,
                             ["Request"] = request.ToString(),
                             ["Response"] = response.ToString(),
-
+                            ["ResponseBody"] = responseContent,
                         };
 
                         _telemetryClient.TrackException(new CpsException("Callback failed"), properties);
