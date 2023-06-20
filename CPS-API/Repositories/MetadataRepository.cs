@@ -218,7 +218,7 @@ namespace CPS_API.Repositories
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
 
             if (metadata.AdditionalMetadata != null) await UpdateAdditionalIdentifiers(metadata);
-            if (metadata.AdditionalMetadata != null) await UpdateMetadataWithoutExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
+            await UpdateMetadataWithoutExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
             if (metadata.ExternalReferences != null) await UpdateExternalReferencesAsync(metadata, ignoreRequiredFields: ignoreRequiredFields, getAsUser: getAsUser);
             if (!string.IsNullOrEmpty(metadata.FileName)) await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName);
         }
@@ -479,8 +479,6 @@ namespace CPS_API.Repositories
 
         private FieldValueSet mapMetadata(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
-            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
-
             var fields = new FieldValueSet();
             fields.AdditionalData = new Dictionary<string, object>();
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
@@ -634,8 +632,6 @@ namespace CPS_API.Repositories
 
         private async Task updateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException("metadata.AdditionalMetadata");
-
             var site = await _driveRepository.GetSiteAsync(metadata.Ids.SiteId, getAsUser);
 
             // Graph does not support full Term management yet, using PnP for SPO API instead
