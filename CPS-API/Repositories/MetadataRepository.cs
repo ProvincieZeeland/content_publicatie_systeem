@@ -857,10 +857,12 @@ namespace CPS_API.Repositories
             {
                 return metadata.GetType().GetProperty(fieldMapping.FieldName);
             }
-            else
+            else if (metadata.AdditionalMetadata != null)
             {
                 return metadata.AdditionalMetadata.GetType().GetProperty(fieldMapping.FieldName);
             }
+
+            return null;
         }
 
         private object? getMetadataDefaultValue(object? value, PropertyInfo propertyInfo, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields)
@@ -889,7 +891,7 @@ namespace CPS_API.Repositories
 
         private bool isMetadataFieldEmpty(object? value, PropertyInfo propertyInfo)
         {
-            if (value == null)
+            if (value == null || propertyInfo == null)
             {
                 return true;
             }
