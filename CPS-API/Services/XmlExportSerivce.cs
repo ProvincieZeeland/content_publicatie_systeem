@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using System.Xml;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 
 namespace CPS_API.Services
 {
@@ -40,7 +41,7 @@ namespace CPS_API.Services
                     if (propertyInfo.PropertyType == typeof(FileMetadata))
                     {
                         var value = propertyInfo.GetValue(metadata);
-                        if (value == null) throw new Exception("Error while getting metadata XML.");
+                        if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
                         foreach (var secondPropertyInfo in value.GetType().GetProperties())
                         {
                             if (secondPropertyInfo.Name == "Item"

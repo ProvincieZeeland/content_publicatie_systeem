@@ -31,11 +31,13 @@ namespace CPS_API
             // Add services to the container.
             services.AddControllers();
             services.AddEndpointsApiExplorer();
+            services.AddMemoryCache();
 
             // Add Repos
             services.AddScoped<IFilesRepository, FilesRepository>();
             services.AddScoped<IObjectIdRepository, ObjectIdRepository>();
             services.AddScoped<IDriveRepository, DriveRepository>();
+            services.AddScoped<IMetadataRepository, MetadataRepository>();
             services.AddSingleton<ISettingsRepository, SettingsRepository>();
 
             // Add Custom Services
@@ -51,7 +53,6 @@ namespace CPS_API
 
             // Application Insights
             services.AddApplicationInsightsTelemetry();
-            services.AddSingleton<ILoggerFactory, LoggerFactory>();
 
             // Add GlobalSettings
             var globalSettings = Configuration.GetSection("GlobalSettings");

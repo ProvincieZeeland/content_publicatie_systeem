@@ -1,7 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
@@ -19,12 +21,18 @@ namespace CPS_API.Controllers
     {
         private readonly GraphServiceClient _graphServiceClient;
         private readonly IFilesRepository _filesRepository;
+        private readonly IMetadataRepository _sharePointRepository;
+        private readonly TelemetryClient _telemetryClient;
 
         public HomeController(GraphServiceClient graphServiceClient,
-                              IFilesRepository filesRepository)
+                              IFilesRepository filesRepository,
+                              TelemetryClient telemetryClient,
+                              IMetadataRepository sharePointRepository)
         {
             _graphServiceClient = graphServiceClient;
             _filesRepository = filesRepository;
+            _telemetryClient = telemetryClient;
+            _sharePointRepository = sharePointRepository;
         }
 
         public async Task<IActionResult> Index()
@@ -41,23 +49,24 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/content")]
         public async Task<IActionResult> GetFileURL(string objectId)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             string? fileUrl;
             try
             {
                 fileUrl = await _filesRepository.GetUrlAsync(objectId, true);
             }
-            catch (MsalUiRequiredException ex)
-            {
-                HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
-                return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
-            }
-            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
                 HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
                 return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -67,6 +76,7 @@ namespace CPS_API.Controllers
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -76,6 +86,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -85,6 +96,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -94,6 +106,7 @@ namespace CPS_API.Controllers
             }
             if (fileUrl.IsNullOrEmpty())
             {
+                _telemetryClient.TrackException(new CpsException("File URL is null"), properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -111,23 +124,24 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string objectId)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectId, true);
+                metadata = await _sharePointRepository.GetMetadataAsync(objectId, true);
             }
-            catch (MsalUiRequiredException ex)
-            {
-                HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
-                return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
-            }
-            catch (Exception ex) when (ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
                 HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
                 return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -137,6 +151,7 @@ namespace CPS_API.Controllers
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -146,8 +161,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                var viewmodel = new ErrorViewModel
-                {
+                _telemetryClient.TrackException(ex, properties);
+                var viewmodel = new ErrorViewModel                {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
                     ErrorMessage = ex.Message ?? "Unauthorized"
                 };
@@ -155,6 +170,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -164,6 +180,7 @@ namespace CPS_API.Controllers
             }
             if (metadata == null)
             {
+                _telemetryClient.TrackException(new CpsException("Metadata is null"), properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,

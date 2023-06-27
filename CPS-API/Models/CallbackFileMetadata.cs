@@ -2,23 +2,23 @@
 {
     public class CallbackFileMetadata
     {
-        public string? Author { get; set; }
+        public string? Author { get; set; } = "";
 
-        public string? Title { get; set; }
+        public string? Title { get; set; } = "";
 
-        public string? DocumentType { get; set; }
+        public string? DocumentType { get; set; } = "";
 
-        public string? ZeesterDocumentType { get; set; }
+        public string? ZeesterDocumentType { get; set; } = "";
 
-        public string? ZeesterReference { get; set; }
+        public string? ZeesterReference { get; set; } = "";
 
-        public int? RetentionPeriod { get; set; }
+        public int? RetentionPeriod { get; set; } = 0;
 
-        public string Classification { get; set; }
+        public string? Classification { get; set; } = "";
 
-        public DateTime? PublicationDate { get; set; }
+        public DateTime? PublicationDate { get; set; } = DateTime.MinValue;
 
-        public DateTime? ArchiveDate { get; set; }
+        public DateTime? ArchiveDate { get; set; } = DateTime.MinValue;
 
         public CallbackFileMetadata()
         {
@@ -27,15 +27,15 @@
 
         public CallbackFileMetadata(FileMetadata metadata)
         {
-            Author = metadata.Author;
-            Title = metadata.Title;
-            DocumentType = metadata.DocumentType;
-            ZeesterDocumentType = metadata.ZeesterDocumentType;
-            ZeesterReference = metadata.ZeesterReference;
-            RetentionPeriod = metadata.RetentionPeriod;
-            Classification = metadata.Classification;
-            PublicationDate = metadata.PublicationDate;
-            ArchiveDate = metadata.ArchiveDate;
+            Author = metadata.Author ?? string.Empty;
+            Title = metadata.Title ?? string.Empty;
+            DocumentType = metadata.DocumentType ?? string.Empty;
+            ZeesterDocumentType = metadata.ZeesterDocumentType ?? string.Empty;
+            ZeesterReference = metadata.ZeesterReference ?? string.Empty;
+            RetentionPeriod = metadata.RetentionPeriod ?? 0;
+            Classification = metadata.Classification ?? string.Empty;
+            PublicationDate = metadata.PublicationDate ?? DateTime.MinValue;
+            ArchiveDate = metadata.ArchiveDate ?? DateTime.MinValue;
         }
     }
 }

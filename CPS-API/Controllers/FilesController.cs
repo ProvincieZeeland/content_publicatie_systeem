@@ -1,12 +1,17 @@
-﻿using System.Net;
+﻿using System;
+using System.Net;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
+using Microsoft.Graph.ExternalConnectors;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Net.Http.Headers;
 
 namespace CPS_API.Controllers
 {
@@ -16,13 +21,19 @@ namespace CPS_API.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IFilesRepository _filesRepository;
+        private readonly IMetadataRepository _sharePointRepository;
         private readonly GlobalSettings _globalSettings;
+        private readonly TelemetryClient _telemetryClient;
 
         public FilesController(IFilesRepository filesRepository,
-                               IOptions<GlobalSettings> settings)
+                               IOptions<GlobalSettings> settings,
+                               TelemetryClient telemetry,
+                               IMetadataRepository sharePointRepository)
         {
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
+            _telemetryClient = telemetry;
+            _sharePointRepository = sharePointRepository;
         }
 
         // GET
@@ -31,6 +42,11 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/content")]
         public async Task<IActionResult> GetFileURL(string objectId)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             string? fileUrl;
             try
             {
@@ -38,21 +54,29 @@ namespace CPS_API.Controllers
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Access denied");
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (fileUrl.IsNullOrEmpty()) return StatusCode(500, "Error while getting url");
+            if (fileUrl.IsNullOrEmpty())
+            {
+                _telemetryClient.TrackEvent("Error while getting url", properties);
+                return StatusCode(500, "Error while getting url");
+            }
 
             return Ok(fileUrl);
         }
@@ -62,25 +86,34 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string objectId)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             FileInformation metadata;
             try
             {
-                metadata = await _filesRepository.GetMetadataAsync(objectId);
+                metadata = await _sharePointRepository.GetMetadataAsync(objectId);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Access denied");
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while getting metadata");
             }
             if (metadata == null) return StatusCode(500, "Error while getting metadata");
@@ -90,8 +123,23 @@ namespace CPS_API.Controllers
 
         // PUT
         [HttpPut]
+        [RequestSizeLimit(4194304)] // 4 MB
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
+            if (file.Content == null || file.Content.Length == 0) return StatusCode(400, "File is required");
+            if (string.IsNullOrEmpty(file.Metadata?.FileName)) return StatusCode(400, "Filename is required");
+            if (string.IsNullOrEmpty(file.Metadata?.AdditionalMetadata?.Source)) return StatusCode(400, "Source is required");
+            if (string.IsNullOrEmpty(file.Metadata?.AdditionalMetadata?.Classification)) return StatusCode(400, "Classification is required");
+
+
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = "",
+                ["FileName"] = file.Metadata?.FileName,
+                ["Source"] = file.Metadata?.AdditionalMetadata?.Source,
+                ["Classification"] = file.Metadata?.AdditionalMetadata?.Classification
+            };
+
             string? objectId;
             try
             {
@@ -100,14 +148,22 @@ namespace CPS_API.Controllers
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (Exception ex) when (ex is NameAlreadyExistsException)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(409, "Filename already exists");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while creating file");
             }
             if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating file");
@@ -120,10 +176,21 @@ namespace CPS_API.Controllers
         [Route("new/{source}/{classification}")]
         public async Task<IActionResult> CreateLargeFile(string source, string classification)
         {
-            if (Request.Form.Files.Count != 1) throw new ArgumentException("You must add one file for upload in form data");
+            if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required"); 
+            if (string.IsNullOrEmpty(source)) return StatusCode(400, "Source is required");
+            if (string.IsNullOrEmpty(classification)) return StatusCode(400, "Classification is required");
 
             string? objectId;
             var formFile = Request.Form.Files.First();
+
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = "",
+                ["FileName"] = formFile.FileName,
+                ["Source"] = source,
+                ["Classification"] = classification
+            };
+
             try
             {
                 CpsFile file = new CpsFile
@@ -160,14 +227,22 @@ namespace CPS_API.Controllers
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (Exception ex) when (ex is NameAlreadyExistsException)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(409, "Filename already exists");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while creating large file");
             }
             if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating large file");
@@ -177,28 +252,80 @@ namespace CPS_API.Controllers
 
         // POST
         [HttpPut]
+        [RequestSizeLimit(4194304)] // 4 MB
         [Route("content/{objectId}")]
         //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             try
             {
                 await _filesRepository.UpdateContentAsync(objectId, content);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(500, ex.Message ?? "Error while updating content");
+            }
+
+            return Ok();
+        }
+
+
+        [HttpPut]
+        [RequestSizeLimit(5368709120)] // 5 GB
+        [Route("largeContent/{objectId}")]
+        //[Route("{objectId}/content")]
+        public async Task<IActionResult> UpdateFileContent(string objectId)
+        {
+            if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required");
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
+            try
+            {
+                var formFile = Request.Form.Files.First();
+                await _filesRepository.UpdateContentAsync(objectId, formFile);
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(403, ex.Message ?? "Forbidden");
+            }
+            catch (FileNotFoundException ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while updating content");
             }
 
@@ -210,6 +337,11 @@ namespace CPS_API.Controllers
         //[Route("{objectId}/metadata")]
         public async Task<IActionResult> UpdateFileMetadata(string objectId, [FromBody] FileInformation fileInfo)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             if (fileInfo.Ids == null)
             {
                 fileInfo.Ids = new ObjectIdentifiers();
@@ -218,22 +350,26 @@ namespace CPS_API.Controllers
 
             try
             {
-                await _filesRepository.UpdateMetadataAsync(fileInfo);
+                await _sharePointRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while updating metadata");
             }
 
@@ -244,24 +380,33 @@ namespace CPS_API.Controllers
         [Route("filename/{objectId}")]
         public async Task<IActionResult> UpdateFileName(string objectId, [FromBody] FileNameData data)
         {
+            var properties = new Dictionary<string, string>
+            {
+                ["ObjectId"] = objectId
+            };
+
             try
             {
-                await _filesRepository.UpdateFileName(objectId, data.FileName);
+                await _sharePointRepository.UpdateFileName(objectId, data.FileName);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
             }
             catch (FileNotFoundException ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
             }
             catch (Exception ex)
             {
+                _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while updating fileName");
             }
 

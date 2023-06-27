@@ -1,6 +1,7 @@
 ﻿using System.Text.RegularExpressions;
 using CPS_API.Helpers;
 using CPS_API.Models;
+using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
@@ -24,6 +25,8 @@ namespace CPS_API.Repositories
 
         Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
+        Task<DriveItem?> UpdateAsync(string driveId, string itemId, Stream fileStream, bool getAsUser = false);
+
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
@@ -38,17 +41,11 @@ namespace CPS_API.Repositories
     public class DriveRepository : IDriveRepository
     {
         private readonly GraphServiceClient _graphClient;
-
-        private readonly StorageTableService _storageTableService;
-
         private readonly GlobalSettings _globalSettings;
 
-        public DriveRepository(GraphServiceClient graphClient,
-                               StorageTableService storageTableService,
-                                IOptions<GlobalSettings> settings)
+        public DriveRepository(GraphServiceClient graphClient, IOptions<GlobalSettings> settings)
         {
             _graphClient = graphClient;
-            _storageTableService = storageTableService;
             _globalSettings = settings.Value;
         }
 
@@ -131,37 +128,73 @@ namespace CPS_API.Repositories
                 // 10 MB; recommended fragment size is between 5-10 MiB
                 var chunkSize = (320 * 1024) * 32;
                 var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
-                var totalLength = fileStream.Length;
-
-                // Create a callback that is invoked after each slice is uploaded
-                IProgress<long> progress = new Progress<long>(prog =>
-                {
-                    Console.WriteLine($"Uploaded {prog} bytes of {totalLength} bytes");
-                });
 
                 DriveItem driveItem = null;
                 try
                 {
                     // Upload the file
-                    var uploadResult = await fileUploadTask.UploadAsync(progress);
+                    var uploadResult = await fileUploadTask.UploadAsync();
                     if (uploadResult.UploadSucceeded)
                         driveItem = uploadResult.ItemResponse;
                 }
                 catch (ServiceException ex)
                 {
-                    throw new Exception("Failed to upload file.", ex);
+                    throw new CpsException("Failed to upload file.", ex);
                 }
 
                 if (driveItem == null)
                 {
-                    throw new Exception("Failed to upload file.");
+                    throw new CpsException("Failed to upload file.");
                 }
 
                 return driveItem;
             }
             else
             {
-                throw new Exception("Cannot upload empty file stream.");
+                throw new CpsException("Cannot upload empty file stream.");
+            }
+        }
+        public async Task<DriveItem?> UpdateAsync(string driveId, string itemId, Stream fileStream, bool getAsUser = false)
+        {
+            if (fileStream.Length > 0)
+            {
+                var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
+                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "replace");
+
+                var request = _graphClient.Drives[driveId].Items[itemId].CreateUploadSession(properties).Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                var uploadSession = await request.PostAsync();
+
+                // 10 MB; recommended fragment size is between 5-10 MiB
+                var chunkSize = (320 * 1024) * 32;
+                var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
+
+                DriveItem driveItem = null;
+                try
+                {
+                    // Upload the file
+                    var uploadResult = await fileUploadTask.UploadAsync();
+                    if (uploadResult.UploadSucceeded)
+                        driveItem = uploadResult.ItemResponse;
+                }
+                catch (ServiceException ex)
+                {
+                    throw new CpsException("Failed to upload file.", ex);
+                }
+
+                if (driveItem == null)
+                {
+                    throw new CpsException("Failed to upload file.");
+                }
+
+                return driveItem;
+            }
+            else
+            {
+                throw new CpsException("Cannot upload empty file stream.");
             }
         }
 
@@ -206,7 +239,7 @@ namespace CPS_API.Repositories
         {
             // Get all public drives
             var driveIds = _globalSettings.PublicDriveIds;
-            if (driveIds.IsNullOrEmpty()) throw new Exception("Drives not found");
+            if (driveIds.IsNullOrEmpty()) throw new CpsException("Drives not found");
 
             // For each drive:
             // Call graph delta and get changed items since time
@@ -249,7 +282,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error while getting changed driveItems with delta");
+                    throw new CpsException("Error while getting changed driveItems with delta", ex);
                 }
 
                 var nextTokenExists = delta.AdditionalData.TryGetValue("@odata.deltaLink", out var nextTokenCall);

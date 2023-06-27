@@ -12,23 +12,7 @@
 
         public string SettingsPartitionKey { get; set; } = string.Empty;
 
-        public string SettingsSequenceRowKey { get; set; } = string.Empty;
-
-        public string SettingsLastSynchronisationNewRowKey { get; set; } = string.Empty;
-
-        public string SettingsLastSynchronisationChangedRowKey { get; set; } = string.Empty;
-
-        public string SettingsLastTokenForNewRowKey { get; set; } = string.Empty;
-
-        public string SettingsLastTokenForChangedRowKey { get; set; } = string.Empty;
-
-        public string SettingsLastTokenForDeletedRowKey { get; set; } = string.Empty;
-
-        public string SettingsIsNewSynchronisationRunningRowKey { get; set; } = string.Empty;
-
-        public string SettingsIsChangedSynchronisationRunningRowKey { get; set; } = string.Empty;
-
-        public string SettingsIsDeletedSynchronisationRunningRowKey { get; set; } = string.Empty;
+        public string SettingsRowKey { get; set; } = string.Empty;
 
         public string ContentContainerName { get; set; } = string.Empty;
 
@@ -38,36 +22,23 @@
 
         public string CallbackAccessToken { get; set; } = string.Empty;
 
-        public LoggingLevel LoggingLevel { get; set; }
+        public List<FieldMapping> MetadataMapping { get; set; } = new List<FieldMapping>();
 
-        public IEnumerable<FieldMapping> MetadataMapping { get; set; }
+        public List<FieldMapping> ExternalReferencesMapping { get; set; } = new List<FieldMapping>();
 
-        public List<FieldMapping> ExternalReferencesMapping { get; set; }
-
-        public List<LocationMapping> LocationMapping { get; set; }
-
-        public string RootSiteUrl { get; set; } = string.Empty;
+        public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
         public string ClientId { get; set; } = string.Empty;
-
-        public string ClientSecret { get; set; } = string.Empty;
 
         public string TenantId { get; set; } = string.Empty;
 
         public string CertificateThumbprint { get; set; } = string.Empty;
 
         public List<string> PublicDriveIds { get; set; } = new List<string>();
-    }
 
-    public class AppSettings
-    {
-        public int SequenceNumber { get; set; } = 0;
+        public string AdditionalObjectId { get; set; } = string.Empty;
 
-        public DateTime LastSynchronisationNew { get; set; } = DateTime.MinValue;
-
-        public DateTime LastSynchronisationChanged { get; set; } = DateTime.MinValue;
-
-        public DateTime LastSynchronisationDeleted { get; set; } = DateTime.MinValue;
+        public string TermStoreName { get; set; } = string.Empty;
     }
 
     public class FieldMapping
@@ -76,25 +47,28 @@
 
         public string SpoColumnName { get; set; } = string.Empty;
 
-        public object? DefaultValue { get; set; }
+        public string TermsetName { get; set; } = string.Empty;
 
-        public bool Required { get; set; }
+        public object? DefaultValue { get; set; } = null;
 
-        public bool ReadOnly { get; set; }
+        public bool Required { get; set; } = false;
+
+        public bool ReadOnly { get; set; } = false;
+
+        public bool AllowUpdate { get; set; } = true;
     }
 
     public class LocationMapping
     {
-        public string Classification { get; set; }
+        public string Classification { get; set; } = string.Empty;
 
-        public string Source { get; set; }
+        public string Source { get; set; } = string.Empty;
 
-        // Afhankelijk van SPO inrichting > wordt mogelijk anders
-        public string SiteId { get; set; }
+        public string SiteId { get; set; } = string.Empty;
 
-        public string ListId { get; set; }
+        public string ListId { get; set; } = string.Empty;
 
-        public string ExternalReferenceListId { get; set; }
+        public string ExternalReferenceListId { get; set; } = string.Empty;
 
         // optioneel
         public string folderName { get; set; } = string.Empty;
