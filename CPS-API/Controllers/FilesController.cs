@@ -123,7 +123,7 @@ namespace CPS_API.Controllers
 
         // PUT
         [HttpPut]
-        [RequestSizeLimit(4194304)] // 4 MB
+        [RequestSizeLimit(419430400)] // 400 MB
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
             if (file.Content == null || file.Content.Length == 0) return StatusCode(400, "File is required");
@@ -252,7 +252,7 @@ namespace CPS_API.Controllers
 
         // POST
         [HttpPut]
-        [RequestSizeLimit(4194304)] // 4 MB
+        [RequestSizeLimit(419430400)] // 400 MB
         [Route("content/{objectId}")]
         //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)

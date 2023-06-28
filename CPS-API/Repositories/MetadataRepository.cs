@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
@@ -14,9 +13,6 @@ using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
-using PnP.Core.Model.SharePoint;
-using PnP.Framework.Provisioning.Model;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.ListItem;
 using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
@@ -165,7 +161,7 @@ namespace CPS_API.Repositories
                     value = term?.Label;
                 }
 
-                if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
+                if (fieldIsMainMetadata(fieldMapping.FieldName))
                 {
                     metadata[fieldMapping.FieldName] = value;
                 }
@@ -233,13 +229,16 @@ namespace CPS_API.Repositories
             if (fields == null) throw new CpsException("Failed to map fields for metadata");
 
             // update sharepoint fields with metadata
-            var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
-            var request = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
-            if (!getAsUser)
+            if (fields.AdditionalData.Count > 0)
             {
-                request = request.WithAppOnly();
+                var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
+                var request = _graphClient.Sites[ids.SiteId].Lists[ids.ListId].Items[ids.ListItemId].Fields.Request();
+                if (!getAsUser)
+                {
+                    request = request.WithAppOnly();
+                }
+                await request.UpdateAsync(fields);
             }
-            await request.UpdateAsync(fields);
 
             // update terms
             await updateTermsForMetadataAsync(metadata, isForNewFile, ignoreRequiredFields, getAsUser);
@@ -833,12 +832,7 @@ namespace CPS_API.Repositories
             if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
                 return metadata.Ids.ObjectId;
 
-            if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) ||
-                fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) ||
-                fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) ||
-                fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) ||
-                fieldMapping.FieldName == nameof(metadata.MimeType) ||
-                fieldMapping.FieldName == nameof(metadata.FileExtension))
+            if (fieldIsMainMetadata(fieldMapping.FieldName))
                 return metadata[fieldMapping.FieldName];
 
             if (metadata.AdditionalMetadata == null)
@@ -853,7 +847,7 @@ namespace CPS_API.Repositories
             {
                 return metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
             }
-            else if (fieldMapping.FieldName == nameof(metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(metadata.MimeType) || fieldMapping.FieldName == nameof(metadata.FileExtension))
+            else if (fieldIsMainMetadata(fieldMapping.FieldName))
             {
                 return metadata.GetType().GetProperty(fieldMapping.FieldName);
             }
@@ -863,6 +857,20 @@ namespace CPS_API.Repositories
             }
 
             return null;
+        }
+
+        private bool fieldIsMainMetadata(string name)
+        {
+            return (name == nameof(FileInformation.SourceCreatedOn) ||
+                    name == nameof(FileInformation.SourceCreatedBy) ||
+                    name == nameof(FileInformation.SourceModifiedOn) ||
+                    name == nameof(FileInformation.SourceModifiedBy) ||
+                    name == nameof(FileInformation.MimeType) ||
+                    name == nameof(FileInformation.FileExtension) ||
+                    name == nameof(FileInformation.CreatedBy) ||
+                    name == nameof(FileInformation.CreatedOn) ||
+                    name == nameof(FileInformation.ModifiedBy) ||
+                    name == nameof(FileInformation.ModifiedOn));
         }
 
         private object? getMetadataDefaultValue(object? value, PropertyInfo propertyInfo, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields)
