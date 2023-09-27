@@ -48,6 +48,7 @@ namespace CPS_API
             // Configure for large file uploads
             services.Configure<FormOptions>(opt =>
             {
+                opt.ValueLengthLimit = int.MaxValue;
                 opt.MultipartBodyLengthLimit = int.MaxValue;
             });
 
