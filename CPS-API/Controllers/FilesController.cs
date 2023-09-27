@@ -1,5 +1,4 @@
-﻿using System;
-using System.Net;
+﻿using System.Net;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
@@ -9,9 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
-using Microsoft.Graph.ExternalConnectors;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Net.Http.Headers;
 
 namespace CPS_API.Controllers
 {
@@ -176,7 +173,7 @@ namespace CPS_API.Controllers
         [Route("new/{source}/{classification}")]
         public async Task<IActionResult> CreateLargeFile(string source, string classification)
         {
-            if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required"); 
+            if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required");
             if (string.IsNullOrEmpty(source)) return StatusCode(400, "Source is required");
             if (string.IsNullOrEmpty(classification)) return StatusCode(400, "Classification is required");
 
@@ -287,9 +284,8 @@ namespace CPS_API.Controllers
                 return StatusCode(500, ex.Message ?? "Error while updating content");
             }
 
-            return Ok();
+            return Ok(objectId);
         }
-
 
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
@@ -329,7 +325,7 @@ namespace CPS_API.Controllers
                 return StatusCode(500, ex.Message ?? "Error while updating content");
             }
 
-            return Ok();
+            return Ok(objectId);
         }
 
         [HttpPut]
@@ -373,7 +369,7 @@ namespace CPS_API.Controllers
                 return StatusCode(500, ex.Message ?? "Error while updating metadata");
             }
 
-            return Ok();
+            return Ok(objectId);
         }
 
         [HttpPut]
