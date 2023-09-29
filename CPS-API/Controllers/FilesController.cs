@@ -171,6 +171,7 @@ namespace CPS_API.Controllers
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
         [Route("new/{source}/{classification}")]
+        [DisableFormValueModelBinding]
         public async Task<IActionResult> CreateLargeFile(string source, string classification)
         {
             if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required");
@@ -290,6 +291,7 @@ namespace CPS_API.Controllers
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
         [Route("largeContent/{objectId}")]
+        [DisableFormValueModelBinding]
         //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId)
         {
