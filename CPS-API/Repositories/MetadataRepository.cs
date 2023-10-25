@@ -7,16 +7,16 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
+using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.ListItem;
-using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace CPS_API.Repositories
 {
@@ -125,20 +125,32 @@ namespace CPS_API.Repositories
             metadata.AdditionalMetadata = new FileMetadata();
 
             if (listItem.CreatedDateTime.HasValue)
-                metadata.CreatedOn = listItem.CreatedDateTime.Value.DateTime;
+            {
+                metadata.CreatedOn = listItem.CreatedDateTime.Value.DateTime.ToLocalTime();
+            }
 
             if (listItem.CreatedBy.User != null)
+            {
                 metadata.CreatedBy = listItem.CreatedBy.User.DisplayName;
+            }
             else if (listItem.CreatedBy.Application != null)
+            {
                 metadata.CreatedBy = listItem.CreatedBy.Application.DisplayName;
+            }
 
             if (listItem.LastModifiedDateTime.HasValue)
-                metadata.ModifiedOn = listItem.LastModifiedDateTime.Value.DateTime;
+            {
+                metadata.ModifiedOn = listItem.LastModifiedDateTime.Value.DateTime.ToLocalTime();
+            }
 
             if (listItem.LastModifiedBy.User != null)
+            {
                 metadata.ModifiedBy = listItem.LastModifiedBy.User.DisplayName;
+            }
             else if (listItem.LastModifiedBy.Application != null)
+            {
                 metadata.ModifiedBy = listItem.LastModifiedBy.Application.DisplayName;
+            }
 
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
