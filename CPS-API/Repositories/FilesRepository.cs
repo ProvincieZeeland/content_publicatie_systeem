@@ -187,7 +187,9 @@ namespace CPS_API.Repositories
             }
 
             // Handle the new file.
-            return await handleCreatedFile(file.Metadata, formFile != null);
+            var metadata = file.Metadata;
+            metadata.Ids = ids;
+            return await handleCreatedFile(metadata, formFile != null);
         }
 
         public async Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, Stream fileStream)
