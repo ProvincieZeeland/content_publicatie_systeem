@@ -39,6 +39,7 @@ namespace CPS_API
             services.AddScoped<IDriveRepository, DriveRepository>();
             services.AddScoped<IMetadataRepository, MetadataRepository>();
             services.AddSingleton<ISettingsRepository, SettingsRepository>();
+            services.AddScoped<IWebHookRepository, WebHookRepository>();
 
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();

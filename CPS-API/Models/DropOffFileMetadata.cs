@@ -3,13 +3,22 @@ using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
-    public class ExternalReferences
+    public class DropOffFileMetadata
     {
-        public string ExternalApplication { get; set; }
+        public bool IsComplete { get; set; }
 
-        public string ExternalReference { get; set; } = string.Empty;
+        public string Status { get; set; } = "";
 
-        public string ExternalReferenceType { get; set; } = string.Empty;
+        public DropOffFileMetadata()
+        {
+
+        }
+
+        public DropOffFileMetadata(bool isComplete, string status)
+        {
+            IsComplete = isComplete;
+            Status = status ?? string.Empty;
+        }
 
         [JsonIgnore]
         public object? this[string fieldname]
@@ -27,15 +36,6 @@ namespace CPS_API.Models
             {
                 FieldPropertyHelper.SetFieldValue(this, fieldname, value);
             }
-        }
-
-        public ExternalReferences clone()
-        {
-            var externalReferences = new ExternalReferences();
-            externalReferences.ExternalApplication = ExternalApplication;
-            externalReferences.ExternalReference = ExternalReference;
-            externalReferences.ExternalReferenceType = ExternalReferenceType;
-            return externalReferences;
         }
     }
 }

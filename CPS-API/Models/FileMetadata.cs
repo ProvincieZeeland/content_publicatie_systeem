@@ -1,6 +1,5 @@
-﻿using CPS_API.Helpers;
-using System.Globalization;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
+using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
@@ -24,6 +23,22 @@ namespace CPS_API.Models
             {
                 FieldPropertyHelper.SetFieldValue(this, fieldname, value);
             }
+        }
+
+        public FileMetadata clone()
+        {
+            var fileMetadata = new FileMetadata();
+            fileMetadata.Source = Source;
+            fileMetadata.Author = Author;
+            fileMetadata.Title = Title;
+            fileMetadata.DocumentType = DocumentType;
+            fileMetadata.ZeesterDocumentType = ZeesterDocumentType;
+            fileMetadata.ZeesterReference = ZeesterReference;
+            fileMetadata.RetentionPeriod = RetentionPeriod;
+            fileMetadata.Classification = Classification;
+            fileMetadata.PublicationDate = PublicationDate;
+            fileMetadata.ArchiveDate = ArchiveDate;
+            return fileMetadata;
         }
     }
 }

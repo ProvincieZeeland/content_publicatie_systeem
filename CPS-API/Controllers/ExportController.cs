@@ -1,5 +1,4 @@
-﻿using System;
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using CPS_API.Helpers;
@@ -12,7 +11,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph.ExternalConnectors;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -369,7 +367,7 @@ namespace CPS_API.Controllers
             Stream? stream;
             try
             {
-                stream = await _driveRepository.DownloadAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
+                stream = await _driveRepository.GetStreamAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
             }
             catch (Exception ex)
             {
@@ -545,7 +543,7 @@ namespace CPS_API.Controllers
                     if (!response.IsSuccessStatusCode)
                     {
                         string responseContent = "";
-                        if(response.Content != null)
+                        if (response.Content != null)
                         {
                             try
                             {

@@ -1,5 +1,4 @@
 ﻿using System.Text.RegularExpressions;
-using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
@@ -11,6 +10,8 @@ namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
+        Task<Site> GetSiteByUrlAsync(string serverRelativeUrl, bool getAsUser = false);
+
         Task<Site> GetSiteAsync(string siteId, bool getAsUser = false);
 
         Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false);
@@ -35,7 +36,7 @@ namespace CPS_API.Repositories
 
         Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false);
 
-        Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false);
+        Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false);
     }
 
     public class DriveRepository : IDriveRepository
@@ -47,6 +48,16 @@ namespace CPS_API.Repositories
         {
             _graphClient = graphClient;
             _globalSettings = settings.Value;
+        }
+
+        public async Task<Site> GetSiteByUrlAsync(string serverRelativeUrl, bool getAsUser = false)
+        {
+            var request = _graphClient.Sites[serverRelativeUrl].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            return await request.GetAsync();
         }
 
         public async Task<Site> GetSiteAsync(string siteId, bool getAsUser = false)
@@ -320,7 +331,7 @@ namespace CPS_API.Repositories
             };
         }
 
-        public async Task<Stream> DownloadAsync(string driveId, string driveItemId, bool getAsUser = false)
+        public async Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
             var request = _graphClient.Drives[driveId].Items[driveItemId].Content.Request();
             if (!getAsUser)

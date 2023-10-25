@@ -1,5 +1,5 @@
-﻿using CPS_API.Helpers;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
+using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
@@ -36,6 +36,26 @@ namespace CPS_API.Models
             {
                 FieldPropertyHelper.SetFieldValue(this, fieldname, value);
             }
+        }
+
+        public FileInformation clone()
+        {
+            var fileInformation = new FileInformation();
+            fileInformation.Ids = Ids?.clone();
+            fileInformation.CreatedBy = CreatedBy;
+            fileInformation.ModifiedBy = ModifiedBy;
+            fileInformation.SourceCreatedBy = SourceCreatedBy;
+            fileInformation.SourceModifiedBy = SourceModifiedBy;
+            fileInformation.MimeType = MimeType;
+            fileInformation.FileName = FileName;
+            fileInformation.FileExtension = FileExtension;
+            fileInformation.CreatedOn = CreatedOn;
+            fileInformation.ModifiedOn = ModifiedOn;
+            fileInformation.SourceCreatedOn = SourceCreatedOn;
+            fileInformation.SourceModifiedOn = SourceModifiedOn;
+            fileInformation.AdditionalMetadata = AdditionalMetadata?.clone();
+            fileInformation.ExternalReferences = ExternalReferences?.Select(reference => reference.clone()).ToList();
+            return fileInformation;
         }
     }
 }
