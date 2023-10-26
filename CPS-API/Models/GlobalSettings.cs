@@ -47,6 +47,8 @@
         public string WebHookEndPoint { get; set; } = string.Empty;
 
         public bool CreateWebHookEnabled { get; set; } = false;
+
+        public string WebHookClientState { get; set; } = string.Empty;
     }
 
     public class FieldMapping

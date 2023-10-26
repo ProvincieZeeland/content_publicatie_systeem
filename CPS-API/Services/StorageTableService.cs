@@ -1,6 +1,7 @@
 ﻿using CPS_API.Models;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Helpers
@@ -16,6 +17,8 @@ namespace CPS_API.Helpers
         Task DeleteAsync(CloudTable table, List<ITableEntity> entities);
 
         Task<CloudBlobContainer> GetLeaseContainer();
+
+        Task<CloudQueue> GetQueue(string queueName);
     }
 
     public class StorageTableService : IStorageTableService
@@ -44,6 +47,13 @@ namespace CPS_API.Helpers
             var connectionString = GetConnectionstring();
             var storageAccount = CloudStorageAccount.Parse(connectionString);
             return storageAccount.CreateCloudBlobClient();
+        }
+
+        private CloudQueueClient? GetCloudQueueClient()
+        {
+            var connectionString = GetConnectionstring();
+            var storageAccount = CloudStorageAccount.Parse(connectionString);
+            return storageAccount.CreateCloudQueueClient();
         }
 
         public CloudTable? GetTable(string tableName)
@@ -82,6 +92,14 @@ namespace CPS_API.Helpers
             var leaseContainer = blobClient.GetContainerReference("leaseobjects");
             await leaseContainer.CreateIfNotExistsAsync();
             return leaseContainer;
+        }
+
+        public async Task<CloudQueue> GetQueue(string queueName)
+        {
+            var queueClient = GetCloudQueueClient();
+            var queue = queueClient.GetQueueReference(queueName);
+            await queue.CreateIfNotExistsAsync();
+            return queue;
         }
     }
 }

@@ -1,12 +1,14 @@
 ﻿using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.SharePoint.Client;
+using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
 using Constants = CPS_API.Models.Constants;
 using GraphListItem = Microsoft.Graph.ListItem;
@@ -19,7 +21,9 @@ namespace CPS_API.Repositories
     {
         Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId);
 
-        Task<string> HandleNotificationAsync(WebHookNotification notification);
+        Task<string> HandleSharePointNotificationAsync(string validationToken, ResponseModel<WebHookNotification> notificationsResponse);
+
+        Task<string> HandleDropOffNotificationAsync(WebHookNotification notification);
     }
 
     public class WebHookRepository : IWebHookRepository
@@ -31,6 +35,7 @@ namespace CPS_API.Repositories
         private readonly IFilesRepository _filesRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly ISettingsRepository _settingsRepository;
+        private readonly StorageTableService _storageTableService;
 
         public WebHookRepository(
             TelemetryClient telemetryClient,
@@ -39,7 +44,8 @@ namespace CPS_API.Repositories
             IMetadataRepository metadataRepository,
             IFilesRepository filesRepository,
             IOptions<GlobalSettings> settings,
-            ISettingsRepository settingsRepository)
+            ISettingsRepository settingsRepository,
+            StorageTableService storageTableService)
         {
             _telemetryClient = telemetryClient;
             _driveRepository = driveRepository;
@@ -48,6 +54,7 @@ namespace CPS_API.Repositories
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
             _settingsRepository = settingsRepository;
+            _storageTableService = storageTableService;
         }
 
         #region Create Webhook
@@ -62,7 +69,7 @@ namespace CPS_API.Repositories
                     throw new CpsException("Error while getting accessToken");
                 }
 
-                var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookEndPoint, accessToken);
+                var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookEndPoint, accessToken, _globalSettings.WebHookClientState);
                 if (subscription == null)
                 {
                     throw new CpsException("Error while adding webhook");
@@ -87,7 +94,7 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
         /// <returns>subscription ID of the new web hook</returns>
-        private async Task<SubscriptionModel> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, int validityInMonths = 3)
+        private async Task<SubscriptionModel> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
             string responseString = null;
             using (var httpClient = new HttpClient())
@@ -103,6 +110,7 @@ namespace CPS_API.Repositories
                         Resource = String.Format("{0}/_api/web/lists('{1}')", siteUrl, listId.ToString()),
                         NotificationUrl = webHookEndPoint,
                         ExpirationDateTime = DateTime.Now.AddMonths(validityInMonths).ToUniversalTime(),
+                        ClientState = webHookClientState
                     }),
                     Encoding.UTF8, "application/json");
 
@@ -126,7 +134,48 @@ namespace CPS_API.Repositories
 
         #region Handle Notification
 
-        public async Task<string> HandleNotificationAsync(WebHookNotification notification)
+
+        public async Task<string> HandleSharePointNotificationAsync(string validationToken, ResponseModel<WebHookNotification> notificationsResponse)
+        {
+            _telemetryClient.TrackTrace($"Webhook endpoint triggered!");
+
+            // If a validation token is present, we need to respond within 5 seconds by  
+            // returning the given validation token. This only happens when a new 
+            // web hook is being added
+            if (validationToken != null)
+            {
+                _telemetryClient.TrackTrace($"Validation token {validationToken} received");
+                return validationToken;
+            }
+
+            _telemetryClient.TrackTrace($"SharePoint triggered our webhook");
+
+            var notifications = notificationsResponse.Value;
+            _telemetryClient.TrackTrace($"Found {notifications.Count} notifications");
+
+            if (notifications.Count > 0)
+            {
+                _telemetryClient.TrackTrace($"Processing notifications...");
+                foreach (var notification in notifications)
+                {
+                    await AddNotificationToQueueAsync(notification);
+                }
+            }
+
+            // if we get here we assume the request was well received
+            return null;
+        }
+
+        private async Task AddNotificationToQueueAsync(WebHookNotification notification)
+        {
+            var queue = await _storageTableService.GetQueue("sharepointlistwebhooknotifications");
+            var message = JsonConvert.SerializeObject(notification);
+            _telemetryClient.TrackTrace($"Before adding a message to the queue. Message content: {message}");
+            await queue.AddMessageAsync(new CloudQueueMessage(message));
+            _telemetryClient.TrackTrace($"Message added");
+        }
+
+        public async Task<string> HandleDropOffNotificationAsync(WebHookNotification notification)
         {
             // Get site
             var site = await _driveRepository.GetSiteByUrlAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
