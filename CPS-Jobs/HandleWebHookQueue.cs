@@ -35,7 +35,7 @@ namespace CPS_Jobs
             if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
             if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
 
-            var response = await callService(baseUrl, scope, "/WebHook/HandleDropOffFile", log, myQueueItem);
+            var response = await callService(baseUrl, scope, "/WebHook/HandleDropOffNotification", log, myQueueItem);
             if (response.IsSuccessStatusCode)
             {
                 log.LogInformation($"Queue message processed");
