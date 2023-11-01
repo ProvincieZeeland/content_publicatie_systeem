@@ -15,5 +15,10 @@
         public const string DropOffSubscriptionExpirationDateTime = "DropOffSubscriptionExpirationDateTime";
         public const string DropOffSubscriptionId = "DropOffSubscriptionId";
         public const string DropOffLastChangeToken = "DropOffLastChangeToken";
+        public const int ERROR_CODE_INVALID_CHANGE_TOKEN = -2146233086;
+        public const int ERROR_CODE_INVALID_CHANGE_TOKEN_TIME = -2130575172;
+        public const int ERROR_CODE_INVALID_CHANGE_TOKEN_WRONG_OBJECT = -2130575173;
+        public const int ERROR_CODE_FORMAT_CHANGE_TOKEN = -1;
+        public const int ERROR_CODE_INVALID_OPERATION_CHANGE_TOKEN = -1;
     }
 }

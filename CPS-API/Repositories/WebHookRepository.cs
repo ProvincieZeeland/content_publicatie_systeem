@@ -218,12 +218,11 @@ namespace CPS_API.Repositories
                     // The Exception that is thrown when ChangeTokenStart is invalid:
                     //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
                     var serverEx = ex as ServerException;
-                    if ((serverEx.ServerErrorTypeName == "System.ArgumentOutofRangeException")// && serverEx.ServerErrorCode == ERROR_CODE_INVALID_CHANGE_TOKEN)
-                    || (serverEx.ServerErrorTypeName == "System.FormatException")// && serverEx.ServerErrorCode == ERROR_CODE_FORMAT_CHANGE_TOKEN)
-                    || (serverEx.ServerErrorTypeName == "System.InvalidOperationException")// && serverEx.ServerErrorCode == ERROR_CODE_INVALID_OPERATION_CHANGE_TOKEN)
-                    || (serverEx.Message.Equals("Het changeToken verwijst naar een tijdstip vóór het begin van het huidige wijzigingenlogboek."))// && serverEx.ServerErrorCode == ERROR_CODE_INVALID_CHANGE_TOKEN_TIME)
-                    || (serverEx.Message.Equals("U kunt het changeToken van het ene object niet voor het andere object gebruiken.")))// && serverEx.ServerErrorCode == ERROR_CODE_INVALID_CHANGE_TOKEN_WRONG_OBJECT))
-
+                    if ((serverEx.ServerErrorTypeName == "System.ArgumentOutofRangeException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN)
+                    || (serverEx.ServerErrorTypeName == "System.FormatException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_FORMAT_CHANGE_TOKEN)
+                    || (serverEx.ServerErrorTypeName == "System.InvalidOperationException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_OPERATION_CHANGE_TOKEN)
+                    || ((serverEx.Message.Equals("Het changeToken verwijst naar een tijdstip vóór het begin van het huidige wijzigingenlogboek.") || serverEx.Message.Equals("The changeToken refers to a time before the start of the current change log.")) && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN_TIME)
+                    || ((serverEx.Message.Equals("U kunt het changeToken van het ene object niet voor het andere object gebruiken.") || serverEx.Message.Equals("Cannot use the changeToken from one object against a different object")) && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN_WRONG_OBJECT))
                     {
                         return new SharePointListItemsDelta(changeTokenInvalid: true);
                     }
