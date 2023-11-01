@@ -301,26 +301,34 @@ namespace CPS_API.Repositories
             response.notProcessedItemIds = new List<string>();
             foreach (var listItemId in listItemIds)
             {
-                // Get ListItem and ids
-                var listItem = await _metadataRepository.getListItem(siteId, listId, listItemId.ToString());
-                var ids = await GetObjectIdentifiersAsync(siteId, listId, listItemId.ToString());
+                try
+                {
+                    // Get ListItem and ids
+                    var listItem = await _metadataRepository.getListItem(siteId, listId, listItemId.ToString());
+                    var ids = await GetObjectIdentifiersAsync(siteId, listId, listItemId.ToString());
 
-                // Check if listitem must me processed
-                var dropOffMetadata = await _metadataRepository.GetDropOffMetadataAsync(listItem, ids);
-                if (!dropOffMetadata.IsComplete || dropOffMetadata.Status == "Verwerkt")
-                {
-                    continue;
-                }
+                    // Check if listitem must me processed
+                    var dropOffMetadata = await _metadataRepository.GetDropOffMetadataAsync(listItem, ids);
+                    if (!dropOffMetadata.IsComplete || dropOffMetadata.Status == "Verwerkt")
+                    {
+                        continue;
+                    }
 
-                // Process listitem
-                var isProcessed = await GetMetadataAndProcessListItemAsync(siteId, listId, listItem);
-                if (isProcessed)
-                {
-                    response.processedItemIds.Add(listItem.Id);
+                    // Process listitem
+                    var isProcessed = await GetMetadataAndProcessListItemAsync(siteId, listId, listItem);
+                    if (isProcessed)
+                    {
+                        response.processedItemIds.Add(listItem.Id);
+                    }
+                    else
+                    {
+                        response.notProcessedItemIds.Add(listItem.Id);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    response.notProcessedItemIds.Add(listItem.Id);
+                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {listItemId}", ex));
+                    response.notProcessedItemIds.Add(listItemId.ToString());
                 }
             }
             return response;
