@@ -27,7 +27,6 @@ namespace CPS_API.Repositories
 
     public class FilesRepository : IFilesRepository
     {
-        private readonly GraphServiceClient _graphClient;
         private readonly IObjectIdRepository _objectIdRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
@@ -35,14 +34,12 @@ namespace CPS_API.Repositories
         private readonly TelemetryClient _telemetryClient;
 
         public FilesRepository(
-            GraphServiceClient graphClient,
             IObjectIdRepository objectIdRepository,
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
             TelemetryClient telemetryClient,
             IMetadataRepository sharePointRepository)
         {
-            _graphClient = graphClient;
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
