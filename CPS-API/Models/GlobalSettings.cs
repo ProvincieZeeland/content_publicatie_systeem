@@ -4,6 +4,8 @@
     {
         public string StorageTableConnectionstring { get; set; } = string.Empty;
 
+        public string JobsStorageTableConnectionstring { get; set; } = string.Empty;
+
         public string FileStorageConnectionstring { get; set; } = string.Empty;
 
         public string ObjectIdentifiersTableName { get; set; } = string.Empty;

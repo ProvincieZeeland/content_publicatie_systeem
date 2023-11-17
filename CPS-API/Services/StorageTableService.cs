@@ -38,22 +38,15 @@ namespace CPS_API.Helpers
         private CloudTableClient? GetCloudTableClient()
         {
             var connectionString = GetConnectionstring();
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
+            var storageAccount = GetStorageAccount(connectionString);
             return storageAccount.CreateCloudTableClient();
         }
 
         private CloudBlobClient? GetCloudBlobClient()
         {
             var connectionString = GetConnectionstring();
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
+            var storageAccount = GetStorageAccount(connectionString);
             return storageAccount.CreateCloudBlobClient();
-        }
-
-        private CloudQueueClient? GetCloudQueueClient()
-        {
-            var connectionString = GetConnectionstring();
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
-            return storageAccount.CreateCloudQueueClient();
         }
 
         public CloudTable? GetTable(string tableName)
@@ -94,12 +87,29 @@ namespace CPS_API.Helpers
             return leaseContainer;
         }
 
+        private string GetJobsConnectionstring()
+        {
+            return _globalSettings.JobsStorageTableConnectionstring;
+        }
+
+        private CloudQueueClient? GetCloudQueueClient()
+        {
+            var connectionString = GetJobsConnectionstring();
+            var storageAccount = GetStorageAccount(connectionString);
+            return storageAccount.CreateCloudQueueClient();
+        }
+
         public async Task<CloudQueue> GetQueue(string queueName)
         {
             var queueClient = GetCloudQueueClient();
             var queue = queueClient.GetQueueReference(queueName);
             await queue.CreateIfNotExistsAsync();
             return queue;
+        }
+
+        private static CloudStorageAccount GetStorageAccount(string connectionString)
+        {
+            return CloudStorageAccount.Parse(connectionString);
         }
     }
 }
