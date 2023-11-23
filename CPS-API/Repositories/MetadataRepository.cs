@@ -776,7 +776,8 @@ namespace CPS_API.Repositories
                             var value = getMetadataValue(metadata, fieldMapping);
 
                             // Keep the existing value, if value equals null.
-                            if ((!isForNewFile || ignoreRequiredFields) && isMetadataFieldEmpty(value, propertyInfo))
+                            var isFieldEmpty = isMetadataFieldEmpty(value, propertyInfo);
+                            if ((!isForNewFile || ignoreRequiredFields) && isFieldEmpty)
                             {
                                 continue;
                             }
@@ -785,6 +786,11 @@ namespace CPS_API.Repositories
                             if (defaultValue != null)
                             {
                                 value = defaultValue;
+                            }
+
+                            if (isFieldEmpty && !fieldMapping.Required)
+                            {
+                                continue;
                             }
 
                             if (value != null)
