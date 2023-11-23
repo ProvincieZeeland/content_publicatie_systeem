@@ -38,6 +38,8 @@ namespace CPS_API.Models
             fileMetadata.Classification = Classification;
             fileMetadata.PublicationDate = PublicationDate;
             fileMetadata.ArchiveDate = ArchiveDate;
+            fileMetadata.WOOInformationCategoryPrimary = WOOInformationCategoryPrimary;
+            fileMetadata.WOOInformationCategorySecondary = WOOInformationCategorySecondary;
             return fileMetadata;
         }
     }
