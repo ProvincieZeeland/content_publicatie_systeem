@@ -146,7 +146,7 @@ namespace CPS_API.Controllers
                     _telemetryClient.TrackException(ex, properties);
 
                     notAddedItems.Add(newItem);
-                    _telemetryClient.TrackTrace($"New document synchronisation failed (driveId = ${newItem.DriveId}, driveItemId = ${newItem.Id}, name = ${newItem.Name})");
+                    _telemetryClient.TrackTrace($"New document synchronisation failed (driveId = {newItem.DriveId}, driveItemId = {newItem.Id}, name = {newItem.Name})");
                     continue;
                 }
 
@@ -167,12 +167,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
-                        _telemetryClient.TrackTrace($"New document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem.Id})");
+                        _telemetryClient.TrackTrace($"New document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
                         itemsAdded++;
                     }
                     else
                     {
-                        _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem.Id})");
+                        _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -185,7 +185,7 @@ namespace CPS_API.Controllers
                     _telemetryClient.TrackException(ex, properties);
 
                     notAddedItems.Add(newItem);
-                    _telemetryClient.TrackTrace($"New document synchronisation failed  (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem?.Id})");
+                    _telemetryClient.TrackTrace($"New document synchronisation failed  (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem?.Id})");
                 }
             }
 
@@ -303,7 +303,7 @@ namespace CPS_API.Controllers
                     _telemetryClient.TrackException(ex, properties);
 
                     notUpdatedItems.Add(updatedItem);
-                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (driveId = ${updatedItem.DriveId}, driveItemId = ${updatedItem.Id}, name = ${updatedItem.Name})");
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (driveId = {updatedItem.DriveId}, driveItemId = {updatedItem.Id}, name = {updatedItem.Name})");
                     continue;
                 }
 
@@ -324,12 +324,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
-                        _telemetryClient.TrackTrace($"Updated document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem.Id})");
+                        _telemetryClient.TrackTrace($"Updated document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
                         itemsUpdated++;
                     }
                     else
                     {
-                        _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem.Id})");
+                        _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -342,7 +342,7 @@ namespace CPS_API.Controllers
                     };
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
-                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem?.Id})");
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem?.Id})");
                     notUpdatedItems.Add(updatedItem);
                 }
             }
@@ -520,7 +520,7 @@ namespace CPS_API.Controllers
                     _telemetryClient.TrackException(ex, properties);
 
                     notDeletedItems.Add(deletedItem);
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (driveId = ${deletedItem.DriveId}, driveItemId = ${deletedItem.Id}, name = ${deletedItem.Name})");
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (driveId = {deletedItem.DriveId}, driveItemId = {deletedItem.Id}, name = {deletedItem.Name})");
                     continue;
                 }
 
@@ -535,7 +535,7 @@ namespace CPS_API.Controllers
                         await CallCallbackUrl(callbackUrl);
                     }
                     itemsDeleted++;
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${deletedItem?.Id})");
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
                 }
                 catch (Exception ex)
                 {
@@ -547,7 +547,7 @@ namespace CPS_API.Controllers
 
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${deletedItem?.Id})");
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
                     notDeletedItems.Add(deletedItem);
                 }
             }
