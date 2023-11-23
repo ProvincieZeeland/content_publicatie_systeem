@@ -129,18 +129,29 @@ namespace CPS_API.Controllers
             var notAddedItems = new List<DeltaDriveItem>();
             foreach (var newItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = newItem?.DriveId,
+                        ["DriveItemId"] = newItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notAddedItems.Add(newItem);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed (driveId = ${newItem.DriveId}, driveItemId = ${newItem.Id}, name = ${newItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
                     // Callback for changed file.
@@ -156,7 +167,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
+                        _telemetryClient.TrackTrace($"New document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem.Id})");
                         itemsAdded++;
+                    }
+                    else
+                    {
+                        _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -166,9 +182,10 @@ namespace CPS_API.Controllers
                         ["DriveId"] = newItem?.DriveId,
                         ["DriveItemId"] = newItem?.Id
                     };
-
                     _telemetryClient.TrackException(ex, properties);
+
                     notAddedItems.Add(newItem);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed  (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${newItem?.Id})");
                 }
             }
 
@@ -269,18 +286,29 @@ namespace CPS_API.Controllers
             var notUpdatedItems = new List<DeltaDriveItem>();
             foreach (var updatedItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = updatedItem?.DriveId,
+                        ["DriveItemId"] = updatedItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notUpdatedItems.Add(updatedItem);
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (driveId = ${updatedItem.DriveId}, driveItemId = ${updatedItem.Id}, name = ${updatedItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
@@ -296,7 +324,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
+                        _telemetryClient.TrackTrace($"Updated document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem.Id})");
                         itemsUpdated++;
+                    }
+                    else
+                    {
+                        _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -304,11 +337,12 @@ namespace CPS_API.Controllers
                     var properties = new Dictionary<string, string>
                     {
                         ["DriveId"] = updatedItem?.DriveId,
-                        ["DriveItemId"] = updatedItem?.Id
+                        ["DriveItemId"] = updatedItem?.Id,
+                        ["ObjectId"] = objectIdentifiersEntity.ObjectId
                     };
-
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${updatedItem?.Id})");
                     notUpdatedItems.Add(updatedItem);
                 }
             }
@@ -469,18 +503,29 @@ namespace CPS_API.Controllers
             var notDeletedItems = new List<DeltaDriveItem>();
             foreach (var deletedItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = deletedItem?.DriveId,
+                        ["DriveItemId"] = deletedItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notDeletedItems.Add(deletedItem);
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (driveId = ${deletedItem.DriveId}, driveItemId = ${deletedItem.Id}, name = ${deletedItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     await DeleteFileAndXmlFromFileStorage(objectIdentifiersEntity);
 
                     // Callback for changed file.
@@ -490,6 +535,7 @@ namespace CPS_API.Controllers
                         await CallCallbackUrl(callbackUrl);
                     }
                     itemsDeleted++;
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation succeeded (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${deletedItem?.Id})");
                 }
                 catch (Exception ex)
                 {
@@ -501,6 +547,7 @@ namespace CPS_API.Controllers
 
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (objectId = ${objectIdentifiersEntity.ObjectId}, driveItemId = ${deletedItem?.Id})");
                     notDeletedItems.Add(deletedItem);
                 }
             }
