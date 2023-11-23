@@ -70,6 +70,26 @@ namespace CPS_API.Helpers
                     }
                 }
             }
+            else if (property.PropertyType == typeof(DateTimeOffset?))
+            {
+                var stringValue = value?.ToString();
+                if (stringValue == null)
+                {
+                    property.SetValue(parent, null, null);
+                }
+                else
+                {
+                    var dateParsed = DateTimeOffset.TryParse(stringValue, out var dateValue);
+                    if (dateParsed)
+                    {
+                        property.SetValue(parent, dateValue, null);
+                    }
+                    else
+                    {
+                        property.SetValue(parent, null, null);
+                    }
+                }
+            }
             else if (property.PropertyType == typeof(bool))
             {
                 var stringValue = value?.ToString();

@@ -30,9 +30,9 @@ namespace CPS_API.Repositories
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
+        Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
-        Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
+        Task<DeltaResponse> GetUpdatedItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
         Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false);
 
@@ -219,7 +219,7 @@ namespace CPS_API.Repositories
             await request.DeleteAsync();
         }
 
-        public async Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
+        public async Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
             var response = await GetDeltaAsync(tokens, getAsUser);
             response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime >= lastSynchronisation).ToList();
@@ -228,7 +228,7 @@ namespace CPS_API.Repositories
             return response;
         }
 
-        public async Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
+        public async Task<DeltaResponse> GetUpdatedItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
             var response = await GetDeltaAsync(tokens, getAsUser);
             response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation).ToList();

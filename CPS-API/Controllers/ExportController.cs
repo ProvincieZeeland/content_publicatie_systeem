@@ -89,10 +89,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTime? lastSynchronisation;
+            DateTimeOffset? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationNewField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationNewField);
             }
             catch (Exception ex)
             {
@@ -100,7 +100,7 @@ namespace CPS_API.Controllers
                 await NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
             // Get all new files from known locations
             DeltaResponse deltaResponse;
@@ -173,7 +173,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully added then we update the last synchronisation date.
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTimeOffset.UtcNow);
 
             // If all files are succesfully added then we update the token.
             string lastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
@@ -229,10 +229,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTime? lastSynchronisation;
+            DateTimeOffset? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationChangedField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationChangedField);
             }
             catch (Exception ex)
             {
@@ -240,7 +240,7 @@ namespace CPS_API.Controllers
                 await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
             // Get all updated files from known locations
             DeltaResponse deltaResponse;
@@ -314,7 +314,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully updated then we update the last synchronisation date.      
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTimeOffset.UtcNow);
 
             // If all files are succesfully updated then we update the token.
             string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
