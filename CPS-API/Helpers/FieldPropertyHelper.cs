@@ -1,6 +1,4 @@
-﻿using CamlBuilder;
-using System.Globalization;
-using System.Reflection;
+﻿using System.Globalization;
 
 namespace CPS_API.Helpers
 {
@@ -19,7 +17,7 @@ namespace CPS_API.Helpers
         {
             var property = parent.GetType().GetProperty(fieldname);
             if (property == null) throw new ArgumentException("Unknown property " + fieldname);
-        
+
             if (property.PropertyType == typeof(int?))
             {
                 var stringValue = value?.ToString();
@@ -65,6 +63,46 @@ namespace CPS_API.Helpers
                     if (dateParsed)
                     {
                         property.SetValue(parent, dateValue, null);
+                    }
+                    else
+                    {
+                        property.SetValue(parent, null, null);
+                    }
+                }
+            }
+            else if (property.PropertyType == typeof(DateTimeOffset?))
+            {
+                var stringValue = value?.ToString();
+                if (stringValue == null)
+                {
+                    property.SetValue(parent, null, null);
+                }
+                else
+                {
+                    var dateParsed = DateTimeOffset.TryParse(stringValue, out var dateValue);
+                    if (dateParsed)
+                    {
+                        property.SetValue(parent, dateValue, null);
+                    }
+                    else
+                    {
+                        property.SetValue(parent, null, null);
+                    }
+                }
+            }
+            else if (property.PropertyType == typeof(bool))
+            {
+                var stringValue = value?.ToString();
+                if (stringValue == null)
+                {
+                    property.SetValue(parent, null, null);
+                }
+                else
+                {
+                    var boolParsed = Boolean.TryParse(stringValue, out var boolValue);
+                    if (boolParsed)
+                    {
+                        property.SetValue(parent, boolValue, null);
                     }
                     else
                     {

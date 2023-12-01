@@ -1,6 +1,7 @@
 ﻿using CPS_API.Models;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Helpers
@@ -16,6 +17,8 @@ namespace CPS_API.Helpers
         Task DeleteAsync(CloudTable table, List<ITableEntity> entities);
 
         Task<CloudBlobContainer> GetLeaseContainer();
+
+        Task<CloudQueue> GetQueue(string queueName);
     }
 
     public class StorageTableService : IStorageTableService
@@ -35,14 +38,14 @@ namespace CPS_API.Helpers
         private CloudTableClient? GetCloudTableClient()
         {
             var connectionString = GetConnectionstring();
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
+            var storageAccount = GetStorageAccount(connectionString);
             return storageAccount.CreateCloudTableClient();
         }
 
         private CloudBlobClient? GetCloudBlobClient()
         {
             var connectionString = GetConnectionstring();
-            var storageAccount = CloudStorageAccount.Parse(connectionString);
+            var storageAccount = GetStorageAccount(connectionString);
             return storageAccount.CreateCloudBlobClient();
         }
 
@@ -82,6 +85,31 @@ namespace CPS_API.Helpers
             var leaseContainer = blobClient.GetContainerReference("leaseobjects");
             await leaseContainer.CreateIfNotExistsAsync();
             return leaseContainer;
+        }
+
+        private string GetJobsConnectionstring()
+        {
+            return _globalSettings.JobsStorageTableConnectionstring;
+        }
+
+        private CloudQueueClient? GetCloudQueueClient()
+        {
+            var connectionString = GetJobsConnectionstring();
+            var storageAccount = GetStorageAccount(connectionString);
+            return storageAccount.CreateCloudQueueClient();
+        }
+
+        public async Task<CloudQueue> GetQueue(string queueName)
+        {
+            var queueClient = GetCloudQueueClient();
+            var queue = queueClient.GetQueueReference(queueName);
+            await queue.CreateIfNotExistsAsync();
+            return queue;
+        }
+
+        private static CloudStorageAccount GetStorageAccount(string connectionString)
+        {
+            return CloudStorageAccount.Parse(connectionString);
         }
     }
 }

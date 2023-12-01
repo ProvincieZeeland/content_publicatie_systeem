@@ -18,19 +18,19 @@ namespace CPS_API.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IFilesRepository _filesRepository;
-        private readonly IMetadataRepository _sharePointRepository;
+        private readonly IMetadataRepository _metadataRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly TelemetryClient _telemetryClient;
 
         public FilesController(IFilesRepository filesRepository,
                                IOptions<GlobalSettings> settings,
                                TelemetryClient telemetry,
-                               IMetadataRepository sharePointRepository)
+                               IMetadataRepository metadataRepository)
         {
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
             _telemetryClient = telemetry;
-            _sharePointRepository = sharePointRepository;
+            _metadataRepository = metadataRepository;
         }
 
         // GET
@@ -91,7 +91,7 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _sharePointRepository.GetMetadataAsync(objectId);
+                metadata = await _metadataRepository.GetMetadataAsync(objectId);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -346,7 +346,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                await _sharePointRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
+                await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -383,7 +383,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                await _sharePointRepository.UpdateFileName(objectId, data.FileName);
+                await _metadataRepository.UpdateFileName(objectId, data.FileName);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {

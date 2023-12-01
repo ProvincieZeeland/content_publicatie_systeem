@@ -4,6 +4,8 @@
     {
         public string StorageTableConnectionstring { get; set; } = string.Empty;
 
+        public string JobsStorageTableConnectionstring { get; set; } = string.Empty;
+
         public string FileStorageConnectionstring { get; set; } = string.Empty;
 
         public string ObjectIdentifiersTableName { get; set; } = string.Empty;
@@ -26,6 +28,8 @@
 
         public List<FieldMapping> ExternalReferencesMapping { get; set; } = new List<FieldMapping>();
 
+        public List<FieldMapping> DropOffMetadataMapping { get; set; } = new List<FieldMapping>();
+
         public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
         public string ClientId { get; set; } = string.Empty;
@@ -39,6 +43,14 @@
         public string AdditionalObjectId { get; set; } = string.Empty;
 
         public string TermStoreName { get; set; } = string.Empty;
+
+        public string HostName { get; set; } = string.Empty;
+
+        public string WebHookEndPoint { get; set; } = string.Empty;
+
+        public bool CreateWebHookEnabled { get; set; } = false;
+
+        public string WebHookClientState { get; set; } = string.Empty;
     }
 
     public class FieldMapping

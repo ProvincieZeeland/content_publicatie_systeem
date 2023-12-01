@@ -1,11 +1,9 @@
-﻿using System.IO;
-using System.Net;
+﻿using System.Net;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
-using Microsoft.Identity.Web;
 using FileInformation = CPS_API.Models.FileInformation;
 
 namespace CPS_API.Repositories
@@ -17,14 +15,18 @@ namespace CPS_API.Repositories
         Task<string> GetUrlAsync(string objectId, bool getAsUser = false);
 
         Task<ObjectIdentifiers> CreateFileAsync(CpsFile file, IFormFile? formFile = null);
+
+        Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, Stream fileStream);
+
         Task UpdateContentAsync(string objectId, IFormFile formFile, bool getAsUser = false);
 
         Task UpdateContentAsync(string objectId, byte[] content, bool getAsUser = false, IFormFile? formFile = null);
+
+        Task UpdateContentAsync(string objectId, Stream stream, bool getAsUser = false);
     }
 
     public class FilesRepository : IFilesRepository
     {
-        private readonly GraphServiceClient _graphClient;
         private readonly IObjectIdRepository _objectIdRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
@@ -32,14 +34,12 @@ namespace CPS_API.Repositories
         private readonly TelemetryClient _telemetryClient;
 
         public FilesRepository(
-            GraphServiceClient graphClient,
             IObjectIdRepository objectIdRepository,
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
             TelemetryClient telemetryClient,
             IMetadataRepository sharePointRepository)
         {
-            _graphClient = graphClient;
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
@@ -122,9 +122,8 @@ namespace CPS_API.Repositories
                                   );
             if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(file.Metadata.AdditionalMetadata.Classification)}: \"{file.Metadata.AdditionalMetadata.Classification}\", {nameof(file.Metadata.AdditionalMetadata.Source)}: \"{file.Metadata.AdditionalMetadata.Source}\")");
 
-
             var ids = new ObjectIdentifiers();
-            ids.DriveId = locationMapping.ExternalReferenceListId;
+            ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
 
             var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
             if (drive == null) throw new CpsException("Drive not found for new file.");
@@ -184,39 +183,104 @@ namespace CPS_API.Repositories
                 throw new CpsException("Error while adding new file", ex);
             }
 
+            // Handle the new file.
+            var metadata = file.Metadata;
+            metadata.Ids = ids;
+            return await handleCreatedFile(metadata, formFile != null);
+        }
+
+        public async Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, Stream fileStream)
+        {
+            if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+            if (fileStream == null) throw new ArgumentNullException(nameof(fileStream));
+            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException(nameof(metadata.AdditionalMetadata));
+
+            // Get driveid or site matching classification & source           
+            var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
+                                    item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
+                                    && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
+                                  );
+            if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(metadata.AdditionalMetadata.Classification)}: \"{metadata.AdditionalMetadata.Classification}\", {nameof(metadata.AdditionalMetadata.Source)}: \"{metadata.AdditionalMetadata.Source}\")");
+
+            var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
+            if (drive == null) throw new CpsException("Drive not found for new file.");
+
+            // Add new file to SharePoint
+            DriveItem? driveItem;
+            try
+            {
+                if (fileStream.Length > 0)
+                {
+                    driveItem = await _driveRepository.CreateAsync(drive.Id, metadata.FileName, fileStream);
+                }
+                else
+                {
+                    throw new CpsException("File cannot be empty");
+                }
+
+                if (driveItem == null)
+                {
+                    throw new CpsException("Error while adding new file");
+                }
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code == "nameAlreadyExists")
+            {
+                throw new NameAlreadyExistsException($"The specified {nameof(metadata.FileName)} ({metadata.FileName}) already exists");
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while adding new file", ex);
+            }
+
+            var ids = new ObjectIdentifiers();
+            ids.DriveId = drive.Id;
+            ids.DriveItemId = driveItem.Id;
+            ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
+            ids = await _objectIdRepository.FindMissingIds(ids);
+            metadata.Ids = ids;
+
+            // Handle the new file.
+            return await handleCreatedFile(metadata);
+        }
+
+        public async Task<ObjectIdentifiers> handleCreatedFile(FileInformation metadata, bool ignoreRequiredFields = false)
+        {
             // Generate objectId
             try
             {
-                string objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
+                string objectId = await _objectIdRepository.GenerateObjectIdAsync(metadata.Ids);
                 if (string.IsNullOrEmpty(objectId)) throw new CpsException("ObjectId is empty");
 
-                ids.ObjectId = objectId;
+                metadata.Ids.ObjectId = objectId;
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw new CpsException("Error while generating ObjectId", ex);
             }
 
-            file.Metadata.Ids = ids;
             // Update ObjectId and metadata in Sharepoint with Graph
             try
             {
-                await _sharePointRepository.UpdateMetadataWithoutExternalReferencesAsync(file.Metadata, isForNewFile: true, ignoreRequiredFields: formFile != null);
+                await _sharePointRepository.UpdateMetadataWithoutExternalReferencesAsync(metadata, isForNewFile: true, ignoreRequiredFields);
             }
             catch (FieldRequiredException)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw;
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw new CpsException("Error while updating metadata", ex);
             }
@@ -224,19 +288,19 @@ namespace CPS_API.Repositories
             // Update ExternalReferences in Sharepoint with Graph
             try
             {
-                await _sharePointRepository.UpdateExternalReferencesAsync(file.Metadata);
+                await _sharePointRepository.UpdateExternalReferencesAsync(metadata);
             }
             catch (FieldRequiredException)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw;
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw new CpsException("Error while updating external references", ex);
             }
@@ -244,20 +308,19 @@ namespace CPS_API.Repositories
             // Store any additional IDs passed along
             try
             {
-                await _sharePointRepository.UpdateAdditionalIdentifiers(file.Metadata);
+                await _sharePointRepository.UpdateAdditionalIdentifiers(metadata);
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(ids.DriveId, driveItem.Id);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
                 throw new CpsException("Error while updating additional IDs", ex);
             }
 
             // Done
-            return ids;
+            return metadata.Ids;
         }
-
 
         public async Task UpdateContentAsync(string objectId, IFormFile formFile, bool getAsUser = false)
         {
@@ -287,7 +350,7 @@ namespace CPS_API.Repositories
                     {
                         if (stream.Length > 0)
                         {
-                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, stream);
+                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, stream, getAsUser);
                         }
                         else
                         {
@@ -301,13 +364,45 @@ namespace CPS_API.Repositories
                     {
                         if (fileStream.Length > 0)
                         {
-                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, fileStream);
+                            await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, fileStream, getAsUser);
                         }
                         else
                         {
                             throw new CpsException("File cannot be empty");
                         }
                     }
+                }
+                else
+                {
+                    throw new CpsException("File cannot be empty");
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while updating driveItem", ex);
+            }
+        }
+
+        public async Task UpdateContentAsync(string objectId, Stream stream, bool getAsUser = false)
+        {
+            // Get objectIdentifiers
+            ObjectIdentifiersEntity? ids;
+            try
+            {
+                ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while getting objectIdentifiers", ex);
+            }
+            if (ids == null) throw new FileNotFoundException("ObjectIdentifiers not found");
+
+            // Create new version
+            try
+            {
+                if (stream.Length > 0)
+                {
+                    await _driveRepository.UpdateAsync(ids.DriveId, ids.DriveItemId, stream, getAsUser);
                 }
                 else
                 {

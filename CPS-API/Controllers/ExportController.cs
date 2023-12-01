@@ -1,5 +1,4 @@
-﻿using System;
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using CPS_API.Helpers;
@@ -12,7 +11,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph.ExternalConnectors;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -91,10 +89,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTime? lastSynchronisation;
+            DateTimeOffset? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationNewField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationNewField);
             }
             catch (Exception ex)
             {
@@ -102,7 +100,7 @@ namespace CPS_API.Controllers
                 await NewSynchronisationStopped();
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
             // Get all new files from known locations
             DeltaResponse deltaResponse;
@@ -131,18 +129,29 @@ namespace CPS_API.Controllers
             var notAddedItems = new List<DeltaDriveItem>();
             foreach (var newItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = newItem?.DriveId,
+                        ["DriveItemId"] = newItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notAddedItems.Add(newItem);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed (driveId = {newItem.DriveId}, driveItemId = {newItem.Id}, name = {newItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
 
                     // Callback for changed file.
@@ -158,7 +167,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
+                        _telemetryClient.TrackTrace($"New document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
                         itemsAdded++;
+                    }
+                    else
+                    {
+                        _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -168,14 +182,15 @@ namespace CPS_API.Controllers
                         ["DriveId"] = newItem?.DriveId,
                         ["DriveItemId"] = newItem?.Id
                     };
-
                     _telemetryClient.TrackException(ex, properties);
+
                     notAddedItems.Add(newItem);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed  (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem?.Id})");
                 }
             }
 
             // If all files are succesfully added then we update the last synchronisation date.
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTimeOffset.UtcNow);
 
             // If all files are succesfully added then we update the token.
             string lastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
@@ -231,10 +246,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTime? lastSynchronisation;
+            DateTimeOffset? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationChangedField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationChangedField);
             }
             catch (Exception ex)
             {
@@ -242,7 +257,7 @@ namespace CPS_API.Controllers
                 await ChangedSynchronisationStopped();
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTime.Now.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
             // Get all updated files from known locations
             DeltaResponse deltaResponse;
@@ -271,18 +286,29 @@ namespace CPS_API.Controllers
             var notUpdatedItems = new List<DeltaDriveItem>();
             foreach (var updatedItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = updatedItem?.DriveId,
+                        ["DriveItemId"] = updatedItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notUpdatedItems.Add(updatedItem);
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (driveId = {updatedItem.DriveId}, driveItemId = {updatedItem.Id}, name = {updatedItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
 
                     // Callback for changed file.
@@ -298,7 +324,12 @@ namespace CPS_API.Controllers
 
                     if (succeeded)
                     {
+                        _telemetryClient.TrackTrace($"Updated document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
                         itemsUpdated++;
+                    }
+                    else
+                    {
+                        _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
                     }
                 }
                 catch (Exception ex)
@@ -306,17 +337,18 @@ namespace CPS_API.Controllers
                     var properties = new Dictionary<string, string>
                     {
                         ["DriveId"] = updatedItem?.DriveId,
-                        ["DriveItemId"] = updatedItem?.Id
+                        ["DriveItemId"] = updatedItem?.Id,
+                        ["ObjectId"] = objectIdentifiersEntity.ObjectId
                     };
-
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
+                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem?.Id})");
                     notUpdatedItems.Add(updatedItem);
                 }
             }
 
             // If all files are succesfully updated then we update the last synchronisation date.      
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTimeOffset.UtcNow);
 
             // If all files are succesfully updated then we update the token.
             string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
@@ -369,7 +401,7 @@ namespace CPS_API.Controllers
             Stream? stream;
             try
             {
-                stream = await _driveRepository.DownloadAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
+                stream = await _driveRepository.GetStreamAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
             }
             catch (Exception ex)
             {
@@ -471,18 +503,29 @@ namespace CPS_API.Controllers
             var notDeletedItems = new List<DeltaDriveItem>();
             foreach (var deletedItem in deltaResponse.Items)
             {
+                ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    ObjectIdentifiersEntity? objectIdentifiersEntity;
-                    try
-                    {
-                        objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new CpsException("Error while getting objectIdentifiers", ex);
-                    }
+                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
                     if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
+                }
+                catch (Exception ex)
+                {
+                    var properties = new Dictionary<string, string>
+                    {
+                        ["DriveId"] = deletedItem?.DriveId,
+                        ["DriveItemId"] = deletedItem?.Id,
+                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
+                    };
+                    _telemetryClient.TrackException(ex, properties);
+
+                    notDeletedItems.Add(deletedItem);
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (driveId = {deletedItem.DriveId}, driveItemId = {deletedItem.Id}, name = {deletedItem.Name})");
+                    continue;
+                }
+
+                try
+                {
                     await DeleteFileAndXmlFromFileStorage(objectIdentifiersEntity);
 
                     // Callback for changed file.
@@ -492,6 +535,7 @@ namespace CPS_API.Controllers
                         await CallCallbackUrl(callbackUrl);
                     }
                     itemsDeleted++;
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
                 }
                 catch (Exception ex)
                 {
@@ -503,6 +547,7 @@ namespace CPS_API.Controllers
 
                     _telemetryClient.TrackException(ex, properties);
                     _telemetryClient.TrackEvent($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
+                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
                     notDeletedItems.Add(deletedItem);
                 }
             }
@@ -545,7 +590,7 @@ namespace CPS_API.Controllers
                     if (!response.IsSuccessStatusCode)
                     {
                         string responseContent = "";
-                        if(response.Content != null)
+                        if (response.Content != null)
                         {
                             try
                             {

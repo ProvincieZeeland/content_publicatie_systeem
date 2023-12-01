@@ -20,6 +20,10 @@
 
         public DateTime? ArchiveDate { get; set; } = DateTime.MinValue;
 
+        public string? WOOInformationCategoryPrimary { get; set; } = "";
+
+        public string? WOOInformationCategorySecondary { get; set; } = "";
+
         public CallbackFileMetadata()
         {
 
@@ -36,6 +40,8 @@
             Classification = metadata.Classification ?? string.Empty;
             PublicationDate = metadata.PublicationDate ?? DateTime.MinValue;
             ArchiveDate = metadata.ArchiveDate ?? DateTime.MinValue;
+            WOOInformationCategoryPrimary = metadata.WOOInformationCategoryPrimary ?? string.Empty;
+            WOOInformationCategorySecondary = metadata.WOOInformationCategorySecondary ?? string.Empty;
         }
     }
 }

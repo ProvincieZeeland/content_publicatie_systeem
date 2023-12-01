@@ -233,10 +233,7 @@ namespace CPS_API.Repositories
             objectId = objectId.ToUpper();
             var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.AdditionalObjectId), QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            return result.Results?.FirstOrDefault();
-
+            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
         }
 
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByObjectIdAsync(string objectId)
@@ -246,9 +243,7 @@ namespace CPS_API.Repositories
             objectId = objectId.ToUpper();
             var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            return result.Results?.FirstOrDefault();
+            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
         }
 
         public async Task<string?> GetObjectIdAsync(ObjectIdentifiers ids)
@@ -258,10 +253,15 @@ namespace CPS_API.Repositories
             var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
             var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            var objectIdentifiersEntity = result.Results?.FirstOrDefault();
+            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
             return objectIdentifiersEntity?.PartitionKey;
+        }
+
+        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(CloudTable objectIdentifiersTable, TableQuery<ObjectIdentifiersEntity> query)
+        {
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
+            var objectIdentifiersEntities = result.Results?.OrderByDescending(item => item.Timestamp).ToList();
+            return objectIdentifiersEntities?.FirstOrDefault();
         }
 
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)

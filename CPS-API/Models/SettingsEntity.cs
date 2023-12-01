@@ -1,6 +1,4 @@
-﻿using CPS_API.Services;
-using Microsoft.WindowsAzure.Storage.Table;
-using System.Runtime.Serialization;
+﻿using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Models
 {
@@ -8,9 +6,9 @@ namespace CPS_API.Models
     {
         public long? SequenceNumber { get; set; }
 
-        public DateTime? LastSynchronisationNew { get; set; }
+        public DateTimeOffset? LastSynchronisationNew { get; set; }
 
-        public DateTime? LastSynchronisationChanged { get; set; }
+        public DateTimeOffset? LastSynchronisationChanged { get; set; }
 
         public string LastTokenForNew { get; set; }
 
@@ -23,6 +21,12 @@ namespace CPS_API.Models
         public bool? IsChangedSynchronisationRunning { get; set; }
 
         public bool? IsDeletedSynchronisationRunning { get; set; }
+
+        public string DropOffSubscriptionExpirationDateTime { get; set; }
+
+        public string DropOffSubscriptionId { get; set; }
+
+        public string DropOffLastChangeToken { get; set; }
 
         public SettingsEntity()
         {
