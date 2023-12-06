@@ -40,6 +40,9 @@ namespace CPS_API
             services.AddScoped<IMetadataRepository, MetadataRepository>();
             services.AddSingleton<ISettingsRepository, SettingsRepository>();
             services.AddScoped<IWebHookRepository, WebHookRepository>();
+            services.AddScoped<IExportRepository, ExportRepository>();
+            services.AddScoped<IPublicationRepository, PublicationRepository>();
+            services.AddScoped<ICallbackRepository, CallbackRepository>();
 
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();

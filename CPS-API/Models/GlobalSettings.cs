@@ -16,6 +16,10 @@
 
         public string SettingsRowKey { get; set; } = string.Empty;
 
+        public string ToBePublishedTableName { get; set; } = string.Empty;
+
+        public string ToBePublishedPartitionKey { get; set; } = string.Empty;
+
         public string ContentContainerName { get; set; } = string.Empty;
 
         public string MetadataContainerName { get; set; } = string.Empty;

@@ -1,13 +1,9 @@
 ﻿using System.Diagnostics;
-using CamlBuilder;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using CPS_API.Services;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
 {
@@ -40,7 +36,7 @@ namespace CPS_API.Repositories
             var table = _storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (table == null)
             {
-                throw new CpsException($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
+                throw new CpsException($"Table \"{_globalSettings.SettingsTableName}\" not found");
             }
 
             var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsRowKey, table);
@@ -126,7 +122,7 @@ namespace CPS_API.Repositories
             var settingsTable = _storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (settingsTable == null)
             {
-                throw new CpsException($"Tabel \"{_globalSettings.SettingsTableName}\" not found");
+                throw new CpsException($"Table \"{_globalSettings.SettingsTableName}\" not found");
             }
 
             await _storageTableService.SaveAsync(settingsTable, setting);

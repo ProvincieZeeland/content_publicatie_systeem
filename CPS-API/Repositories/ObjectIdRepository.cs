@@ -13,6 +13,8 @@ namespace CPS_API.Repositories
     {
         Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids, bool getAsUser = false);
 
+        Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId);
+
         Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId);
 
         Task<string?> GetObjectIdAsync(ObjectIdentifiers ids);
@@ -207,9 +209,21 @@ namespace CPS_API.Repositories
             var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null)
             {
-                throw new CpsException($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
+                throw new CpsException($"Table \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             }
             return table;
+        }
+
+        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId)
+        {
+            var objectIdentifiersTable = GetObjectIdentifiersTable();
+
+            var filterDrive = TableQuery.GenerateFilterCondition("DriveId", QueryComparisons.Equal, driveId);
+            var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter);
+
+            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
+            return result.Results?.FirstOrDefault();
         }
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
