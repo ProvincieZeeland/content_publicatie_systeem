@@ -4,16 +4,15 @@ using System.Text;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.SharePoint.Client;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
 using Constants = CPS_API.Models.Constants;
 using GraphListItem = Microsoft.Graph.ListItem;
 using GraphSite = Microsoft.Graph.Site;
-using SharePointList = Microsoft.SharePoint.Client.List;
 
 namespace CPS_API.Repositories
 {
@@ -21,40 +20,52 @@ namespace CPS_API.Repositories
     {
         Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId);
 
-        Task<string> HandleSharePointNotificationAsync(string validationToken, ResponseModel<WebHookNotification> notificationsResponse);
+        Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse);
 
         Task<string> HandleDropOffNotificationAsync(WebHookNotification notification);
     }
 
     public class WebHookRepository : IWebHookRepository
     {
-        private readonly TelemetryClient _telemetryClient;
         private readonly IDriveRepository _driveRepository;
+        private readonly IListRepository _listRepository;
         private readonly IObjectIdRepository _objectIdRepository;
         private readonly IMetadataRepository _metadataRepository;
         private readonly IFilesRepository _filesRepository;
-        private readonly GlobalSettings _globalSettings;
         private readonly ISettingsRepository _settingsRepository;
+        private readonly ISharePointRepository _sharePointRepository;
+
         private readonly StorageTableService _storageTableService;
+        private readonly EmailService _emailService;
+
+        private readonly GlobalSettings _globalSettings;
+
+        private readonly TelemetryClient _telemetryClient;
 
         public WebHookRepository(
-            TelemetryClient telemetryClient,
             IDriveRepository driveRepository,
+            IListRepository listRepository,
             IObjectIdRepository objectIdRepository,
             IMetadataRepository metadataRepository,
             IFilesRepository filesRepository,
-            IOptions<GlobalSettings> settings,
             ISettingsRepository settingsRepository,
-            StorageTableService storageTableService)
+            ISharePointRepository sharePointRepository,
+            StorageTableService storageTableService,
+            EmailService emailService,
+            IOptions<GlobalSettings> settings,
+            TelemetryClient telemetryClient)
         {
-            _telemetryClient = telemetryClient;
             _driveRepository = driveRepository;
+            _listRepository = listRepository;
             _objectIdRepository = objectIdRepository;
             _metadataRepository = metadataRepository;
             _filesRepository = filesRepository;
-            _globalSettings = settings.Value;
             _settingsRepository = settingsRepository;
+            _sharePointRepository = sharePointRepository;
             _storageTableService = storageTableService;
+            _emailService = emailService;
+            _globalSettings = settings.Value;
+            _telemetryClient = telemetryClient;
         }
 
         #region Create Webhook
@@ -85,7 +96,7 @@ namespace CPS_API.Repositories
         }
 
         /// <summary>
-        /// This method adds a web hook to a SharePoint list. 
+        /// This method adds a web hook to a SharePoint list.
         /// Note that you need your webhook endpoint being passed into this method to be up and running and reachable from the internet
         /// </summary>
         /// <param name="siteUrl">Url of the site holding the list</param>
@@ -94,9 +105,9 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
         /// <returns>subscription ID of the new web hook</returns>
-        private async Task<SubscriptionModel> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        private static async Task<SubscriptionModel> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
-            string responseString = null;
+            string? responseString = null;
             using (var httpClient = new HttpClient())
             {
                 string requestUrl = String.Format("{0}/_api/web/lists('{1}')/subscriptions", siteUrl, listId);
@@ -123,24 +134,23 @@ namespace CPS_API.Repositories
                 else
                 {
                     // Something went wrong...
-                    throw new Exception(await response.Content.ReadAsStringAsync());
+                    throw new CpsException(await response.Content.ReadAsStringAsync());
                 }
             }
 
             return await Task.Run(() => JsonConvert.DeserializeObject<SubscriptionModel>(responseString));
         }
 
-        #endregion
+        #endregion Create Webhook
 
         #region Handle Notification
 
-
-        public async Task<string> HandleSharePointNotificationAsync(string validationToken, ResponseModel<WebHookNotification> notificationsResponse)
+        public async Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse)
         {
             _telemetryClient.TrackTrace($"Webhook endpoint triggered!");
 
-            // If a validation token is present, we need to respond within 5 seconds by  
-            // returning the given validation token. This only happens when a new 
+            // If a validation token is present, we need to respond within 5 seconds by
+            // returning the given validation token. This only happens when a new
             // web hook is being added
             if (validationToken != null)
             {
@@ -149,6 +159,12 @@ namespace CPS_API.Repositories
             }
 
             _telemetryClient.TrackTrace($"SharePoint triggered our webhook");
+
+            if (notificationsResponse == null)
+            {
+                _telemetryClient.TrackTrace($"NotificationsResponse is null");
+                return null;
+            }
 
             var notifications = notificationsResponse.Value;
             _telemetryClient.TrackTrace($"Found {notifications.Count} notifications");
@@ -178,7 +194,7 @@ namespace CPS_API.Repositories
         public async Task<string> HandleDropOffNotificationAsync(WebHookNotification notification)
         {
             // Get site
-            var site = await _driveRepository.GetSiteByUrlAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
+            var site = await _listRepository.GetSiteByUrlAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
 
             // Get Changes
             var changes = await GetChangeTokenAndListChangesAsync(site.WebUrl, notification.Resource);
@@ -209,7 +225,7 @@ namespace CPS_API.Repositories
 
             try
             {
-                return await GetListAndFilteredChangesAsync(siteUrl, listId, changeToken);
+                return await _sharePointRepository.GetListAndFilteredChangesAsync(siteUrl, listId, changeToken);
             }
             catch (Exception ex)
             {
@@ -233,63 +249,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken)
-        {
-            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
-            {
-                using (ClientContext context = await authenticationManager.GetContextAsync(siteUrl))
-                {
-                    // Get list
-                    var list = await GetListAsync(context, listId);
-
-                    // Get changes on list
-                    var changes = await GetDeltaListItemsAndLastChangeToken(context, list, changeToken);
-
-                    // Get correct and unique changes
-                    return FilterChangesOnDeletedAndUnique(changes);
-                }
-            }
-        }
-
-        private async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointList list, string changeToken)
-        {
-            ChangeCollection changeCollection;
-            var changes = new SharePointListItemsDelta();
-            changes.Items = new List<SharePointListItemDelta>();
-            changes.NewChangeToken = changeToken;
-            do
-            {
-                changeCollection = await GetListChangesAsync(context, list, changes.NewChangeToken);
-                changes.Items.AddRange(getDeltaListItems(changeCollection));
-                changes.NewChangeToken = changeCollection.LastChangeToken.StringValue;
-            }
-            while (changeCollection.HasMoreChanges);
-            return changes;
-        }
-
-        private List<SharePointListItemDelta> getDeltaListItems(ChangeCollection changes)
-        {
-            var deltaListItems = new List<SharePointListItemDelta>();
-            foreach (var change in changes)
-            {
-                if (change is ChangeItem changeItem)
-                {
-                    var deltaListItem = new SharePointListItemDelta(changeItem.ItemId, changeItem.ChangeType);
-                    deltaListItems.Add(deltaListItem);
-                }
-            }
-            return deltaListItems;
-        }
-
-        private SharePointListItemsDelta FilterChangesOnDeletedAndUnique(SharePointListItemsDelta changes)
-        {
-            var deletedItemIds = changes.Items.Where(d => d.ChangeType == Microsoft.SharePoint.Client.ChangeType.DeleteObject).DistinctBy(d => d.ListItemId).Select(d => d.ListItemId).ToList();
-            var uniqueItems = changes.Items.DistinctBy(d => d.ListItemId).ToList();
-            changes.Items = uniqueItems.Where(d => !deletedItemIds.Contains(d.ListItemId)).ToList();
-            return changes;
-        }
-
-        #endregion
+        #endregion Get changes
 
         #region Process Changes
 
@@ -304,11 +264,11 @@ namespace CPS_API.Repositories
                 try
                 {
                     // Get ListItem and ids
-                    var listItem = await _metadataRepository.getListItem(siteId, listId, listItemId.ToString());
+                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, listItemId.ToString());
                     var ids = await GetObjectIdentifiersAsync(siteId, listId, listItemId.ToString());
 
                     // Check if listitem must me processed
-                    var dropOffMetadata = await _metadataRepository.GetDropOffMetadataAsync(listItem, ids);
+                    var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem, ids);
                     if (!dropOffMetadata.IsComplete || dropOffMetadata.Status == "Verwerkt")
                     {
                         continue;
@@ -409,9 +369,9 @@ namespace CPS_API.Repositories
             return newMetadata;
         }
 
-        private async Task<ObjectIdentifiers> GetIdsForNewLocationAsync(FileInformation metadata)
+        private async Task<ObjectIdentifiers?> GetIdsForNewLocationAsync(FileInformation metadata)
         {
-            var locationMapping = _globalSettings.LocationMapping.FirstOrDefault(item =>
+            var locationMapping = _globalSettings.LocationMapping.Find(item =>
                 item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
                 && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
             );
@@ -444,7 +404,7 @@ namespace CPS_API.Repositories
             await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata);
 
             // Mail proccessed file.
-            await GetEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
+            await _emailService.GetEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
         }
 
         private async Task<string> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
@@ -452,7 +412,7 @@ namespace CPS_API.Repositories
             var isNewFile = metadata.Ids.ObjectId == null;
             if (isNewFile)
             {
-                var spoIds = await _filesRepository.CreateFileAsync(metadata, stream);
+                var spoIds = await _filesRepository.CreateFileByStreamAsync(metadata, stream);
                 return spoIds.ObjectId;
             }
             else
@@ -472,62 +432,11 @@ namespace CPS_API.Repositories
             return message;
         }
 
-        #endregion
-
-        #region SharePoint
-
-        private async Task<SharePointList> GetListAsync(ClientContext context, string listId)
-        {
-            var list = context.Web.Lists.GetById(new Guid(listId));
-            context.Load(list);
-            await context.ExecuteQueryRetryAsync(1);
-            return list;
-        }
-
-        private async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointList list, string lastChangeToken)
-        {
-            ChangeQuery query = new ChangeQuery(false, false)
-            {
-                Add = true,
-                Item = true,
-                Update = true,
-                Move = true,
-                DeleteObject = true,
-                SystemUpdate = true
-            };
-            if (!string.IsNullOrEmpty(lastChangeToken))
-            {
-                query.ChangeTokenStart = new ChangeToken
-                {
-                    StringValue = lastChangeToken
-                };
-            }
-
-            var changeCollection = list.GetChanges(query);
-            context.Load(
-                changeCollection,
-                cc => cc.LastChangeToken,
-                cc => cc.HasMoreChanges,
-                cc => cc.Include(
-                    c => ((ChangeItem)c).ItemId,
-                    c => ((ChangeItem)c).UniqueId,
-                    c => ((ChangeItem)c).ContentTypeId,
-                    c => ((ChangeItem)c).ChangeType,
-                    c => ((ChangeItem)c).ActivityType,
-                    c => ((ChangeItem)c).Editor,
-                    c => ((ChangeItem)c).EditorLoginName,
-                    c => ((ChangeItem)c).IsRecycleBinOperation
-                    ));
-
-            await context.ExecuteQueryRetryAsync(1);
-            return changeCollection;
-        }
-
-        #endregion
+        #endregion Process Changes
 
         #region Error logging
 
-        private async Task LogErrorAndSendMailAsync(string siteId, string listId, GraphListItem listItem, Exception ex, string errorMessage, FileInformation metadata = null)
+        private async Task LogErrorAndSendMailAsync(string siteId, string listId, GraphListItem listItem, Exception ex, string errorMessage, FileInformation? metadata = null)
         {
             // Unsuccesfull -> change status
             if (metadata != null)
@@ -540,7 +449,7 @@ namespace CPS_API.Repositories
 
             // Mail not proccessed file.
             var fileIdentifier = metadata == null ? listItem.Id : metadata.FileName;
-            await GetEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
+            await _emailService.GetEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
         }
 
         private void LogError(string siteId, string listId, string listItemId, Exception ex, string errorMessage)
@@ -554,65 +463,8 @@ namespace CPS_API.Repositories
             _telemetryClient.TrackException(new CpsException(errorMessage, ex), properties);
         }
 
-        #endregion
+        #endregion Error logging
 
-        #region Email
-
-        private async Task GetEmailAndSendMailAsync(string subject, string content, GraphListItem listItem)
-        {
-            var email = GetAuthorEmail(listItem.CreatedBy);
-            await SendMailAsync(subject, content, email);
-        }
-
-        private string GetAuthorEmail(IdentitySet identity)
-        {
-            if (identity == null || identity.User == null)
-            {
-                return "";
-            }
-            return GetStringValueOrDefault(identity.User.AdditionalData, "email");
-        }
-
-        private async Task SendMailAsync(string subject, string content, string email)
-        {
-            var message = new Message
-            {
-                Subject = subject,
-                Body = new ItemBody
-                {
-                    ContentType = BodyType.Text,
-                    Content = content,
-                },
-                ToRecipients = new List<Recipient>
-                {
-                    new Recipient
-                    {
-                        EmailAddress = new EmailAddress
-                        {
-                            Address = email,
-                        },
-                    },
-                }
-            };
-
-            // Not implemented yet: Send Mail
-        }
-
-        #endregion
-
-        #region Hulpfuncties
-
-        private string GetStringValueOrDefault(IDictionary<string, object> AdditionalData, string key)
-        {
-            if (AdditionalData == null || !AdditionalData.ContainsKey(key))
-            {
-                return "";
-            }
-            return AdditionalData[key].ToString();
-        }
-
-        #endregion
-
-        #endregion
+        #endregion Handle Notification
     }
 }

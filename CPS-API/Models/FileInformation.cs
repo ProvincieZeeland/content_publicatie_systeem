@@ -3,7 +3,6 @@ using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
-
     public class FileInformation : CallbackFileInformation
     {
         public ObjectIdentifiers? Ids { get; set; }
@@ -40,22 +39,46 @@ namespace CPS_API.Models
 
         public FileInformation clone()
         {
-            var fileInformation = new FileInformation();
-            fileInformation.Ids = Ids?.clone();
-            fileInformation.CreatedBy = CreatedBy;
-            fileInformation.ModifiedBy = ModifiedBy;
-            fileInformation.SourceCreatedBy = SourceCreatedBy;
-            fileInformation.SourceModifiedBy = SourceModifiedBy;
-            fileInformation.MimeType = MimeType;
-            fileInformation.FileName = FileName;
-            fileInformation.FileExtension = FileExtension;
-            fileInformation.CreatedOn = CreatedOn;
-            fileInformation.ModifiedOn = ModifiedOn;
-            fileInformation.SourceCreatedOn = SourceCreatedOn;
-            fileInformation.SourceModifiedOn = SourceModifiedOn;
-            fileInformation.AdditionalMetadata = AdditionalMetadata?.clone();
-            fileInformation.ExternalReferences = ExternalReferences?.Select(reference => reference.clone()).ToList();
-            return fileInformation;
+            var clone = new FileInformation();
+            var properties = this.GetType().GetProperties();
+            foreach (var propertyName in properties.Select(property => property.Name))
+            {
+                if (propertyName == "Item")
+                {
+                    continue;
+                }
+                clone[propertyName] = null;
+            }
+
+            foreach (var propertyInfo in properties)
+            {
+                if (propertyInfo.Name == "Item")
+                {
+                    continue;
+                }
+                var value = propertyInfo.GetValue(this);
+                if (value == null)
+                {
+                    continue;
+                }
+                if (propertyInfo.PropertyType == typeof(FileMetadata))
+                {
+                    clone[propertyInfo.Name] = (value as FileMetadata)?.clone();
+                }
+                else if (propertyInfo.PropertyType == typeof(ObjectIdentifiers))
+                {
+                    clone[propertyInfo.Name] = (value as ObjectIdentifiers)?.clone();
+                }
+                else if (propertyInfo.PropertyType == typeof(List<ExternalReferences>))
+                {
+                    clone[propertyInfo.Name] = (value as List<ExternalReferences>)?.Select(item => item?.clone()).ToList();
+                }
+                else
+                {
+                    clone[propertyInfo.Name] = value;
+                }
+            }
+            return clone;
         }
     }
 }

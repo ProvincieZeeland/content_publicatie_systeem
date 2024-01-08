@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using Newtonsoft.Json;
 
 namespace CPS_API.Controllers
@@ -13,16 +14,16 @@ namespace CPS_API.Controllers
     [ApiController]
     public class WebHookController : Controller
     {
-        private readonly IDriveRepository _driveRepository;
+        private readonly IListRepository _metadataRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
 
         public WebHookController(
-            IDriveRepository driveRepository,
+            IListRepository metadataRepository,
             IOptions<GlobalSettings> settings,
             IWebHookRepository webHookRepository)
         {
-            _driveRepository = driveRepository;
+            _metadataRepository = metadataRepository;
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
         }
@@ -36,12 +37,12 @@ namespace CPS_API.Controllers
                 return StatusCode(404);
             }
 
-            Microsoft.Graph.Site site;
+            Site site;
             try
             {
-                site = await _driveRepository.GetSiteAsync(data.SiteId);
+                site = await _metadataRepository.GetSiteAsync(data.SiteId);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return StatusCode(500, "Error while getting site");
             }
@@ -76,7 +77,7 @@ namespace CPS_API.Controllers
                 return StatusCode(403);
             }
 
-            string message;
+            string? message;
             try
             {
                 var requestBody = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();

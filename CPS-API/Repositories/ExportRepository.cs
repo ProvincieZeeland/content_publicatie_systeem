@@ -527,14 +527,6 @@ namespace CPS_API.Repositories
         {
             try
             {
-                await _publicationRepository.DeleteObjectIdAsync(objectIdentifiersEntity.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while deleting document from toBePublished", ex);
-            }
-            try
-            {
                 await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
@@ -548,6 +540,14 @@ namespace CPS_API.Repositories
             catch (Exception ex)
             {
                 throw new CpsException("Error while deleting document from metadata", ex);
+            }
+            try
+            {
+                await _publicationRepository.DeleteObjectIdAsync(objectIdentifiersEntity.ObjectId);
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while deleting document from toBePublished", ex);
             }
         }
 

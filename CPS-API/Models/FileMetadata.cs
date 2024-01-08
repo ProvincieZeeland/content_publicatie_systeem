@@ -27,20 +27,16 @@ namespace CPS_API.Models
 
         public FileMetadata clone()
         {
-            var fileMetadata = new FileMetadata();
-            fileMetadata.Source = Source;
-            fileMetadata.Author = Author;
-            fileMetadata.Title = Title;
-            fileMetadata.DocumentType = DocumentType;
-            fileMetadata.ZeesterDocumentType = ZeesterDocumentType;
-            fileMetadata.ZeesterReference = ZeesterReference;
-            fileMetadata.RetentionPeriod = RetentionPeriod;
-            fileMetadata.Classification = Classification;
-            fileMetadata.PublicationDate = PublicationDate;
-            fileMetadata.ArchiveDate = ArchiveDate;
-            fileMetadata.WOOInformationCategoryPrimary = WOOInformationCategoryPrimary;
-            fileMetadata.WOOInformationCategorySecondary = WOOInformationCategorySecondary;
-            return fileMetadata;
+            var clone = new FileMetadata();
+            foreach (var propertyInfo in this.GetType().GetProperties())
+            {
+                if (propertyInfo.Name == "Item")
+                {
+                    continue;
+                }
+                clone[propertyInfo.Name] = propertyInfo.GetValue(this);
+            }
+            return clone;
         }
     }
 }

@@ -43,11 +43,14 @@ namespace CPS_API
             services.AddScoped<IExportRepository, ExportRepository>();
             services.AddScoped<IPublicationRepository, PublicationRepository>();
             services.AddScoped<ICallbackRepository, CallbackRepository>();
+            services.AddScoped<IListRepository, ListRepository>();
+            services.AddScoped<ISharePointRepository, SharePointRepository>();
 
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();
             services.AddSingleton<StorageTableService, StorageTableService>();
             services.AddSingleton<XmlExportSerivce, XmlExportSerivce>();
+            services.AddSingleton<EmailService, EmailService>();
 
             // Configure for large file uploads
             services.Configure<FormOptions>(opt =>
@@ -63,7 +66,7 @@ namespace CPS_API
             var globalSettings = Configuration.GetSection("GlobalSettings");
             services.Configure<GlobalSettings>(globalSettings);
 
-            string[] initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
+            string[]? initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
 
             services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
                 .AddMicrosoftIdentityWebApp(Configuration)
