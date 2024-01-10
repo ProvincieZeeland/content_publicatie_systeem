@@ -159,7 +159,7 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new FileNotFoundException((ex.Error == null ? ex.Message : ex.Error.Message) ?? "Drive not found", ex);
+                throw new FileNotFoundException($"Drive (SiteId = {ids.SiteId}, ListId = {ids.ListId}) does not exist!");
             }
             catch (Exception ex)
             {
@@ -176,7 +176,7 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
             {
-                throw new FileNotFoundException("The specified driveItem was not found", ex);
+                throw new FileNotFoundException($"DriveItem (SiteId = {ids.SiteId}, ListId = {ids.ListId}, ListItemId = {ids.ListItemId}) does not exist!");
             }
             catch (Exception ex)
             {
@@ -211,7 +211,7 @@ namespace CPS_API.Repositories
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
             {
-                throw new FileNotFoundException("The specified driveItem was not found", ex);
+                throw new FileNotFoundException($"DriveItem (DriveId = {ids.DriveId}, DriveItemId = {ids.DriveItemId}) does not exist!");
             }
             catch (Exception ex)
             {

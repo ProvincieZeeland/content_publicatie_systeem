@@ -88,6 +88,10 @@ namespace CPS_API.Repositories
             {
                 throw;
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
+            }
             catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
                 throw;
@@ -393,6 +397,10 @@ namespace CPS_API.Repositories
                 {
                     throw new CpsException("File cannot be empty");
                 }
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
             }
             catch (Exception ex)
             {

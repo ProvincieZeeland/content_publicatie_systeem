@@ -31,7 +31,7 @@ namespace CPS_API.Repositories
 
         Task UpdateAllMetadataAsync(FileInformation metadata, bool ignoreRequiredFields = false, bool getAsUser = false);
 
-        Task UpdateFileName(string objectId, string fileName, bool getAsUser = false);
+        Task UpdateFileName(string objectId, string fileName, FileInformation? metadata = null, bool getAsUser = false);
 
         Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
 
@@ -84,6 +84,10 @@ namespace CPS_API.Repositories
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
                 throw;
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"ListItem (objectId = {objectId}) does not exist!");
             }
             catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
@@ -194,6 +198,10 @@ namespace CPS_API.Repositories
             {
                 throw;
             }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"DriveItem (SiteId = {ids.SiteId}, ListId = {ids.ListId}, ListItemId = {ids.ListItemId}) does not exist!");
+            }
             catch (Exception ex)
             {
                 throw new CpsException("Error while getting driveItem", ex);
@@ -253,7 +261,7 @@ namespace CPS_API.Repositories
 
             if (!string.IsNullOrEmpty(metadata.FileName))
             {
-                await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName);
+                await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName, metadata);
             }
         }
 
@@ -357,7 +365,7 @@ namespace CPS_API.Repositories
             );
         }
 
-        public async Task UpdateFileName(string objectId, string fileName, bool getAsUser = false)
+        public async Task UpdateFileName(string objectId, string fileName, FileInformation? metadata = null, bool getAsUser = false)
         {
             if (objectId == null) throw new ArgumentNullException("objectId");
             if (fileName == null) throw new ArgumentNullException("fileName");
@@ -371,42 +379,66 @@ namespace CPS_API.Repositories
             {
                 Name = fileName
             };
-            await _driveRepository.UpdateDriveItemAsync(ids.DriveId, ids.DriveItemId, driveItem, getAsUser);
+            try
+            {
+                await _driveRepository.UpdateDriveItemAsync(ids.DriveId, ids.DriveItemId, driveItem, getAsUser);
+            }
 
-            // Update mimetype
-            new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var mimeType);
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while updating driveItem", ex);
+            }
 
             var fields = new FieldValueSet();
             fields.AdditionalData = new Dictionary<string, object>();
-            if (mimeType != null)
+
+            // Update mimetype
+            if (metadata == null || metadata.MimeType.IsNullOrEmpty())
             {
-                var mapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileInformation.MimeType));
-                if (mapping != null)
+                new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var mimeType);
+                if (mimeType != null)
                 {
-                    fields.AdditionalData[mapping.SpoColumnName] = mimeType;
+                    var mapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileInformation.MimeType));
+                    if (mapping != null)
+                    {
+                        fields.AdditionalData[mapping.SpoColumnName] = mimeType;
+                    }
                 }
             }
 
             // Update fileExtension
-            var fileExtension = Path.GetExtension(fileName).Replace(".", "");
-
-            var fieldMapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileInformation.FileExtension));
-            if (fieldMapping != null)
+            if (metadata == null || metadata.FileExtension.IsNullOrEmpty())
             {
-                fields.AdditionalData[fieldMapping.SpoColumnName] = fileExtension;
+                var fileExtension = Path.GetExtension(fileName).Replace(".", "");
+
+                var fieldMapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileInformation.FileExtension));
+                if (fieldMapping != null)
+                {
+                    fields.AdditionalData[fieldMapping.SpoColumnName] = fileExtension;
+                }
             }
 
             // Update title
-            var title = Path.GetFileNameWithoutExtension(fileName);
-
-            fieldMapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileMetadata.Title));
-            if (fieldMapping != null)
+            if (metadata == null || metadata.AdditionalMetadata == null || metadata.AdditionalMetadata.Title.IsNullOrEmpty())
             {
-                fields.AdditionalData[fieldMapping.SpoColumnName] = title;
+                var title = Path.GetFileNameWithoutExtension(fileName);
+
+                var fieldMapping = _globalSettings.MetadataMapping.Find(mapping => mapping.FieldName == nameof(FileMetadata.Title));
+                if (fieldMapping != null)
+                {
+                    fields.AdditionalData[fieldMapping.SpoColumnName] = title;
+                }
             }
 
             // update sharepoint fields with metadata
-            await _listRepository.UpdateListItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, fields, getAsUser);
+            if (fields.AdditionalData.Count > 0)
+            {
+                await _listRepository.UpdateListItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, fields, getAsUser);
+            }
         }
 
         public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, FileInformation metadata, bool getAsUser = false)
