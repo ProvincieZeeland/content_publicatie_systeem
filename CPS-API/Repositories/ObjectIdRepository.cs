@@ -267,8 +267,8 @@ namespace CPS_API.Repositories
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
-            var filterDrive = TableQuery.GenerateFilterCondition("DriveId", QueryComparisons.Equal, driveId);
-            var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
+            var filterDrive = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveId), QueryComparisons.Equal, driveId);
+            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveItemId), QueryComparisons.Equal, driveItemId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter);
 
             var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
@@ -304,7 +304,7 @@ namespace CPS_API.Repositories
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
             objectId = objectId.ToUpper();
-            var filter = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, objectId);
+            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.PartitionKey), QueryComparisons.Equal, objectId);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
             return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
         }
@@ -314,7 +314,7 @@ namespace CPS_API.Repositories
             var objectIdentifiersTable = GetObjectIdentifiersTable();
 
             var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
-            var filter = TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, rowKey);
+            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, rowKey);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
             var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
             return objectIdentifiersEntity?.PartitionKey;

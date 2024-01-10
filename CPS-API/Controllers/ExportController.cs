@@ -103,9 +103,8 @@ namespace CPS_API.Controllers
         private static string GetNewResponse(ExportResponse result)
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.\r\n").ToList();
-            var failedToBePublishedIObjectIdsStr = result.FailedToBePublishedIObjectIds.Select(id => $"Error while adding file (ObjectId: {id}) to FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
-            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + (failedToBePublishedIObjectIdsStr.Any() ? "\r\n" : "") + message;
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
 
         [HttpGet]
@@ -257,6 +256,32 @@ namespace CPS_API.Controllers
             var failedItemsStr = result.FailedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
             return $"{result.NumberOfSucceededItems} items deleted" + (failedItemsStr.Any() ? "\r\n" : "") + message;
+        }
+
+        // GET
+        [HttpGet]
+        [Route("publish")]
+        public async Task<IActionResult> SynchroniseToBePublishedDocuments()
+        {
+            ToBePublishedExportResponse result;
+            try
+            {
+                result = await _exportRepository.SynchroniseToBePublishedDocumentsAsync();
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
+
+            return Ok(GetPublicationResponse(result));
+        }
+
+        private static string GetPublicationResponse(ToBePublishedExportResponse result)
+        {
+            var failedItemsStr = result.FailedItems.Select(id => $"Error while adding file (ObjectId: {id}) to FileStorage.\r\n").ToList();
+            var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
     }
 }

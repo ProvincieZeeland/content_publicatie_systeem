@@ -8,14 +8,11 @@
 
         public int NumberOfSucceededItems { get; set; }
 
-        public List<string> FailedToBePublishedIObjectIds { get; set; }
-
-        public ExportResponse(string newNextTokens, int numberOfSucceededItems, List<DeltaDriveItem>? failedItems = null, List<string>? failedToBePublishedItems = null)
+        public ExportResponse(string newNextTokens, List<DeltaDriveItem>? failedItems, int numberOfSucceededItems)
         {
             NewNextTokens = newNextTokens;
             FailedItems = failedItems ?? new List<DeltaDriveItem>();
             NumberOfSucceededItems = numberOfSucceededItems;
-            FailedToBePublishedIObjectIds = failedToBePublishedItems ?? new List<string>();
         }
     }
 }

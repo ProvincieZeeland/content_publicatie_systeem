@@ -14,6 +14,8 @@ namespace CPS_API.Repositories
         Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens);
 
         Task<ExportResponse> SynchroniseDeletedDocumentsAsync(Dictionary<string, string> tokens);
+
+        Task<ToBePublishedExportResponse> SynchroniseToBePublishedDocumentsAsync();
     }
 
     public class ExportRepository : IExportRepository
@@ -74,7 +76,7 @@ namespace CPS_API.Repositories
             }
 
             // Synchronise each file
-            return await GetAndSynchroniseNewDocumentsAsync(deltaResponse);
+            return await SynchroniseNewDocumentsAsync(deltaResponse);
         }
 
         private async Task<DeltaResponse> GetNewItemsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens)
@@ -103,47 +105,26 @@ namespace CPS_API.Repositories
         /// Check for to be published documents
         ///  - Synchronise each to be published file
         /// </summary>
-        private async Task<ExportResponse> GetAndSynchroniseNewDocumentsAsync(DeltaResponse deltaResponse)
-        {
-            var toBePublishedResponse = await SynchroniseToBePublishedDocumentsAsync(deltaResponse);
-            var synchroniseResponse = await SynchroniseNewDocumentsAsync(deltaResponse);
-            return new ExportResponse(
-                synchroniseResponse.NewNextTokens,
-                synchroniseResponse.NumberOfSucceededItems + toBePublishedResponse.NumberOfSucceededItems,
-                synchroniseResponse.FailedItems,
-                toBePublishedResponse.FailedToBePublishedIObjectIds
-            );
-        }
-
-        /// <summary>
-        /// For each file:
-        ///  - Generate xml from metadata
-        ///  - Upload file to storage container
-        ///  - Upload xml to storage container
-        ///  - Post new file to callback
-        ///  
-        /// Check for to be published documents
-        ///  - Synchronise each to be published file
-        /// </summary>
-        private async Task<ExportResponse> SynchroniseToBePublishedDocumentsAsync(DeltaResponse deltaResponse)
+        public async Task<ToBePublishedExportResponse> SynchroniseToBePublishedDocumentsAsync()
         {
             // Check for to be published documents and synchronise.
-            var objectIds = await _publicationRepository.GetObjectIdsAsync();
+            var entities = await _publicationRepository.GetEntitiesAsync();
+            entities = entities.Where(entity => entity.PublicationDate.Date <= DateTimeOffset.UtcNow.Date).ToList();
 
             var itemsAdded = 0;
-            var failedToBePublishedItems = new List<string>();
-            foreach (var objectId in objectIds)
+            var failedToBePublishedEntities = new List<ToBePublishedEntity>();
+            foreach (var entity in entities)
             {
                 ObjectIdentifiersEntity? objectIdentifiersEntity;
                 try
                 {
-                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(objectId);
+                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(entity.ObjectId);
                 }
                 catch (Exception ex)
                 {
-                    failedToBePublishedItems.Add(objectId);
-                    TrackCpsException(ex, objectId: objectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {objectId})");
+                    failedToBePublishedEntities.Add(entity);
+                    TrackCpsException(ex, objectId: entity.ObjectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {entity})");
                     continue;
                 }
 
@@ -152,20 +133,19 @@ namespace CPS_API.Repositories
                     var succeeded = await SynchroniseDocumentsAsync(objectIdentifiersEntity, "create");
                     if (succeeded)
                     {
-                        await _publicationRepository.DeleteObjectIdAsync(objectId);
+                        await _publicationRepository.DeleteEntityAsync(entity);
                         itemsAdded++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    failedToBePublishedItems.Add(objectId);
+                    failedToBePublishedEntities.Add(entity);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising new documents");
                     _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
                 }
             }
 
-            var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, itemsAdded, failedToBePublishedItems: failedToBePublishedItems);
+            return new ToBePublishedExportResponse(itemsAdded, failedToBePublishedEntities);
         }
 
         /// <summary>
@@ -219,7 +199,7 @@ namespace CPS_API.Repositories
             }
 
             var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, itemsAdded, notAddedItems);
+            return new ExportResponse(newNextTokens, notAddedItems, itemsAdded);
         }
 
         #endregion
@@ -310,7 +290,7 @@ namespace CPS_API.Repositories
             }
 
             var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, itemsUpdated, notUpdatedItems);
+            return new ExportResponse(newNextTokens, notUpdatedItems, itemsUpdated);
         }
 
         private async Task<bool> UploadFileAndXmlToFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
@@ -373,7 +353,7 @@ namespace CPS_API.Repositories
             if (metadata.AdditionalMetadata == null) throw new CpsException("Error while getting metadata: AdditionalMetadata is null");
             if (metadata.AdditionalMetadata.PublicationDate.HasValue && metadata.AdditionalMetadata.PublicationDate.Value.Date > DateTime.UtcNow.Date)
             {
-                await _publicationRepository.SaveObjectIdAsync(objectId);
+                await _publicationRepository.SaveEntityAsync(objectId, metadata.AdditionalMetadata.PublicationDate.Value);
                 return false;
             }
             return true;
@@ -520,14 +500,14 @@ namespace CPS_API.Repositories
             }
 
             var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, itemsDeleted, notDeletedItems);
+            return new ExportResponse(newNextTokens, notDeletedItems, itemsDeleted);
         }
 
-        private async Task DeleteFileAndXmlFromFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
+        private async Task DeleteIfExistsFileAndXmlFromFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
         {
             try
             {
-                await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.DeleteIfExistsAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -535,7 +515,7 @@ namespace CPS_API.Repositories
             }
             try
             {
-                await _fileStorageService.DeleteAsync(_globalSettings.MetadataContainerName, objectIdentifiersEntity.ObjectId);
+                await _fileStorageService.DeleteIfExistsAsync(_globalSettings.MetadataContainerName, objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -543,7 +523,7 @@ namespace CPS_API.Repositories
             }
             try
             {
-                await _publicationRepository.DeleteObjectIdAsync(objectIdentifiersEntity.ObjectId);
+                await _publicationRepository.DeleteIfExistsEntityAsync(objectIdentifiersEntity.ObjectId);
             }
             catch (Exception ex)
             {
@@ -560,7 +540,7 @@ namespace CPS_API.Repositories
             bool succeeded;
             if (synchronisationType == "delete")
             {
-                await DeleteFileAndXmlFromFileStorageAsync(objectIdentifiersEntity);
+                await DeleteIfExistsFileAndXmlFromFileStorageAsync(objectIdentifiersEntity);
                 succeeded = true;
             }
             else

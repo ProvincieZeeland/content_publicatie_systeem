@@ -8,11 +8,13 @@ namespace CPS_API.Repositories
 {
     public interface IPublicationRepository
     {
-        Task<List<string>> GetObjectIdsAsync();
+        Task<List<ToBePublishedEntity>> GetEntitiesAsync();
 
-        Task SaveObjectIdAsync(string objectId);
+        Task SaveEntityAsync(string objectId, DateTimeOffset publicationDate);
 
-        Task DeleteObjectIdAsync(string objectId);
+        Task DeleteEntityAsync(ToBePublishedEntity entity);
+
+        Task DeleteIfExistsEntityAsync(string objectId);
     }
 
     public class PublicationRepository : IPublicationRepository
@@ -31,44 +33,72 @@ namespace CPS_API.Repositories
 
         #region Get
 
-        public async Task<List<string>> GetObjectIdsAsync()
+        public async Task<List<ToBePublishedEntity>> GetEntitiesAsync()
         {
-            var table = GetToBePublishedTable();
-            return await GetObjectIdsAsync(table);
+            var table = GetTable();
+            return await GetEntitiesAsync(table);
         }
 
-        public async Task<List<string>> GetObjectIdsAsync(CloudTable toBePublishedTable)
-        {
-            var entries = await GetToBePublishedEntitiesAsync(toBePublishedTable);
-            return entries.Select(entry => entry.ObjectId).ToList();
-        }
-
-        public async Task<List<ToBePublishedEntity>> GetToBePublishedEntitiesAsync(CloudTable toBePublishedTable)
+        private async Task<List<ToBePublishedEntity>> GetEntitiesAsync(CloudTable table)
         {
             var query = new TableQuery<ToBePublishedEntity>();
-            var result = await toBePublishedTable.ExecuteQuerySegmentedAsync(query, null);
+            var result = await table.ExecuteQuerySegmentedAsync(query, null);
             if (result == null)
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
             }
-            return result.Results.ToList();
+            return result.Results?.ToList();
+        }
+
+        private async Task<ToBePublishedEntity> GetToBePublishedEntityAsync(CloudTable table, string objectId)
+        {
+            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, objectId);
+            var query = new TableQuery<ToBePublishedEntity>().Where(filter);
+            var result = await table.ExecuteQuerySegmentedAsync(query, null);
+            if (result == null)
+            {
+                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\" by \"{objectId}\"");
+            }
+            return result.Results?.FirstOrDefault();
         }
 
         #endregion
 
         #region Save and Delete
 
-        public async Task SaveObjectIdAsync(string objectId)
+        public async Task SaveEntityAsync(string objectId, DateTimeOffset publicationDate)
         {
-            var table = GetToBePublishedTable();
-            var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId);
+            var table = GetTable();
+            await SaveEntityAsync(table, objectId, publicationDate);
+        }
+
+        private async Task SaveEntityAsync(CloudTable table, string objectId, DateTimeOffset publicationDate)
+        {
+            var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId, publicationDate);
             await _storageTableService.SaveAsync(table, entity);
         }
 
-        public async Task DeleteObjectIdAsync(string objectId)
+        public async Task DeleteEntityAsync(ToBePublishedEntity entity)
         {
-            var table = GetToBePublishedTable();
-            var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId) { ETag = "*" };
+            var table = GetTable();
+            await DeleteEntityAsync(table, entity);
+        }
+
+        public async Task DeleteIfExistsEntityAsync(string objectId)
+        {
+            var table = GetTable();
+            var entity = await GetToBePublishedEntityAsync(table, objectId);
+            if (entity == null)
+            {
+                return;
+            }
+            await DeleteEntityAsync(table, entity);
+        }
+
+        private async Task DeleteEntityAsync(CloudTable table, ToBePublishedEntity entity)
+        {
+            // Etag * is required for deleting.
+            entity.ETag = "*";
             await _storageTableService.DeleteAsync(table, entity);
         }
 
@@ -76,7 +106,7 @@ namespace CPS_API.Repositories
 
         #region Helpers
 
-        private CloudTable GetToBePublishedTable()
+        private CloudTable GetTable()
         {
             var table = _storageTableService.GetTable(_globalSettings.ToBePublishedTableName);
             if (table == null)

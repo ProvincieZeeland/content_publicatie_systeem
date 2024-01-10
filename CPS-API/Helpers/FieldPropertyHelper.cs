@@ -119,7 +119,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var boolParsed = Boolean.TryParse(stringValue, out var boolValue);
+                var boolParsed = DateTimeOffset.TryParse(stringValue, out var boolValue);
                 if (boolParsed)
                 {
                     property.SetValue(parent, boolValue, null);
