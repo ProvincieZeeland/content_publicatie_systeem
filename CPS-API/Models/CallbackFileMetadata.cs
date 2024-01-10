@@ -16,9 +16,9 @@
 
         public string? Classification { get; set; } = "";
 
-        public DateTime? PublicationDate { get; set; } = DateTime.MinValue;
+        public DateTimeOffset? PublicationDate { get; set; } = DateTimeOffset.MinValue;
 
-        public DateTime? ArchiveDate { get; set; } = DateTime.MinValue;
+        public DateTimeOffset? ArchiveDate { get; set; } = DateTimeOffset.MinValue;
 
         public string? WOOInformationCategoryPrimary { get; set; } = "";
 
@@ -38,8 +38,8 @@
             ZeesterReference = metadata.ZeesterReference ?? string.Empty;
             RetentionPeriod = metadata.RetentionPeriod ?? 0;
             Classification = metadata.Classification ?? string.Empty;
-            PublicationDate = metadata.PublicationDate ?? DateTime.MinValue;
-            ArchiveDate = metadata.ArchiveDate ?? DateTime.MinValue;
+            PublicationDate = metadata.PublicationDate ?? DateTimeOffset.MinValue;
+            ArchiveDate = metadata.ArchiveDate ?? DateTimeOffset.MinValue;
             WOOInformationCategoryPrimary = metadata.WOOInformationCategoryPrimary ?? string.Empty;
             WOOInformationCategorySecondary = metadata.WOOInformationCategorySecondary ?? string.Empty;
         }

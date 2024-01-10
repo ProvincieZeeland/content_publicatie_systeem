@@ -33,10 +33,6 @@ namespace CPS_API.Helpers
             {
                 SetDecimalValue(property, parent, value);
             }
-            else if (property.PropertyType == typeof(DateTime?))
-            {
-                SetDateTimeValue(property, parent, value);
-            }
             else if (property.PropertyType == typeof(DateTimeOffset?))
             {
                 SetDateTimeOffsetValue(property, parent, value);
@@ -85,27 +81,6 @@ namespace CPS_API.Helpers
                 if (decimalValue % 1 == 0)
                 {
                     property.SetValue(parent, decimalValue, null);
-                }
-            }
-        }
-
-        public static void SetDateTimeValue(PropertyInfo property, object parent, object? value)
-        {
-            var stringValue = value?.ToString();
-            if (stringValue == null)
-            {
-                property.SetValue(parent, null, null);
-            }
-            else
-            {
-                var dateParsed = DateTime.TryParse(stringValue, out var dateValue);
-                if (dateParsed)
-                {
-                    property.SetValue(parent, dateValue, null);
-                }
-                else
-                {
-                    property.SetValue(parent, null, null);
                 }
             }
         }

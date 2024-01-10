@@ -134,9 +134,9 @@ namespace CPS_API.Repositories
             var metadata = new FileInformation();
             metadata.Ids = ids;
             metadata.FileName = await GetItemName(listItem, ids, getAsUser);
-            metadata.CreatedOn = MetadataHelper.GetDateTime(listItem.CreatedDateTime);
+            metadata.CreatedOn = listItem.CreatedDateTime;
             metadata.CreatedBy = MetadataHelper.GetUserName(listItem.CreatedBy);
-            metadata.ModifiedOn = MetadataHelper.GetDateTime(listItem.LastModifiedDateTime);
+            metadata.ModifiedOn = listItem.LastModifiedDateTime;
             metadata.ModifiedBy = MetadataHelper.GetUserName(listItem.LastModifiedBy);
 
             metadata.AdditionalMetadata = new FileMetadata();
@@ -539,9 +539,9 @@ namespace CPS_API.Repositories
                     return true;
                 }
             }
-            else if (propertyInfo.PropertyType == typeof(DateTime))
+            else if (propertyInfo.PropertyType == typeof(DateTimeOffset))
             {
-                if (DateTimePropertyContainsData(value, defaultValue))
+                if (DateTimeOffsetPropertyContainsData(value, defaultValue))
                 {
                     return true;
                 }
@@ -573,18 +573,18 @@ namespace CPS_API.Repositories
             return false;
         }
 
-        private static bool DateTimePropertyContainsData(object? value, object? defaultValue)
+        private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
         {
             var stringValue = value.ToString();
-            var dateParsed = DateTime.TryParse(stringValue, out DateTime dateTimeValue);
-            DateTime? nullableDateValue = null;
+            var dateParsed = DateTimeOffset.TryParse(stringValue, out DateTimeOffset dateTimeValue);
+            DateTimeOffset? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
             var stringDefaultValue = defaultValue.ToString();
-            dateParsed = DateTime.TryParse(stringDefaultValue, out DateTime dateTimeDefaultValue);
-            DateTime? nullableDateDefaultValue = null;
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, out DateTimeOffset dateTimeDefaultValue);
+            DateTimeOffset? nullableDateDefaultValue = null;
             if (dateParsed)
             {
                 nullableDateDefaultValue = dateTimeDefaultValue;
@@ -687,20 +687,20 @@ namespace CPS_API.Repositories
                 value = defaultValue;
             }
 
-            if (propertyInfo.PropertyType == typeof(DateTime?))
+            if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value?.ToString();
-                var dateParsed = DateTime.TryParse(stringValue, out DateTime dateValue);
+                var dateParsed = DateTimeOffset.TryParse(stringValue, out DateTimeOffset dateValue);
                 if (!dateParsed && !ignoreRequiredFields && fieldMapping.Required)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                 }
 
-                if (dateValue == DateTime.MinValue)
+                if (dateValue == DateTimeOffset.MinValue)
                 {
                     return null;
                 }
-                return dateValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffff");
+                return dateValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
             }
             return value;
         }

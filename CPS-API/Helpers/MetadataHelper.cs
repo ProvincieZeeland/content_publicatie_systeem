@@ -96,9 +96,9 @@ namespace CPS_API.Helpers
 
             if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
             {
-                if (fieldMapping.DefaultValue.ToString() == "DateTime.Now")
+                if (fieldMapping.DefaultValue.ToString() == "DateTimeOffset.Now")
                 {
-                    return DateTime.Now;
+                    return DateTimeOffset.Now;
                 }
                 return fieldMapping.DefaultValue;
             }
@@ -115,11 +115,11 @@ namespace CPS_API.Helpers
             {
                 return true;
             }
-            else if (propertyInfo.PropertyType == typeof(DateTime?))
+            else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                DateTime.TryParse(stringValue, out var dateValue);
-                if (dateValue == DateTime.MinValue)
+                DateTimeOffset.TryParse(stringValue, out var dateValue);
+                if (dateValue == DateTimeOffset.MinValue)
                 {
                     return true;
                 }
@@ -178,15 +178,6 @@ namespace CPS_API.Helpers
                 return false;
             }
             return true;
-        }
-
-        public static DateTime? GetDateTime(DateTimeOffset? dateTimeOffset)
-        {
-            if (!dateTimeOffset.HasValue)
-            {
-                return null;
-            }
-            return dateTimeOffset.Value.DateTime.ToLocalTime();
         }
 
         public static string? GetUserName(IdentitySet identitySet)
