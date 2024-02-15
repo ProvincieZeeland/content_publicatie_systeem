@@ -5,14 +5,21 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Helpers
 {
     public static class MetadataHelper
     {
-        public static PropertyInfo? GetMetadataPropertyInfo(FileInformation metadata, FieldMapping fieldMapping)
+        public static PropertyInfo? GetMetadataPropertyInfo(FieldMapping fieldMapping, FileInformation? metadata = null)
         {
-            if (fieldMapping.FieldName == nameof(ObjectIdentifiers.ObjectId))
+            if (metadata == null)
+            {
+                metadata = new FileInformation();
+                metadata.Ids = new ObjectIdentifiers();
+                metadata.AdditionalMetadata = new FileMetadata();
+            }
+            if (fieldMapping.FieldName.Equals(nameof(ObjectIdentifiers.ObjectId), StringComparison.InvariantCultureIgnoreCase))
             {
                 return metadata?.Ids?.GetType().GetProperty(fieldMapping.FieldName);
             }
@@ -31,7 +38,7 @@ namespace CPS_API.Helpers
         public static object? GetMetadataValue(FileInformation metadata, FieldMapping fieldMapping)
         {
             if (metadata == null) return null;
-            if (fieldMapping.FieldName == nameof(ObjectIdentifiers.ObjectId))
+            if (fieldMapping.FieldName.Equals(nameof(ObjectIdentifiers.ObjectId), StringComparison.InvariantCultureIgnoreCase))
             {
                 return metadata.Ids?.ObjectId;
             }
@@ -96,7 +103,7 @@ namespace CPS_API.Helpers
 
             if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
             {
-                if (fieldMapping.DefaultValue.ToString() == "DateTimeOffset.Now")
+                if (fieldMapping.DefaultValue.ToString().Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
                 {
                     return DateTimeOffset.Now;
                 }
@@ -118,8 +125,7 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                DateTimeOffset.TryParse(stringValue, out var dateValue);
-                if (dateValue == DateTimeOffset.MinValue)
+                if (!DateTimeOffset.TryParse(stringValue, out _))
                 {
                     return true;
                 }
@@ -193,6 +199,20 @@ namespace CPS_API.Helpers
                 return application.DisplayName;
             }
             return user.DisplayName;
+        }
+
+        public static T clone<T>(object metadata) where T : new()
+        {
+            var clone = new T();
+            foreach (var propertyInfo in metadata.GetType().GetProperties())
+            {
+                if (propertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+                propertyInfo.SetValue(clone, propertyInfo.GetValue(metadata));
+            }
+            return clone;
         }
     }
 }

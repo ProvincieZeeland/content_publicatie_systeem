@@ -27,16 +27,7 @@ namespace CPS_API.Models
 
         public FileMetadata clone()
         {
-            var clone = new FileMetadata();
-            foreach (var propertyInfo in this.GetType().GetProperties())
-            {
-                if (propertyInfo.Name == "Item")
-                {
-                    continue;
-                }
-                clone[propertyInfo.Name] = propertyInfo.GetValue(this);
-            }
-            return clone;
+            return MetadataHelper.clone<FileMetadata>(this);
         }
     }
 }

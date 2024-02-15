@@ -1,4 +1,5 @@
 ﻿using Microsoft.Net.Http.Headers;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Helpers
 {
@@ -34,7 +35,7 @@ namespace CPS_API.Helpers
         {
             // Content-Disposition: form-data; name="key";
             return contentDisposition != null
-                && contentDisposition.DispositionType.Equals("form-data")
+                && contentDisposition.DispositionType.Equals(Constants.DispositionTypeFormData)
                 && string.IsNullOrEmpty(contentDisposition.FileName.Value)
                 && string.IsNullOrEmpty(contentDisposition.FileNameStar.Value);
         }
@@ -43,7 +44,7 @@ namespace CPS_API.Helpers
         {
             // Content-Disposition: form-data; name="myfile1"; filename="Misc 002.jpg"
             return contentDisposition != null
-                && contentDisposition.DispositionType.Equals("form-data")
+                && contentDisposition.DispositionType.Equals(Constants.DispositionTypeFormData)
                 && (!string.IsNullOrEmpty(contentDisposition.FileName.Value)
                     || !string.IsNullOrEmpty(contentDisposition.FileNameStar.Value));
         }

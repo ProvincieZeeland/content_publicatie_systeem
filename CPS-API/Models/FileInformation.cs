@@ -39,11 +39,15 @@ namespace CPS_API.Models
 
         public FileInformation clone()
         {
+            // Clone must equal current object.
+            // When the metadata value is null it means that we don’t edit the property in SharePoint.
+            // If de property contains a default value, we empty the property in SharePoint.
+            // We set the default value null.
             var clone = new FileInformation();
             var properties = this.GetType().GetProperties();
             foreach (var propertyName in properties.Select(property => property.Name))
             {
-                if (propertyName == "Item")
+                if (propertyName.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase))
                 {
                     continue;
                 }
@@ -52,7 +56,7 @@ namespace CPS_API.Models
 
             foreach (var propertyInfo in properties)
             {
-                if (propertyInfo.Name == "Item")
+                if (propertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase))
                 {
                     continue;
                 }

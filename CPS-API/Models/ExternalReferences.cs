@@ -31,16 +31,7 @@ namespace CPS_API.Models
 
         public ExternalReferences clone()
         {
-            var clone = new ExternalReferences();
-            foreach (var propertyInfo in this.GetType().GetProperties())
-            {
-                if (propertyInfo.Name == "Item")
-                {
-                    continue;
-                }
-                clone[propertyInfo.Name] = propertyInfo.GetValue(this);
-            }
-            return clone;
+            return MetadataHelper.clone<ExternalReferences>(this);
         }
     }
 }

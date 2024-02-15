@@ -7,7 +7,6 @@ using CPS_API.Models.Exceptions;
 using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
-using Microsoft.SharePoint.Client;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
 using Constants = CPS_API.Models.Constants;
@@ -22,7 +21,7 @@ namespace CPS_API.Repositories
 
         Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse);
 
-        Task<string> HandleDropOffNotificationAsync(WebHookNotification notification);
+        Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification);
     }
 
     public class WebHookRepository : IWebHookRepository
@@ -72,27 +71,25 @@ namespace CPS_API.Repositories
 
         public async Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId)
         {
-            using (var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId))
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId);
+            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
+            if (accessToken == null)
             {
-                var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
-                if (accessToken == null)
-                {
-                    throw new CpsException("Error while getting accessToken");
-                }
-
-                var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookEndPoint, accessToken, _globalSettings.WebHookClientState);
-                if (subscription == null)
-                {
-                    throw new CpsException("Error while adding webhook");
-                }
-
-                // Save expiration date for renewing webhook.
-                // Save subscriptionId for deleting webhook.
-                await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionId, subscription.Id);
-                await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, subscription.ExpirationDateTime);
-
-                return subscription;
+                throw new CpsException("Error while getting accessToken");
             }
+
+            var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookEndPoint, accessToken, _globalSettings.WebHookClientState);
+            if (subscription == null)
+            {
+                throw new CpsException("Error while adding webhook");
+            }
+
+            // Save expiration date for renewing webhook.
+            // Save subscriptionId for deleting webhook.
+            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionId, subscription.Id);
+            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, subscription.ExpirationDateTime);
+
+            return subscription;
         }
 
         /// <summary>
@@ -143,15 +140,21 @@ namespace CPS_API.Repositories
 
         #endregion Create Webhook
 
-        #region Handle Notification
+        #region Handle SharePoint Notification
 
+        /// <summary>
+        /// When adding a webhook respond with given validation token.
+        /// 
+        /// Webhook sends notification when something changes in the list.
+        /// Put this notification on a queue, so response time remains within 5 seconds.
+        /// </summary>
         public async Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse)
         {
             _telemetryClient.TrackTrace($"Webhook endpoint triggered!");
 
             // If a validation token is present, we need to respond within 5 seconds by
             // returning the given validation token. This only happens when a new
-            // web hook is being added
+            // webhook is being added
             if (validationToken != null)
             {
                 _telemetryClient.TrackTrace($"Validation token {validationToken} received");
@@ -191,91 +194,68 @@ namespace CPS_API.Repositories
             _telemetryClient.TrackTrace($"Message added");
         }
 
-        public async Task<string> HandleDropOffNotificationAsync(WebHookNotification notification)
+        #endregion Handle Notification
+
+        #region Handle DropOff Notification
+
+        /// <summary>
+        /// Handle the webhook notification from a queue.
+        ///  - Get the changes in list from the notification.
+        ///  - Process the changes
+        ///     - Check if document must me processed
+        ///     - Add or update the document in the right list
+        ///     - Set status in DropOff to processed
+        ///  - Keep last changetoken for next notification
+        /// </summary>
+        public async Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification)
         {
-            // Get site
-            var site = await _listRepository.GetSiteByUrlAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
+            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
 
-            // Get Changes
-            var changes = await GetChangeTokenAndListChangesAsync(site.WebUrl, notification.Resource);
-            if (changes.ChangeTokenInvalid)
-            {
-                throw new CpsException("Invalid ChangeToken");
-            }
-
-            // Process changes
-            var processedItems = await ProccessListItemsAsync(site.Id, notification.Resource, changes.Items);
-
-            // Save lastChangeToken for next notification
-            await _settingsRepository.SaveSettingAsync(Constants.DropOffLastChangeToken, changes.NewChangeToken);
-
-            // Return summary
-            return GetNotificationProcessSummary(processedItems);
-        }
-
-        #region Get changes
-
-        private async Task<SharePointListItemsDelta> GetChangeTokenAndListChangesAsync(string siteUrl, string listId)
-        {
+            // Get changes
             var changeToken = await _settingsRepository.GetSetting<string>(Constants.DropOffLastChangeToken);
             if (string.IsNullOrWhiteSpace(changeToken))
             {
                 _telemetryClient.TrackTrace("Change token is empty, attempting to retrieve whole change history.");
             }
+            var changes = await _listRepository.GetListAndFilteredChangesAsync(site.WebUrl, notification.Resource, changeToken);
 
-            try
-            {
-                return await _sharePointRepository.GetListAndFilteredChangesAsync(siteUrl, listId, changeToken);
-            }
-            catch (Exception ex)
-            {
-                if (ex is ServerException)
-                {
-                    // The Exception that is thrown when ChangeTokenStart is invalid:
-                    //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
-                    var serverEx = ex as ServerException;
-                    if ((serverEx.ServerErrorTypeName == "System.ArgumentOutofRangeException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN)
-                    || (serverEx.ServerErrorTypeName == "System.FormatException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_FORMAT_CHANGE_TOKEN)
-                    || (serverEx.ServerErrorTypeName == "System.InvalidOperationException" && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_OPERATION_CHANGE_TOKEN)
-                    || ((serverEx.Message.Equals("Het changeToken verwijst naar een tijdstip vóór het begin van het huidige wijzigingenlogboek.") || serverEx.Message.Equals("The changeToken refers to a time before the start of the current change log.")) && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN_TIME)
-                    || ((serverEx.Message.Equals("U kunt het changeToken van het ene object niet voor het andere object gebruiken.") || serverEx.Message.Equals("Cannot use the changeToken from one object against a different object")) && serverEx.ServerErrorCode == Constants.ERROR_CODE_INVALID_CHANGE_TOKEN_WRONG_OBJECT))
-                    {
-                        return new SharePointListItemsDelta(changeTokenInvalid: true);
-                    }
-                }
+            // Process the changes
+            var processedItems = await ProccessListItemsAsync(site.Id, notification.Resource, changes.Items);
+            await _settingsRepository.SaveSettingAsync(Constants.DropOffLastChangeToken, changes.NewChangeToken);
 
-                _telemetryClient.TrackException(new CpsException($"Error while getting list changes {siteUrl}", ex));
-                throw new CpsException($"Error while getting list changes {siteUrl}");
-            }
+            return processedItems;
         }
-
-        #endregion Get changes
 
         #region Process Changes
 
+        /// <summary>
+        /// Process documents from DropOff
+        ///  - Check if document is complete for processing
+        ///  - Add or update the document in the right list
+        /// </summary>
         private async Task<ListItemsProcessModel> ProccessListItemsAsync(string siteId, string listId, List<SharePointListItemDelta> items)
         {
-            var listItemIds = items.Select(d => d.ListItemId).ToList();
             var response = new ListItemsProcessModel();
             response.processedItemIds = new List<string>();
             response.notProcessedItemIds = new List<string>();
-            foreach (var listItemId in listItemIds)
+
+            foreach (var item in items)
             {
                 try
                 {
                     // Get ListItem and ids
-                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, listItemId.ToString());
-                    var ids = await GetObjectIdentifiersAsync(siteId, listId, listItemId.ToString());
+                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, item.ListItemId.ToString());
+                    var ids = await _objectIdRepository.GetObjectIdentifiersAsync(siteId, listId, item.ListItemId.ToString());
 
                     // Check if listitem must me processed
-                    var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem, ids);
-                    if (!dropOffMetadata.IsComplete || dropOffMetadata.Status == "Verwerkt")
+                    var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem);
+                    if (!dropOffMetadata.IsComplete || dropOffMetadata.Status.Equals(Constants.DropOffMetadataStatusProcessed, StringComparison.InvariantCultureIgnoreCase))
                     {
                         continue;
                     }
 
                     // Process listitem
-                    var isProcessed = await GetMetadataAndProcessListItemAsync(siteId, listId, listItem);
+                    var isProcessed = await ProcessListItemAndSendMailAsync(siteId, listId, listItem);
                     if (isProcessed)
                     {
                         response.processedItemIds.Add(listItem.Id);
@@ -287,29 +267,29 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {listItemId}", ex));
-                    response.notProcessedItemIds.Add(listItemId.ToString());
+                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {item.ListItemId}", ex));
+                    response.notProcessedItemIds.Add(item.ListItemId.ToString());
                 }
             }
             return response;
         }
 
         /// <summary>
-        /// - Check if complete
-        ///      - IsComplete?
-        ///      - All metadata correctly filled?
-        /// - Check is listItem is new or update
-        /// - Add or update ListItem by our API
-        /// - Update listItem in DropOff
+        /// - Create or update the document in the right list
+        /// - Update document in DropOff
         ///      - Succesfull -> Status 'Verwerkt'
         ///      - Unsuccesfull -> Status 'Er gaat iets mis'
+        /// - Send mail to creater
         /// </summary>
-        private async Task<bool> GetMetadataAndProcessListItemAsync(string siteId, string listId, GraphListItem listItem)
+        private async Task<bool> ProcessListItemAndSendMailAsync(string siteId, string listId, GraphListItem listItem)
         {
+            // DropOff document metadata
+            // DropOff does not have external references
             FileInformation metadata;
             try
             {
-                metadata = await GetMetadataAsync(siteId, listId, listItem);
+                var ids = await _objectIdRepository.GetObjectIdentifiersAsync(siteId, listId, listItem.Id);
+                metadata = await _metadataRepository.GetMetadataWithoutExternalReferencesAsync(listItem, ids);
             }
             catch (Exception ex)
             {
@@ -317,10 +297,12 @@ namespace CPS_API.Repositories
                 return false;
             }
 
+            // New location document metadata
             FileInformation newMetadata;
             try
             {
-                newMetadata = await GetNewMetadataAsync(metadata);
+                newMetadata = metadata.clone();
+                newMetadata.Ids = await GetIdsForNewLocationAsync(metadata);
             }
             catch (Exception ex)
             {
@@ -330,45 +312,23 @@ namespace CPS_API.Repositories
 
             try
             {
-                await ProcessListItemAsync(metadata, newMetadata, listItem);
+                var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                metadata.Ids.ObjectId = await CreateOrUpdateFileAsync(newMetadata, stream);
+                await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata);
             }
             catch (Exception ex)
             {
                 await LogErrorAndSendMailAsync(siteId, listId, listItem, ex, "Failed to process DropOff file.", metadata);
                 return false;
             }
+
+            await _emailService.GetAuthorEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
             return true;
         }
 
-        private async Task<FileInformation> GetMetadataAsync(string siteId, string listId, GraphListItem listItem)
-        {
-            var metadata = new FileInformation();
-            metadata.Ids = await GetObjectIdentifiersAsync(siteId, listId, listItem.Id);
-
-            // Get new metadata
-            // DropOff does not have external references
-            return await _metadataRepository.GetMetadataWithoutExternalReferencesAsync(listItem, metadata.Ids);
-        }
-
-        private async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId)
-        {
-            var ids = new ObjectIdentifiers();
-            ids.SiteId = siteId;
-            ids.ListId = listId;
-            ids.ListItemId = listItemId;
-
-            // Get all ids for current location
-            return await _objectIdRepository.FindMissingIds(ids);
-        }
-
-        private async Task<FileInformation> GetNewMetadataAsync(FileInformation metadata)
-        {
-            var newLocationIds = await GetIdsForNewLocationAsync(metadata);
-            var newMetadata = metadata.clone();
-            newMetadata.Ids = newLocationIds;
-            return newMetadata;
-        }
-
+        /// <summary>
+        /// Classification and source determine new location for DropOff document.
+        /// </summary>
         private async Task<ObjectIdentifiers?> GetIdsForNewLocationAsync(FileInformation metadata)
         {
             var locationMapping = _globalSettings.LocationMapping.Find(item =>
@@ -392,21 +352,6 @@ namespace CPS_API.Repositories
             return newLocationIds;
         }
 
-        private async Task ProcessListItemAsync(FileInformation metadata, FileInformation newMetadata, GraphListItem listItem)
-        {
-            // Get new content
-            var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
-
-            // Create or update file metadata and content
-            metadata.Ids.ObjectId = await CreateOrUpdateFileAsync(newMetadata, stream);
-
-            // Succesfull -> change status
-            await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata);
-
-            // Mail proccessed file.
-            await _emailService.GetEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
-        }
-
         private async Task<string> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
         {
             var isNewFile = metadata.Ids.ObjectId == null;
@@ -421,15 +366,6 @@ namespace CPS_API.Repositories
                 await _filesRepository.UpdateContentAsync(metadata.Ids.ObjectId, stream);
                 return metadata.Ids.ObjectId;
             }
-        }
-
-        private string GetNotificationProcessSummary(ListItemsProcessModel processedItems)
-        {
-            var message = "Notification proccesed.";
-            message += $" Found {processedItems.processedItemIds.Count + processedItems.notProcessedItemIds.Count} items, ";
-            message += $" {processedItems.processedItemIds.Count} items successfully processed, ";
-            message += $" {processedItems.notProcessedItemIds.Count} items not processed ({String.Join(", ", processedItems.notProcessedItemIds)})";
-            return message;
         }
 
         #endregion Process Changes
@@ -449,7 +385,7 @@ namespace CPS_API.Repositories
 
             // Mail not proccessed file.
             var fileIdentifier = metadata == null ? listItem.Id : metadata.FileName;
-            await _emailService.GetEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
+            await _emailService.GetAuthorEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
         }
 
         private void LogError(string siteId, string listId, string listItemId, Exception ex, string errorMessage)
@@ -465,6 +401,6 @@ namespace CPS_API.Repositories
 
         #endregion Error logging
 
-        #endregion Handle Notification
+        #endregion Handle DropOff Notification
     }
 }

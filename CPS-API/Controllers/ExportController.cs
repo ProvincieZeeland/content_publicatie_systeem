@@ -56,7 +56,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForNew");
             }
 
@@ -69,7 +69,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
@@ -82,7 +82,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
             }
 
@@ -90,14 +90,8 @@ namespace CPS_API.Controllers
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTimeOffset.UtcNow);
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, result.NewNextTokens);
 
-            await NewSynchronisationStopped();
-            return Ok(GetNewResponse(result));
-        }
-
-        private async Task NewSynchronisationStopped()
-        {
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("New item synchronisation has stopped");
+            return Ok(GetNewResponse(result));
         }
 
         private static string GetNewResponse(ExportResponse result)
@@ -138,7 +132,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForChanged");
             }
 
@@ -151,7 +145,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
@@ -165,7 +159,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while synchronising updated documents");
             }
 
@@ -173,14 +167,8 @@ namespace CPS_API.Controllers
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTimeOffset.UtcNow);
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, result.NewNextTokens);
 
-            await ChangedSynchronisationStopped();
-            return Ok(GetUpdatedResponse(result));
-        }
-
-        private async Task ChangedSynchronisationStopped()
-        {
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("Changed item synchronisation has stopped");
+            return Ok(GetUpdatedResponse(result));
         }
 
         private string GetUpdatedResponse(ExportResponse result)
@@ -221,7 +209,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await DeletedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForDeleted");
             }
 
@@ -234,21 +222,15 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await DeletedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while synchronising deleted documents");
             }
 
             // If all files are succesfully deleted then we update the token.
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForDeletedField, result.NewNextTokens);
 
-            await DeletedSynchronisationStopped();
-            return Ok(GetDeletedResponse(result));
-        }
-
-        private async Task DeletedSynchronisationStopped()
-        {
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("Deleted item synchronisation has stopped");
+            return Ok(GetDeletedResponse(result));
         }
 
         private string GetDeletedResponse(ExportResponse result)

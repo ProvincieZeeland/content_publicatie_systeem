@@ -22,7 +22,7 @@ namespace CPS_API.Helpers
 
         public static void SetFieldValue(object parent, string fieldname, object? value)
         {
-            var property = parent.GetType().GetProperties().First(p => p.Name == fieldname);
+            var property = parent.GetType().GetProperties().First(p => p.Name.Equals(fieldname, StringComparison.InvariantCultureIgnoreCase));
             if (property == null) throw new ArgumentException("Unknown property " + fieldname);
 
             if (property.PropertyType == typeof(int?))
@@ -131,6 +131,83 @@ namespace CPS_API.Helpers
         {
             var stringValue = value?.ToString();
             property.SetValue(parent, stringValue, null);
+        }
+
+        public static bool PropertyContainsData(object? value, object? defaultValue, PropertyInfo propertyInfo)
+        {
+            if (propertyInfo.PropertyType == typeof(int))
+            {
+                if (IntegerPropertyContainsData(value, defaultValue))
+                {
+                    return true;
+                }
+            }
+            else if (propertyInfo.PropertyType == typeof(DateTimeOffset))
+            {
+                if (DateTimeOffsetPropertyContainsData(value, defaultValue))
+                {
+                    return true;
+                }
+            }
+            else if (propertyInfo.PropertyType == typeof(string))
+            {
+                if (StringPropertyContainsData(value, defaultValue))
+                {
+                    return true;
+                }
+            }
+            else if (value != defaultValue)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IntegerPropertyContainsData(object? value, object? defaultValue)
+        {
+            var stringValue = value.ToString();
+            var stringDefaultValue = defaultValue.ToString();
+            var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+            var decimalDefaultValue = Convert.ToDecimal(stringDefaultValue, new CultureInfo("en-US"));
+            if (decimalValue != decimalDefaultValue)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
+        {
+            var stringValue = value.ToString();
+            var dateParsed = DateTimeOffset.TryParse(stringValue, out DateTimeOffset dateTimeValue);
+            DateTimeOffset? nullableDateValue = null;
+            if (dateParsed)
+            {
+                nullableDateValue = dateTimeValue;
+            }
+            var stringDefaultValue = defaultValue.ToString();
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, out DateTimeOffset dateTimeDefaultValue);
+            DateTimeOffset? nullableDateDefaultValue = null;
+            if (dateParsed)
+            {
+                nullableDateDefaultValue = dateTimeDefaultValue;
+            }
+            if (nullableDateValue != nullableDateDefaultValue)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static bool StringPropertyContainsData(object? value, object? defaultValue)
+        {
+            var stringValue = value.ToString();
+            var stringDefaultValue = defaultValue.ToString();
+            if (stringValue != stringDefaultValue)
+            {
+                return true;
+            }
+            return false;
         }
     }
 }

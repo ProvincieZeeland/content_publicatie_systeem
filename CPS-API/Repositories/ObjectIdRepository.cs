@@ -6,12 +6,15 @@ using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Table;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Repositories
 {
     public interface IObjectIdRepository
     {
         Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids, bool getAsUser = false);
+
+        Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId);
 
         Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId);
 
@@ -108,6 +111,17 @@ namespace CPS_API.Repositories
             return objectId;
         }
 
+        public async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId)
+        {
+            var ids = new ObjectIdentifiers();
+            ids.SiteId = siteId;
+            ids.ListId = listId;
+            ids.ListItemId = listItemId;
+
+            // Get all ids for current location
+            return await FindMissingIds(ids);
+        }
+
         public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false)
         {
             ids = await FindMissingIdsBySharePointIds(ids, getAsUser);
@@ -153,7 +167,7 @@ namespace CPS_API.Repositories
                 var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId, getAsUser);
                 return drive.Id;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && ex.Error?.Message == "Invalid hostname for this tenancy")
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified site was not found", ex);
             }
@@ -174,7 +188,7 @@ namespace CPS_API.Repositories
                 var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser: getAsUser);
                 return driveItem.Id;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (SiteId = {ids.SiteId}, ListId = {ids.ListId}, ListItemId = {ids.ListItemId}) does not exist!");
             }
@@ -205,11 +219,11 @@ namespace CPS_API.Repositories
                 ids.ListItemId = driveItem.SharepointIds.ListItemId;
                 return ids;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && ex.Error?.Message == "The provided drive id appears to be malformed, or does not represent a valid drive.")
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message.Equals(Constants.ProvidedDriveIdMalformedErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified drive was not found", ex);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound && ex.Error?.Message == "Item not found")
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (DriveId = {ids.DriveId}, DriveItemId = {ids.DriveItemId}) does not exist!");
             }
@@ -294,34 +308,29 @@ namespace CPS_API.Repositories
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
             objectId = objectId.ToUpper();
-            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.AdditionalObjectId), QueryComparisons.Equal, objectId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
+            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(ObjectIdentifiersEntity.AdditionalObjectId), objectId);
         }
 
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByObjectIdAsync(string objectId)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-
             objectId = objectId.ToUpper();
-            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.PartitionKey), QueryComparisons.Equal, objectId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
+            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(TableEntity.PartitionKey), objectId);
         }
 
         public async Task<string?> GetObjectIdAsync(ObjectIdentifiers ids)
         {
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-
             var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
-            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, rowKey);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
-            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, query);
+            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(TableEntity.RowKey), rowKey);
             return objectIdentifiersEntity?.PartitionKey;
         }
 
-        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(CloudTable objectIdentifiersTable, TableQuery<ObjectIdentifiersEntity> query)
+        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(CloudTable objectIdentifiersTable, string filterPropertyName, string filterGivenValue)
         {
+            var filter = TableQuery.GenerateFilterCondition(filterPropertyName, QueryComparisons.Equal, filterGivenValue);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
+
             var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
             var objectIdentifiersEntities = result.Results?.OrderByDescending(item => item.Timestamp).ToList();
             return objectIdentifiersEntities?.FirstOrDefault();
@@ -341,8 +350,15 @@ namespace CPS_API.Repositories
             var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
             ids.AdditionalObjectId = additionalIds.ToUpper();
 
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
-            await _storageTableService.SaveAsync(objectIdentifiersTable, ids);
+            try
+            {
+                var objectIdentifiersTable = GetObjectIdentifiersTable();
+                await _storageTableService.SaveAsync(objectIdentifiersTable, ids);
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while updating additional IDs", ex);
+            }
         }
     }
 }

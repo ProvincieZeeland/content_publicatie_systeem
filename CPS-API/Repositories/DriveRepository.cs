@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Net;
+using System.Text.RegularExpressions;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
@@ -24,7 +25,7 @@ namespace CPS_API.Repositories
 
         Task<DriveItem?> UpdateContentAsync(string driveId, string driveItemId, Stream fileStream, bool getAsUser = false);
 
-        Task<DriveItem?> UpdateDriveItemAsync(string driveId, string driveItemId, DriveItem driveItem, bool getAsUser = false);
+        Task<DriveItem?> UpdateFileNameAsync(string driveId, string driveItemId, string fileName, bool getAsUser = false);
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
@@ -70,12 +71,43 @@ namespace CPS_API.Repositories
 
         public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false)
         {
+            if (siteId.IsNullOrEmpty())
+            {
+                throw new CpsException("Error while getting driveItem, unkown SiteId");
+            }
+            else if (listId.IsNullOrEmpty())
+            {
+                throw new CpsException("Error while getting driveItem, unkown ListId");
+            }
+            else if (listItemId.IsNullOrEmpty())
+            {
+                throw new CpsException("Error while getting driveItem, unkown ListItemId");
+            }
+
             var request = _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request();
             if (!getAsUser)
             {
                 request = request.WithAppOnly();
             }
-            return await request.GetAsync();
+
+            try
+            {
+                var driveItem = await request.GetAsync();
+                if (driveItem == null) throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
+                return driveItem;
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw;
+            }
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while getting driveItem", ex);
+            }
         }
 
         public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false)
@@ -188,13 +220,17 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task<DriveItem?> UpdateDriveItemAsync(string driveId, string driveItemId, DriveItem driveItem, bool getAsUser = false)
+        public async Task<DriveItem?> UpdateFileNameAsync(string driveId, string driveItemId, string fileName, bool getAsUser = false)
         {
             var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
             if (!getAsUser)
             {
                 request = request.WithAppOnly();
             }
+            var driveItem = new DriveItem
+            {
+                Name = fileName
+            };
             return await request.UpdateAsync(driveItem);
         }
 

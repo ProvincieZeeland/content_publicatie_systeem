@@ -6,6 +6,7 @@ using Microsoft.ApplicationInsights;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Microsoft.IdentityModel.Tokens;
+using Constants = CPS_API.Models.Constants;
 using FileInformation = CPS_API.Models.FileInformation;
 
 namespace CPS_API.Repositories
@@ -129,8 +130,8 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateLargeFileAsync(string source, string classification, IFormFile formFile)
         {
-            var file = GetNewLargeFile(source, classification, formFile);
             if (formFile == null) throw new ArgumentNullException(nameof(formFile));
+            var file = GetNewLargeFile(source, classification, formFile);
             return await CreateFileAsync(file.Metadata, formFile: formFile);
         }
 
@@ -192,13 +193,13 @@ namespace CPS_API.Repositories
             DriveItem? driveItem;
             try
             {
-                driveItem = await CreateFileAsync(drive, metadata, content, formFile, fileStream);
+                driveItem = await HandleStreamAndCreateFileAsync(drive, metadata, content, formFile, fileStream);
                 if (driveItem == null)
                 {
                     throw new CpsException("Error while adding new file");
                 }
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code == "nameAlreadyExists")
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
             {
                 throw new NameAlreadyExistsException($"The specified {nameof(metadata.FileName)} ({metadata.FileName}) already exists");
             }
@@ -215,7 +216,7 @@ namespace CPS_API.Repositories
             metadata.Ids = await GetNewObjectIdentifiersAsync(drive, driveItem, locationMapping);
 
             // Handle the new file.
-            return await handleCreatedFile(metadata, formFile != null);
+            return await HandleCreatedFile(metadata, formFile != null);
         }
 
         /// <summary>
@@ -229,25 +230,24 @@ namespace CPS_API.Repositories
             );
         }
 
-        private async Task<DriveItem> CreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
+        private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
+            var stream = fileStream;
             if (formFile != null)
             {
-                using var stream = formFile.OpenReadStream();
-                return await CreateFileAsync(drive.Id, metadata.FileName, stream);
+                stream = formFile.OpenReadStream();
             }
             else if (content != null)
             {
-                using var stream = new MemoryStream(content);
+                stream = new MemoryStream(content);
                 if (stream.Length > 0)
                 {
                     stream.Position = 0;
                 }
-                return await CreateFileAsync(drive.Id, metadata.FileName, stream);
             }
-            else
+            using (stream)
             {
-                return await CreateFileAsync(drive.Id, metadata.FileName, fileStream);
+                return await CreateFileAsync(drive.Id, metadata.FileName, stream);
             }
         }
 
@@ -272,7 +272,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task<ObjectIdentifiers> handleCreatedFile(FileInformation metadata, bool ignoreRequiredFields = false)
+        private async Task<ObjectIdentifiers> HandleCreatedFile(FileInformation metadata, bool ignoreRequiredFields = false)
         {
             // Generate objectId
             try
@@ -333,7 +333,8 @@ namespace CPS_API.Repositories
             // Store any additional IDs passed along
             try
             {
-                await _metadataRepository.UpdateAdditionalIdentifiers(metadata);
+                var additionalObjectIds = _metadataRepository.MapAdditionalIds(metadata);
+                if (!string.IsNullOrEmpty(additionalObjectIds)) await _objectIdRepository.SaveAdditionalIdentifiersAsync(metadata.Ids.ObjectId, additionalObjectIds);
             }
             catch (Exception ex)
             {

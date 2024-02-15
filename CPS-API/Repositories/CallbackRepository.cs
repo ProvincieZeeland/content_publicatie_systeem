@@ -11,7 +11,7 @@ namespace CPS_API.Repositories
 {
     public interface ICallbackRepository
     {
-        Task CallCallbackAsync(string objectId, string synchronisationType);
+        Task CallCallbackAsync(string objectId, SynchronisationType synchronisationType);
     }
 
     public class CallbackRepository : ICallbackRepository
@@ -30,7 +30,7 @@ namespace CPS_API.Repositories
             _telemetryClient = telemetryClient;
         }
 
-        public async Task CallCallbackAsync(string objectId, string synchronisationType)
+        public async Task CallCallbackAsync(string objectId, SynchronisationType synchronisationType)
         {
             if (_globalSettings.CallbackUrl.IsNullOrEmpty())
             {
@@ -38,13 +38,13 @@ namespace CPS_API.Repositories
             }
 
             var body = string.Empty;
-            if (synchronisationType != "delete")
+            if (synchronisationType != SynchronisationType.delete)
             {
                 var fileInfo = await _filesRepository.GetFileAsync(objectId);
                 var callbackFileInfo = new CallbackCpsFile(fileInfo);
                 body = JsonSerializer.Serialize(callbackFileInfo);
             }
-            var callbackUrl = _globalSettings.CallbackUrl + $"/{synchronisationType}/{objectId}";
+            var callbackUrl = _globalSettings.CallbackUrl + $"/{synchronisationType.GetLabel()}/{objectId}";
 
             await CallCallbackUrlAsync(callbackUrl, body);
         }

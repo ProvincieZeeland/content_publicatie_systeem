@@ -8,13 +8,13 @@ namespace CPS_API.Repositories
 {
     public interface IPublicationRepository
     {
-        Task<List<ToBePublishedEntity>> GetEntitiesAsync();
+        Task<List<ToBePublishedEntity>> GetEntitiesFromQueueAsync();
 
-        Task SaveEntityAsync(string objectId, DateTimeOffset publicationDate);
+        Task AddToQueueAsync(string objectId, DateTimeOffset publicationDate);
 
-        Task DeleteEntityAsync(ToBePublishedEntity entity);
+        Task RemoveFromQueueAsync(ToBePublishedEntity entity);
 
-        Task DeleteIfExistsEntityAsync(string objectId);
+        Task RemoveFromQueueIfExistsAsync(string objectId);
     }
 
     public class PublicationRepository : IPublicationRepository
@@ -33,14 +33,9 @@ namespace CPS_API.Repositories
 
         #region Get
 
-        public async Task<List<ToBePublishedEntity>> GetEntitiesAsync()
+        public async Task<List<ToBePublishedEntity>> GetEntitiesFromQueueAsync()
         {
             var table = GetTable();
-            return await GetEntitiesAsync(table);
-        }
-
-        private async Task<List<ToBePublishedEntity>> GetEntitiesAsync(CloudTable table)
-        {
             var query = new TableQuery<ToBePublishedEntity>();
             var result = await table.ExecuteQuerySegmentedAsync(query, null);
             if (result == null)
@@ -66,25 +61,20 @@ namespace CPS_API.Repositories
 
         #region Save and Delete
 
-        public async Task SaveEntityAsync(string objectId, DateTimeOffset publicationDate)
+        public async Task AddToQueueAsync(string objectId, DateTimeOffset publicationDate)
         {
             var table = GetTable();
-            await SaveEntityAsync(table, objectId, publicationDate);
-        }
-
-        private async Task SaveEntityAsync(CloudTable table, string objectId, DateTimeOffset publicationDate)
-        {
             var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId, publicationDate);
             await _storageTableService.SaveAsync(table, entity);
         }
 
-        public async Task DeleteEntityAsync(ToBePublishedEntity entity)
+        public async Task RemoveFromQueueAsync(ToBePublishedEntity entity)
         {
             var table = GetTable();
             await DeleteEntityAsync(table, entity);
         }
 
-        public async Task DeleteIfExistsEntityAsync(string objectId)
+        public async Task RemoveFromQueueIfExistsAsync(string objectId)
         {
             var table = GetTable();
             var entity = await GetToBePublishedEntityAsync(table, objectId);

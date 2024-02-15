@@ -57,16 +57,7 @@ namespace CPS_API.Models
 
         public ObjectIdentifiers clone()
         {
-            var clone = new ObjectIdentifiers();
-            foreach (var propertyInfo in this.GetType().GetProperties())
-            {
-                if (propertyInfo.Name == "Item")
-                {
-                    continue;
-                }
-                clone[propertyInfo.Name] = propertyInfo.GetValue(this);
-            }
-            return clone;
+            return MetadataHelper.clone<ObjectIdentifiers>(this);
         }
     }
 }

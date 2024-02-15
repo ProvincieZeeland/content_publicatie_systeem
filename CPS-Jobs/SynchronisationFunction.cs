@@ -1,25 +1,23 @@
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using CPS_Jobs.Helpers;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Identity.Web;
 
 namespace CPS_Jobs
 {
     public class SynchronisationFunction
     {
-        private readonly ITokenAcquisition _tokenAcquisition;
         private readonly IConfiguration _configuration;
+        private readonly AppService _appService;
 
-        public SynchronisationFunction(ITokenAcquisition tokenAcquisition,
-                                       IConfiguration config)
+        public SynchronisationFunction(IConfiguration config,
+                                       AppService appService)
         {
-            _tokenAcquisition = tokenAcquisition;
             _configuration = config;
+            _appService = appService;
         }
 
         [FunctionName("SynchronisationFunction")]
@@ -35,40 +33,16 @@ namespace CPS_Jobs
 
             List<Task> tasks = new List<Task>();
             // Start New sync     
-            tasks.Add(callService(baseUrl, scope, "/Export/new", log));
+            tasks.Add(_appService.callService(baseUrl, scope, "/Export/new", log));
 
             // Start Update sync  
-            tasks.Add(callService(baseUrl, scope, "/Export/updated", log));
+            tasks.Add(_appService.callService(baseUrl, scope, "/Export/updated", log));
 
             // Start Delete sync  
-            tasks.Add(callService(baseUrl, scope, "/Export/deleted", log));
+            tasks.Add(_appService.callService(baseUrl, scope, "/Export/deleted", log));
 
             // Wait for all to finish
             await Task.WhenAll(tasks);
-        }
-
-        private async Task callService(string baseUrl, string scope, string url, ILogger log)
-        {
-            try
-            {
-                HttpResponseMessage response;
-                string token = await _tokenAcquisition.GetAccessTokenForAppAsync(scope);
-                using (var client = new HttpClient())
-                {
-                    var method = HttpMethod.Get;
-                    var request = new HttpRequestMessage(method, baseUrl + url);
-                    request.Headers.Accept.Clear();
-                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-                    response = await client.SendAsync(request);
-                }
-            }
-            catch
-            {
-                log.LogError("Could not start sync for url " + url);
-                throw;
-            }
         }
     }
 }

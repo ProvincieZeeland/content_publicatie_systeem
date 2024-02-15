@@ -1,5 +1,6 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
+using CPS_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,18 +15,18 @@ namespace CPS_API.Controllers
     [ApiController]
     public class WebHookController : Controller
     {
-        private readonly IListRepository _metadataRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
+        private readonly ISharePointRepository _sharePointRepository;
 
         public WebHookController(
-            IListRepository metadataRepository,
             IOptions<GlobalSettings> settings,
-            IWebHookRepository webHookRepository)
+            IWebHookRepository webHookRepository,
+            ISharePointRepository sharePointRepository)
         {
-            _metadataRepository = metadataRepository;
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
+            _sharePointRepository = sharePointRepository;
         }
 
         [HttpPost]
@@ -40,7 +41,7 @@ namespace CPS_API.Controllers
             Site site;
             try
             {
-                site = await _metadataRepository.GetSiteAsync(data.SiteId);
+                site = await _sharePointRepository.GetSiteAsync(data.SiteId);
             }
             catch (Exception)
             {
@@ -99,15 +100,20 @@ namespace CPS_API.Controllers
         [Route("HandleDropOffNotification")]
         public async Task<IActionResult> HandleDropOffNotification(WebHookNotification notification)
         {
-            string message;
+            ListItemsProcessModel processedItems;
             try
             {
-                message = await _webHookRepository.HandleDropOffNotificationAsync(notification);
+                processedItems = await _webHookRepository.HandleDropOffNotificationAsync(notification);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while handling notification");
             }
+
+            var message = "Notification proccesed.";
+            message += $" Found {processedItems.processedItemIds.Count + processedItems.notProcessedItemIds.Count} items, ";
+            message += $" {processedItems.processedItemIds.Count} items successfully processed, ";
+            message += $" {processedItems.notProcessedItemIds.Count} items not processed ({String.Join(", ", processedItems.notProcessedItemIds)})";
             return Ok(message);
         }
     }

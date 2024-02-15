@@ -5,12 +5,12 @@ namespace CPS_API.Services
 {
     public interface IEmailService
     {
-        Task GetEmailAndSendMailAsync(string subject, string content, ListItem listItem);
+        Task GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem);
     }
 
     public class EmailService : IEmailService
     {
-        public async Task GetEmailAndSendMailAsync(string subject, string content, ListItem listItem)
+        public async Task GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem)
         {
             var email = GetAuthorEmail(listItem.CreatedBy);
             await SendMailAsync(subject, content, email);
