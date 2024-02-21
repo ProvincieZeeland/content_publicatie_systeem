@@ -17,7 +17,7 @@ namespace CPS_Jobs
             var configuration = builder.GetContext().Configuration;
 
             // Add Custom Services
-            builder.Services.AddSingleton<AppService, AppService>();
+            builder.Services.AddScoped<AppService, AppService>();
 
             builder.Services
                 .AddAuthentication(sharedOptions =>
