@@ -167,7 +167,7 @@ namespace CPS_API.Repositories
                 var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId, getAsUser);
                 return drive.Id;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified site was not found", ex);
             }
@@ -219,7 +219,7 @@ namespace CPS_API.Repositories
                 ids.ListItemId = driveItem.SharepointIds.ListItemId;
                 return ids;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message.Equals(Constants.ProvidedDriveIdMalformedErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.ProvidedDriveIdMalformedErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified drive was not found", ex);
             }

@@ -36,15 +36,15 @@
 
         public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
-        public string ClientId { get; set; } = string.Empty;
-
-        public string TenantId { get; set; } = string.Empty;
-
-        public string CertificateThumbprint { get; set; } = string.Empty;
-
         public List<string> PublicDriveIds { get; set; } = new List<string>();
 
         public string AdditionalObjectId { get; set; } = string.Empty;
+
+        public string TenantId { get; set; } = string.Empty;
+
+        public string ClientId { get; set; } = string.Empty;
+
+        public string CertificateName { get; set; } = string.Empty;
 
         public string TermStoreName { get; set; } = string.Empty;
 

@@ -1,5 +1,4 @@
 ﻿using System.Net.Http.Headers;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using CPS_API.Helpers;
 using CPS_API.Models;
@@ -36,6 +35,7 @@ namespace CPS_API.Repositories
 
         private readonly StorageTableService _storageTableService;
         private readonly EmailService _emailService;
+        private readonly CertificateService _certificateService;
 
         private readonly GlobalSettings _globalSettings;
 
@@ -51,6 +51,7 @@ namespace CPS_API.Repositories
             ISharePointRepository sharePointRepository,
             StorageTableService storageTableService,
             EmailService emailService,
+            CertificateService certificateService,
             IOptions<GlobalSettings> settings,
             TelemetryClient telemetryClient)
         {
@@ -62,6 +63,7 @@ namespace CPS_API.Repositories
             _settingsRepository = settingsRepository;
             _sharePointRepository = sharePointRepository;
             _storageTableService = storageTableService;
+            _certificateService = certificateService;
             _emailService = emailService;
             _globalSettings = settings.Value;
             _telemetryClient = telemetryClient;
@@ -71,7 +73,8 @@ namespace CPS_API.Repositories
 
         public async Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId)
         {
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId);
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
             if (accessToken == null)
             {
@@ -249,7 +252,7 @@ namespace CPS_API.Repositories
 
                     // Check if listitem must me processed
                     var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem);
-                    if (!dropOffMetadata.IsComplete || dropOffMetadata.Status.Equals(Constants.DropOffMetadataStatusProcessed, StringComparison.InvariantCultureIgnoreCase))
+                    if (!dropOffMetadata.IsComplete || (dropOffMetadata.Status != null && dropOffMetadata.Status.Equals(Constants.DropOffMetadataStatusProcessed, StringComparison.InvariantCultureIgnoreCase)))
                     {
                         continue;
                     }

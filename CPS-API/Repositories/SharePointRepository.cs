@@ -1,5 +1,4 @@
 ﻿using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
@@ -29,15 +28,18 @@ namespace CPS_API.Services
         private readonly GlobalSettings _globalSettings;
         private readonly IMemoryCache _memoryCache;
         private readonly GraphServiceClient _graphClient;
+        private readonly CertificateService _certificateService;
 
         public SharePointRepository(
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IMemoryCache memoryCache,
-            GraphServiceClient graphClient)
+            GraphServiceClient graphClient,
+            CertificateService certificateService)
         {
             _globalSettings = settings.Value;
             _memoryCache = memoryCache;
             _graphClient = graphClient;
+            _certificateService = certificateService;
         }
 
         #region Site 
@@ -61,7 +63,8 @@ namespace CPS_API.Services
             var site = await GetSiteAsync(metadata.Ids.SiteId, getAsUser);
 
             // Graph does not support full Term management yet, using PnP for SPO API instead
-            using var authenticationManager = new AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId);
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
 
             var termStore = GetAllTerms(context, metadata.Ids.SiteId);
@@ -102,7 +105,8 @@ namespace CPS_API.Services
             var site = await GetSiteAsync(siteId, getAsUser);
 
             // Graph does not support full Term management yet, using PnP for SPO API instead
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId);
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
 
             var termStore = GetAllTerms(context, siteId);

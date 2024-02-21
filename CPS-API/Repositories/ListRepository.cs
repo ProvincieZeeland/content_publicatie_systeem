@@ -1,7 +1,7 @@
 ﻿using System.Net;
-using System.Security.Cryptography.X509Certificates;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
@@ -32,15 +32,18 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly GraphServiceClient _graphClient;
         private readonly TelemetryClient _telemetryClient;
+        private readonly CertificateService _certificateService;
 
         public ListRepository(
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             GraphServiceClient graphClient,
-            TelemetryClient telemetryClient)
+            TelemetryClient telemetryClient,
+            CertificateService certificateService)
         {
             _globalSettings = settings.Value;
             _graphClient = graphClient;
             _telemetryClient = telemetryClient;
+            _certificateService = certificateService;
         }
 
         #region Graph
@@ -128,7 +131,8 @@ namespace CPS_API.Repositories
 
         public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken)
         {
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, StoreName.My, StoreLocation.CurrentUser, _globalSettings.CertificateThumbprint, _globalSettings.TenantId);
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             using ClientContext context = await authenticationManager.GetContextAsync(siteUrl);
 
             // Get list

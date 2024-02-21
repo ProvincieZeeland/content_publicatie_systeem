@@ -199,7 +199,7 @@ namespace CPS_API.Repositories
                     throw new CpsException("Error while adding new file");
                 }
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
+            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error != null && ex.Error.Code != null && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
             {
                 throw new NameAlreadyExistsException($"The specified {nameof(metadata.FileName)} ({metadata.FileName}) already exists");
             }
