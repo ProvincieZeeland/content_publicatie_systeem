@@ -16,7 +16,11 @@ namespace CPS_API.Repositories
 {
     public interface IWebHookRepository
     {
-        Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId);
+        Task<SubscriptionModel> CreateWebHookForDropOffAsync();
+
+        Task<DateTime?> ExtendWebHookForDropOffAsync();
+
+        Task<bool> DeleteWebHookAsync(GraphSite site, string listId, string subscriptionId);
 
         Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse);
 
@@ -69,10 +73,16 @@ namespace CPS_API.Repositories
             _telemetryClient = telemetryClient;
         }
 
-        #region Create Webhook
+        #region Create/Edit/Delete Webhook
 
-        public async Task<SubscriptionModel> CreateWebHookAsync(GraphSite site, string listId)
+        public async Task<SubscriptionModel> CreateWebHookForDropOffAsync()
         {
+            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.WebHookSettings.SiteId);
+            if (site == null)
+            {
+                throw new CpsException("Error while getting site");
+            }
+
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
@@ -81,14 +91,13 @@ namespace CPS_API.Repositories
                 throw new CpsException("Error while getting accessToken");
             }
 
-            var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookEndPoint, accessToken, _globalSettings.WebHookClientState);
+            var subscription = await AddListWebHookAsync(site.WebUrl, _globalSettings.WebHookSettings.ListId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
             if (subscription == null)
             {
                 throw new CpsException("Error while adding webhook");
             }
 
-            // Save expiration date for renewing webhook.
-            // Save subscriptionId for deleting webhook.
+            // Save expiration date and subscriptionId for extending webhook.
             await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionId, subscription.Id);
             await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, subscription.ExpirationDateTime);
 
@@ -141,7 +150,123 @@ namespace CPS_API.Repositories
             return await Task.Run(() => JsonConvert.DeserializeObject<SubscriptionModel>(responseString));
         }
 
-        #endregion Create Webhook
+        public async Task<DateTime?> ExtendWebHookForDropOffAsync()
+        {
+            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.WebHookSettings.SiteId);
+            if (site == null)
+            {
+                throw new CpsException("Error while getting site");
+            }
+
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
+            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
+            if (accessToken == null)
+            {
+                throw new CpsException("Error while getting accessToken");
+            }
+
+            var subscriptionId = await _settingsRepository.GetSetting<string>(Constants.DropOffSubscriptionId);
+            var expirationDateTime = await UpdateListWebHookAsync(site.WebUrl, _globalSettings.WebHookSettings.ListId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
+            if (expirationDateTime == null)
+            {
+                throw new CpsException("Error while adding webhook");
+            }
+
+            // Save expiration date for renewing webhook.
+            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, expirationDateTime);
+
+            return expirationDateTime;
+        }
+
+        /// <summary>
+        /// Updates the expiration datetime (and notification URL) of an existing SharePoint list web hook
+        /// </summary>
+        /// <param name="siteUrl">Url of the site holding the list</param>
+        /// <param name="listId">Id of the list</param>
+        /// <param name="subscriptionId">Id of the web hook subscription that we need to update</param>
+        /// <param name="webHookEndPoint">Url of the web hook service endpoint (the one that will be called during an event)</param>
+        /// <param name="accessToken">Access token to authenticate against SharePoint</param>
+        /// <returns>true if succesful, exception in case something went wrong</returns>
+        /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
+        public async Task<DateTime?> UpdateListWebHookAsync(string siteUrl, string listId, string subscriptionId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                string requestUrl = String.Format("{0}/_api/web/lists('{1}')/subscriptions('{2}')", siteUrl, listId, subscriptionId);
+                HttpRequestMessage request = new HttpRequestMessage(new HttpMethod("PATCH"), requestUrl);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                var expirationDateTime = DateTime.Now.AddMonths(validityInMonths).ToUniversalTime();
+                request.Content = new StringContent(JsonConvert.SerializeObject(
+                    new SubscriptionModel()
+                    {
+                        ExpirationDateTime = expirationDateTime,
+                        NotificationUrl = webHookEndPoint,
+                        ClientState = webHookClientState
+                    }),
+                    Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
+
+                if (response.StatusCode != System.Net.HttpStatusCode.NoContent)
+                {
+                    // oops...something went wrong, maybe the web hook does not exist?
+                    throw new Exception(await response.Content.ReadAsStringAsync());
+                }
+                else
+                {
+                    return await Task.Run(() => expirationDateTime);
+                }
+            }
+        }
+
+        public async Task<bool> DeleteWebHookAsync(GraphSite site, string listId, string subscriptionId)
+        {
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
+            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
+            if (accessToken == null)
+            {
+                throw new CpsException("Error while deleting accessToken");
+            }
+
+            return await DeleteListWebHookAsync(site.WebUrl, listId, subscriptionId, accessToken);
+        }
+
+        /// <summary>
+        /// Deletes an existing SharePoint list web hook
+        /// </summary>
+        /// <param name="siteUrl">Url of the site holding the list</param>
+        /// <param name="listId">Id of the list</param>
+        /// <param name="subscriptionId">Id of the web hook subscription that we need to delete</param>
+        /// <param name="accessToken">Access token to authenticate against SharePoint</param>
+        /// <returns>true if succesful, exception in case something went wrong</returns>
+        public async Task<bool> DeleteListWebHookAsync(string siteUrl, string listId, string subscriptionId, string accessToken)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                string requestUrl = String.Format("{0}/_api/web/lists('{1}')/subscriptions('{2}')", siteUrl, listId, subscriptionId);
+                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Delete, requestUrl);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
+
+                if (response.StatusCode != System.Net.HttpStatusCode.NoContent)
+                {
+                    // oops...something went wrong, maybe the web hook does not exist?
+                    throw new Exception(await response.Content.ReadAsStringAsync());
+                }
+                else
+                {
+                    return await Task.Run(() => true);
+                }
+            }
+        }
+
+        #endregion Create/Edit/Delete Webhook
 
         #region Handle SharePoint Notification
 
@@ -225,6 +350,13 @@ namespace CPS_API.Repositories
             // Process the changes
             var processedItems = await ProccessListItemsAsync(site.Id, notification.Resource, changes.Items);
             await _settingsRepository.SaveSettingAsync(Constants.DropOffLastChangeToken, changes.NewChangeToken);
+
+            // Extend the webhook when needed
+            // If the webhook is about to expire within the coming 7 days then prolong it
+            if (notification.ExpirationDateTime.AddDays(-7) < DateTime.Now)
+            {
+                await ExtendWebHookForDropOffAsync();
+            }
 
             return processedItems;
         }

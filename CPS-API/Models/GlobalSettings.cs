@@ -50,11 +50,7 @@
 
         public string HostName { get; set; } = string.Empty;
 
-        public string WebHookEndPoint { get; set; } = string.Empty;
-
-        public bool CreateWebHookEnabled { get; set; } = false;
-
-        public string WebHookClientState { get; set; } = string.Empty;
+        public WebHookSettings WebHookSettings { get; set; } = new WebHookSettings();
     }
 
     public class FieldMapping
@@ -88,5 +84,18 @@
 
         // optioneel
         public string folderName { get; set; } = string.Empty;
+    }
+
+    public class WebHookSettings
+    {
+        public string EndPoint { get; set; } = string.Empty;
+
+        public bool CreateEnabled { get; set; } = false;
+
+        public string ClientState { get; set; } = string.Empty;
+
+        public string SiteId { get; set; } = string.Empty;
+
+        public string ListId { get; set; } = string.Empty;
     }
 }

@@ -11,3 +11,4 @@
 /CPS-API/publish
 /CPS-API/appsettings.Acc.json
 /CPS-API/appsettings.Prod.json
+/CPS-API/Properties/PublishProfiles/FolderProfile.pubxml.user

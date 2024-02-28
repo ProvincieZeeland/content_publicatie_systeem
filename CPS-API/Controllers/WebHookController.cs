@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Newtonsoft.Json;
 
 namespace CPS_API.Controllers
@@ -29,29 +28,19 @@ namespace CPS_API.Controllers
             _sharePointRepository = sharePointRepository;
         }
 
-        [HttpPost]
+        [HttpPut]
         [Route("Create")]
-        public async Task<ActionResult> Create([FromBody] WebHookData data)
+        public async Task<ActionResult> Create()
         {
-            if (!_globalSettings.CreateWebHookEnabled)
+            if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
                 return StatusCode(404);
-            }
-
-            Site site;
-            try
-            {
-                site = await _sharePointRepository.GetSiteAsync(data.SiteId);
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "Error while getting site");
             }
 
             SubscriptionModel subscription;
             try
             {
-                subscription = await _webHookRepository.CreateWebHookAsync(site, data.ListId);
+                subscription = await _webHookRepository.CreateWebHookForDropOffAsync();
             }
             catch (Exception ex)
             {
@@ -68,7 +57,7 @@ namespace CPS_API.Controllers
             if (HttpContext.Request.Headers.TryGetValue("ClientState", out var clientStateHeader))
             {
                 var clientStateHeaderValue = clientStateHeader.FirstOrDefault() ?? string.Empty;
-                if (string.IsNullOrEmpty(clientStateHeaderValue) || !clientStateHeaderValue.Equals(_globalSettings.WebHookClientState))
+                if (string.IsNullOrEmpty(clientStateHeaderValue) || !clientStateHeaderValue.Equals(_globalSettings.WebHookSettings.ClientState))
                 {
                     return StatusCode(403);
                 }
