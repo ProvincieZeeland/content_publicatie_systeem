@@ -21,18 +21,18 @@ namespace CPS_API.Controllers
     {
         private readonly GraphServiceClient _graphServiceClient;
         private readonly IFilesRepository _filesRepository;
-        private readonly IMetadataRepository _sharePointRepository;
+        private readonly IMetadataRepository _metadataRepository;
         private readonly TelemetryClient _telemetryClient;
 
         public HomeController(GraphServiceClient graphServiceClient,
                               IFilesRepository filesRepository,
                               TelemetryClient telemetryClient,
-                              IMetadataRepository sharePointRepository)
+                              IMetadataRepository metadataRepository)
         {
             _graphServiceClient = graphServiceClient;
             _filesRepository = filesRepository;
             _telemetryClient = telemetryClient;
-            _sharePointRepository = sharePointRepository;
+            _metadataRepository = metadataRepository;
         }
 
         public async Task<IActionResult> Index()
@@ -46,7 +46,6 @@ namespace CPS_API.Controllers
         [HttpGet]
         [Route("content/{objectId}")]
         [AuthorizeForScopes(Scopes = new[] { "Sites.Read.All", "Files.Read.All" })]
-        //[Route("{objectId}/content")]
         public async Task<IActionResult> GetFileURL(string objectId)
         {
             var properties = new Dictionary<string, string>
@@ -121,7 +120,6 @@ namespace CPS_API.Controllers
         [HttpGet]
         [Route("metadata/{objectId}")]
         [AuthorizeForScopes(Scopes = new[] { "Sites.Read.All", "Files.Read.All" })]
-        //[Route("{objectId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string objectId)
         {
             var properties = new Dictionary<string, string>
@@ -132,7 +130,7 @@ namespace CPS_API.Controllers
             FileInformation metadata;
             try
             {
-                metadata = await _sharePointRepository.GetMetadataAsync(objectId, true);
+                metadata = await _metadataRepository.GetMetadataAsync(objectId, true);
             }
             catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
@@ -162,7 +160,8 @@ namespace CPS_API.Controllers
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
                 _telemetryClient.TrackException(ex, properties);
-                var viewmodel = new ErrorViewModel                {
+                var viewmodel = new ErrorViewModel
+                {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
                     ErrorMessage = ex.Message ?? "Unauthorized"
                 };

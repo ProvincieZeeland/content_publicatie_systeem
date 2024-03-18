@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure.Functions.Extensions.DependencyInjection;
+﻿using CPS_Jobs.Helpers;
+using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Identity.Web;
 
@@ -14,6 +15,9 @@ namespace CPS_Jobs
         public override void Configure(IFunctionsHostBuilder builder)
         {
             var configuration = builder.GetContext().Configuration;
+
+            // Add Custom Services
+            builder.Services.AddScoped<AppService, AppService>();
 
             builder.Services
                 .AddAuthentication(sharedOptions =>

@@ -1,5 +1,6 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
+using CPS_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,43 +14,33 @@ namespace CPS_API.Controllers
     [ApiController]
     public class WebHookController : Controller
     {
-        private readonly IDriveRepository _driveRepository;
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
+        private readonly ISharePointRepository _sharePointRepository;
 
         public WebHookController(
-            IDriveRepository driveRepository,
             IOptions<GlobalSettings> settings,
-            IWebHookRepository webHookRepository)
+            IWebHookRepository webHookRepository,
+            ISharePointRepository sharePointRepository)
         {
-            _driveRepository = driveRepository;
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
+            _sharePointRepository = sharePointRepository;
         }
 
-        [HttpPost]
+        [HttpPut]
         [Route("Create")]
-        public async Task<ActionResult> Create([FromBody] WebHookData data)
+        public async Task<ActionResult> Create()
         {
-            if (!_globalSettings.CreateWebHookEnabled)
+            if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
                 return StatusCode(404);
-            }
-
-            Microsoft.Graph.Site site;
-            try
-            {
-                site = await _driveRepository.GetSiteAsync(data.SiteId);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, "Error while getting site");
             }
 
             SubscriptionModel subscription;
             try
             {
-                subscription = await _webHookRepository.CreateWebHookAsync(site, data.ListId);
+                subscription = await _webHookRepository.CreateWebHookForDropOffAsync();
             }
             catch (Exception ex)
             {
@@ -66,7 +57,7 @@ namespace CPS_API.Controllers
             if (HttpContext.Request.Headers.TryGetValue("ClientState", out var clientStateHeader))
             {
                 var clientStateHeaderValue = clientStateHeader.FirstOrDefault() ?? string.Empty;
-                if (string.IsNullOrEmpty(clientStateHeaderValue) || !clientStateHeaderValue.Equals(_globalSettings.WebHookClientState))
+                if (string.IsNullOrEmpty(clientStateHeaderValue) || !clientStateHeaderValue.Equals(_globalSettings.WebHookSettings.ClientState))
                 {
                     return StatusCode(403);
                 }
@@ -76,7 +67,7 @@ namespace CPS_API.Controllers
                 return StatusCode(403);
             }
 
-            string message;
+            string? message;
             try
             {
                 var requestBody = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
@@ -98,15 +89,20 @@ namespace CPS_API.Controllers
         [Route("HandleDropOffNotification")]
         public async Task<IActionResult> HandleDropOffNotification(WebHookNotification notification)
         {
-            string message;
+            ListItemsProcessModel processedItems;
             try
             {
-                message = await _webHookRepository.HandleDropOffNotificationAsync(notification);
+                processedItems = await _webHookRepository.HandleDropOffNotificationAsync(notification);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.Message ?? "Error while handling notification");
             }
+
+            var message = "Notification proccesed.";
+            message += $" Found {processedItems.processedItemIds.Count + processedItems.notProcessedItemIds.Count} items, ";
+            message += $" {processedItems.processedItemIds.Count} items successfully processed, ";
+            message += $" {processedItems.notProcessedItemIds.Count} items not processed ({String.Join(", ", processedItems.notProcessedItemIds)})";
             return Ok(message);
         }
     }

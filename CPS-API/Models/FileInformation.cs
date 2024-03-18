@@ -3,7 +3,6 @@ using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
-
     public class FileInformation : CallbackFileInformation
     {
         public ObjectIdentifiers? Ids { get; set; }
@@ -40,22 +39,50 @@ namespace CPS_API.Models
 
         public FileInformation clone()
         {
-            var fileInformation = new FileInformation();
-            fileInformation.Ids = Ids?.clone();
-            fileInformation.CreatedBy = CreatedBy;
-            fileInformation.ModifiedBy = ModifiedBy;
-            fileInformation.SourceCreatedBy = SourceCreatedBy;
-            fileInformation.SourceModifiedBy = SourceModifiedBy;
-            fileInformation.MimeType = MimeType;
-            fileInformation.FileName = FileName;
-            fileInformation.FileExtension = FileExtension;
-            fileInformation.CreatedOn = CreatedOn;
-            fileInformation.ModifiedOn = ModifiedOn;
-            fileInformation.SourceCreatedOn = SourceCreatedOn;
-            fileInformation.SourceModifiedOn = SourceModifiedOn;
-            fileInformation.AdditionalMetadata = AdditionalMetadata?.clone();
-            fileInformation.ExternalReferences = ExternalReferences?.Select(reference => reference.clone()).ToList();
-            return fileInformation;
+            // Clone must equal current object.
+            // When the metadata value is null it means that we don’t edit the property in SharePoint.
+            // If de property contains a default value, we empty the property in SharePoint.
+            // We set the default value null.
+            var clone = new FileInformation();
+            var properties = this.GetType().GetProperties();
+            foreach (var propertyName in properties.Select(property => property.Name))
+            {
+                if (propertyName.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+                clone[propertyName] = null;
+            }
+
+            foreach (var propertyInfo in properties)
+            {
+                if (propertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+                var value = propertyInfo.GetValue(this);
+                if (value == null)
+                {
+                    continue;
+                }
+                if (propertyInfo.PropertyType == typeof(FileMetadata))
+                {
+                    clone[propertyInfo.Name] = (value as FileMetadata)?.clone();
+                }
+                else if (propertyInfo.PropertyType == typeof(ObjectIdentifiers))
+                {
+                    clone[propertyInfo.Name] = (value as ObjectIdentifiers)?.clone();
+                }
+                else if (propertyInfo.PropertyType == typeof(List<ExternalReferences>))
+                {
+                    clone[propertyInfo.Name] = (value as List<ExternalReferences>)?.Select(item => item?.clone()).ToList();
+                }
+                else
+                {
+                    clone[propertyInfo.Name] = value;
+                }
+            }
+            return clone;
         }
     }
 }

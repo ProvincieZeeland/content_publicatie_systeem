@@ -16,6 +16,10 @@
 
         public string SettingsRowKey { get; set; } = string.Empty;
 
+        public string ToBePublishedTableName { get; set; } = string.Empty;
+
+        public string ToBePublishedPartitionKey { get; set; } = string.Empty;
+
         public string ContentContainerName { get; set; } = string.Empty;
 
         public string MetadataContainerName { get; set; } = string.Empty;
@@ -32,25 +36,21 @@
 
         public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
 
-        public string ClientId { get; set; } = string.Empty;
-
-        public string TenantId { get; set; } = string.Empty;
-
-        public string CertificateThumbprint { get; set; } = string.Empty;
-
         public List<string> PublicDriveIds { get; set; } = new List<string>();
 
         public string AdditionalObjectId { get; set; } = string.Empty;
+
+        public string TenantId { get; set; } = string.Empty;
+
+        public string ClientId { get; set; } = string.Empty;
+
+        public string CertificateName { get; set; } = string.Empty;
 
         public string TermStoreName { get; set; } = string.Empty;
 
         public string HostName { get; set; } = string.Empty;
 
-        public string WebHookEndPoint { get; set; } = string.Empty;
-
-        public bool CreateWebHookEnabled { get; set; } = false;
-
-        public string WebHookClientState { get; set; } = string.Empty;
+        public WebHookSettings WebHookSettings { get; set; } = new WebHookSettings();
     }
 
     public class FieldMapping
@@ -84,5 +84,18 @@
 
         // optioneel
         public string folderName { get; set; } = string.Empty;
+    }
+
+    public class WebHookSettings
+    {
+        public string EndPoint { get; set; } = string.Empty;
+
+        public bool CreateEnabled { get; set; } = false;
+
+        public string ClientState { get; set; } = string.Empty;
+
+        public string SiteId { get; set; } = string.Empty;
+
+        public string ListId { get; set; } = string.Empty;
     }
 }

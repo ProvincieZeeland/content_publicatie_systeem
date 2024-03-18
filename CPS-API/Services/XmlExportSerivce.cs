@@ -28,13 +28,13 @@ namespace CPS_API.Services
                 foreach (var propertyInfo in metadata.GetType().GetProperties())
                 {
                     if (
-                        propertyInfo.Name == "Item"
+                        propertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
                         || propertyInfo.PropertyType == typeof(ObjectIdentifiers)
                         || propertyInfo.PropertyType == typeof(List<ExternalReferences>)
-                        || propertyInfo.Name == "CreatedBy"
-                        || propertyInfo.Name == "ModifiedBy"
-                        || propertyInfo.Name == "SourceCreatedBy"
-                        || propertyInfo.Name == "SourceModifiedBy")
+                        || propertyInfo.Name.Equals(nameof(FileInformation.CreatedBy), StringComparison.InvariantCultureIgnoreCase)
+                        || propertyInfo.Name.Equals(nameof(FileInformation.ModifiedBy), StringComparison.InvariantCultureIgnoreCase)
+                        || propertyInfo.Name.Equals(nameof(FileInformation.SourceCreatedBy), StringComparison.InvariantCultureIgnoreCase)
+                        || propertyInfo.Name.Equals(nameof(FileInformation.SourceModifiedBy), StringComparison.InvariantCultureIgnoreCase))
                     {
                         continue;
                     }
@@ -44,8 +44,8 @@ namespace CPS_API.Services
                         if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
                         foreach (var secondPropertyInfo in value.GetType().GetProperties())
                         {
-                            if (secondPropertyInfo.Name == "Item"
-                                || secondPropertyInfo.Name == "Source")
+                            if (secondPropertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
+                                || secondPropertyInfo.Name.Equals(nameof(FileMetadata.Source), StringComparison.InvariantCultureIgnoreCase))
                             {
                                 continue;
                             }

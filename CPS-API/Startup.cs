@@ -1,4 +1,5 @@
-﻿using CPS_API.Helpers;
+﻿using Azure.Identity;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
 using CPS_API.Services;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Extensions.Azure;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
@@ -40,11 +42,18 @@ namespace CPS_API
             services.AddScoped<IMetadataRepository, MetadataRepository>();
             services.AddSingleton<ISettingsRepository, SettingsRepository>();
             services.AddScoped<IWebHookRepository, WebHookRepository>();
+            services.AddScoped<IExportRepository, ExportRepository>();
+            services.AddScoped<IPublicationRepository, PublicationRepository>();
+            services.AddScoped<ICallbackRepository, CallbackRepository>();
+            services.AddScoped<IListRepository, ListRepository>();
+            services.AddScoped<ISharePointRepository, SharePointRepository>();
 
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();
             services.AddSingleton<StorageTableService, StorageTableService>();
             services.AddSingleton<XmlExportSerivce, XmlExportSerivce>();
+            services.AddSingleton<EmailService, EmailService>();
+            services.AddSingleton<CertificateService, CertificateService>();
 
             // Configure for large file uploads
             services.Configure<FormOptions>(opt =>
@@ -60,13 +69,25 @@ namespace CPS_API
             var globalSettings = Configuration.GetSection("GlobalSettings");
             services.Configure<GlobalSettings>(globalSettings);
 
-            string[] initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
+            string[]? initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
 
             services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
                 .AddMicrosoftIdentityWebApp(Configuration)
                 .EnableTokenAcquisitionToCallDownstreamApi(initialScopes)
                 .AddMicrosoftGraph(Configuration.GetSection("DownstreamApi"))
                 .AddInMemoryTokenCaches(options => options.AbsoluteExpirationRelativeToNow = new TimeSpan(0, 30, 0)); // cache 30 min max
+
+            // Setup keyvault
+            services.AddAzureClients(builder =>
+            {
+                var keyVaultName = globalSettings["KeyVaultName"];
+                var keyvaultUri = "https://" + keyVaultName + ".vault.azure.net";
+                builder.AddSecretClient(new Uri(keyvaultUri));
+
+                var azureAdSettings = Configuration.GetSection("AzureAd");
+                var clientCredential = new ClientSecretCredential(azureAdSettings["TenantId"], azureAdSettings["ClientId"], azureAdSettings["ClientSecret"]);
+                builder.UseCredential(clientCredential);
+            });
 
             services.AddControllersWithViews(options =>
             {

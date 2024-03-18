@@ -1,4 +1,7 @@
-﻿namespace CPS_API.Models
+﻿using System.Text.Json.Serialization;
+using CPS_API.Helpers;
+
+namespace CPS_API.Models
 {
     public class ObjectIdentifiers
     {
@@ -18,9 +21,26 @@
 
         public string? AdditionalObjectId { get; set; }
 
+        [JsonIgnore]
+        public object? this[string fieldname]
+        {
+            get
+            {
+                var property = this.GetType().GetProperty(fieldname);
+                if (property != null)
+                    return property.GetValue(this);
+                else
+                    throw new ArgumentException("Unknown property " + fieldname);
+            }
+
+            set
+            {
+                FieldPropertyHelper.SetFieldValue(this, fieldname, value);
+            }
+        }
+
         public ObjectIdentifiers()
         {
-
         }
 
         public ObjectIdentifiers(ObjectIdentifiersEntity entity)
@@ -37,16 +57,7 @@
 
         public ObjectIdentifiers clone()
         {
-            var objectIdentifiers = new ObjectIdentifiers();
-            objectIdentifiers.ObjectId = ObjectId;
-            objectIdentifiers.SiteId = SiteId;
-            objectIdentifiers.ListId = ListId;
-            objectIdentifiers.ListItemId = ListItemId;
-            objectIdentifiers.DriveId = DriveId;
-            objectIdentifiers.DriveItemId = DriveItemId;
-            objectIdentifiers.ExternalReferenceListId = ExternalReferenceListId;
-            objectIdentifiers.AdditionalObjectId = AdditionalObjectId;
-            return objectIdentifiers;
+            return MetadataHelper.clone<ObjectIdentifiers>(this);
         }
     }
 }

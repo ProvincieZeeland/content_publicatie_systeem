@@ -31,11 +31,7 @@ namespace CPS_API.Models
 
         public ExternalReferences clone()
         {
-            var externalReferences = new ExternalReferences();
-            externalReferences.ExternalApplication = ExternalApplication;
-            externalReferences.ExternalReference = ExternalReference;
-            externalReferences.ExternalReferenceType = ExternalReferenceType;
-            return externalReferences;
+            return MetadataHelper.clone<ExternalReferences>(this);
         }
     }
 }

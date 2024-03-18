@@ -6,7 +6,6 @@ using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 
@@ -19,16 +18,13 @@ namespace CPS_API.Controllers
     {
         private readonly IFilesRepository _filesRepository;
         private readonly IMetadataRepository _metadataRepository;
-        private readonly GlobalSettings _globalSettings;
         private readonly TelemetryClient _telemetryClient;
 
         public FilesController(IFilesRepository filesRepository,
-                               IOptions<GlobalSettings> settings,
                                TelemetryClient telemetry,
                                IMetadataRepository metadataRepository)
         {
             _filesRepository = filesRepository;
-            _globalSettings = settings.Value;
             _telemetryClient = telemetry;
             _metadataRepository = metadataRepository;
         }
@@ -36,7 +32,6 @@ namespace CPS_API.Controllers
         // GET
         [HttpGet]
         [Route("content/{objectId}")]
-        //[Route("{objectId}/content")]
         public async Task<IActionResult> GetFileURL(string objectId)
         {
             var properties = new Dictionary<string, string>
@@ -80,7 +75,6 @@ namespace CPS_API.Controllers
 
         [HttpGet]
         [Route("metadata/{objectId}")]
-        //[Route("{objectId}/metadata")]
         public async Task<IActionResult> GetFileMetadata(string objectId)
         {
             var properties = new Dictionary<string, string>
@@ -123,24 +117,24 @@ namespace CPS_API.Controllers
         [RequestSizeLimit(419430400)] // 400 MB
         public async Task<IActionResult> CreateFile([FromBody] CpsFile file)
         {
-            if (file.Content == null || file.Content.Length == 0) return StatusCode(400, "File is required");
-            if (string.IsNullOrEmpty(file.Metadata?.FileName)) return StatusCode(400, "Filename is required");
-            if (string.IsNullOrEmpty(file.Metadata?.AdditionalMetadata?.Source)) return StatusCode(400, "Source is required");
-            if (string.IsNullOrEmpty(file.Metadata?.AdditionalMetadata?.Classification)) return StatusCode(400, "Classification is required");
-
+            var fileIsValid = ValidateRequiredPropertiesForFile(file, out var errorMessage);
+            if (!fileIsValid)
+            {
+                return StatusCode(400, errorMessage);
+            }
 
             var properties = new Dictionary<string, string>
             {
                 ["ObjectId"] = "",
-                ["FileName"] = file.Metadata?.FileName,
-                ["Source"] = file.Metadata?.AdditionalMetadata?.Source,
-                ["Classification"] = file.Metadata?.AdditionalMetadata?.Classification
+                ["FileName"] = file.Metadata.FileName,
+                ["Source"] = file.Metadata.AdditionalMetadata.Source,
+                ["Classification"] = file.Metadata.AdditionalMetadata.Classification
             };
 
             string? objectId;
             try
             {
-                var spoIds = await _filesRepository.CreateFileAsync(file);
+                var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
                 objectId = spoIds.ObjectId;
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
@@ -168,6 +162,42 @@ namespace CPS_API.Controllers
             return Ok(objectId);
         }
 
+        private static bool ValidateRequiredPropertiesForFile(CpsFile file, out string errorMessage)
+        {
+            errorMessage = "";
+            if (file.Content == null || file.Content.Length == 0)
+            {
+                errorMessage = "File is required";
+                return false;
+            }
+            else if (file.Metadata == null)
+            {
+                errorMessage = "File metadata is required";
+                return false;
+            }
+            else if (string.IsNullOrEmpty(file.Metadata.FileName))
+            {
+                errorMessage = "Filename is required";
+                return false;
+            }
+            else if (file.Metadata.AdditionalMetadata == null)
+            {
+                errorMessage = "File AdditionalMetadata is required";
+                return false;
+            }
+            else if (string.IsNullOrEmpty(file.Metadata.AdditionalMetadata.Source))
+            {
+                errorMessage = "Source is required";
+                return false;
+            }
+            else if (string.IsNullOrEmpty(file.Metadata.AdditionalMetadata.Classification))
+            {
+                errorMessage = "Classification is required";
+                return false;
+            }
+            return true;
+        }
+
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
         [Route("new/{source}/{classification}")]
@@ -178,7 +208,7 @@ namespace CPS_API.Controllers
             if (string.IsNullOrEmpty(classification)) return StatusCode(400, "Classification is required");
 
             string? objectId;
-            var formFile = Request.Form.Files.First();
+            var formFile = Request.Form.Files[0];
 
             var properties = new Dictionary<string, string>
             {
@@ -190,36 +220,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                CpsFile file = new CpsFile
-                {
-                    Metadata = new FileInformation
-                    {
-                        FileName = formFile.FileName,
-                        AdditionalMetadata = new FileMetadata()
-                    }
-                };
-                foreach (var fieldMapping in _globalSettings.MetadataMapping)
-                {
-                    if (fieldMapping.DefaultValue != null)
-                    {
-                        var defaultAsStr = fieldMapping.DefaultValue?.ToString();
-                        if (!defaultAsStr.IsNullOrEmpty())
-                        {
-                            if (fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceCreatedBy) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedOn) || fieldMapping.FieldName == nameof(file.Metadata.SourceModifiedBy) || fieldMapping.FieldName == nameof(file.Metadata.MimeType) || fieldMapping.FieldName == nameof(file.Metadata.FileExtension))
-                            {
-                                file.Metadata[fieldMapping.FieldName] = fieldMapping.DefaultValue;
-                            }
-                            else
-                            {
-                                file.Metadata.AdditionalMetadata[fieldMapping.FieldName] = fieldMapping.DefaultValue;
-                            }
-                        }
-                    }
-                }
-                file.Metadata.AdditionalMetadata.Source = source;
-                file.Metadata.AdditionalMetadata.Classification = classification;
-
-                var spoIds = await _filesRepository.CreateFileAsync(file, formFile);
+                var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
                 objectId = spoIds.ObjectId;
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
@@ -251,7 +252,6 @@ namespace CPS_API.Controllers
         [HttpPut]
         [RequestSizeLimit(419430400)] // 400 MB
         [Route("content/{objectId}")]
-        //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId, [FromBody] byte[] content)
         {
             var properties = new Dictionary<string, string>
@@ -290,7 +290,6 @@ namespace CPS_API.Controllers
         [HttpPut]
         [RequestSizeLimit(5368709120)] // 5 GB
         [Route("largeContent/{objectId}")]
-        //[Route("{objectId}/content")]
         public async Task<IActionResult> UpdateFileContent(string objectId)
         {
             if (Request.Form.Files.Count != 1) return StatusCode(400, "File is required");
@@ -301,7 +300,7 @@ namespace CPS_API.Controllers
 
             try
             {
-                var formFile = Request.Form.Files.First();
+                var formFile = Request.Form.Files[0];
                 await _filesRepository.UpdateContentAsync(objectId, formFile);
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
@@ -330,7 +329,6 @@ namespace CPS_API.Controllers
 
         [HttpPut]
         [Route("metadata/{objectId}")]
-        //[Route("{objectId}/metadata")]
         public async Task<IActionResult> UpdateFileMetadata(string objectId, [FromBody] FileInformation fileInfo)
         {
             var properties = new Dictionary<string, string>

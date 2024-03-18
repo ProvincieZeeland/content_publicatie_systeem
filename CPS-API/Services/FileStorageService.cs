@@ -1,4 +1,5 @@
-﻿using Azure.Storage.Blobs;
+﻿using Azure;
+using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using CPS_API.Models;
 using Microsoft.IdentityModel.Tokens;
@@ -17,7 +18,7 @@ namespace CPS_API.Helpers
 
         Task CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId);
 
-        Task DeleteAsync(string containerName, string objectId);
+        Task DeleteAsync(string containerName, string objectId, bool deleteIfExists = false);
     }
 
     public class FileStorageService : IFileStorageService
@@ -29,16 +30,9 @@ namespace CPS_API.Helpers
             _globalSettings = settings.Value;
         }
 
-        private string GetConnectionstring()
-        {
-            return _globalSettings.FileStorageConnectionstring;
-        }
-
         public async Task<IEnumerable<string>> GetAllAsync(string containerName, string folder)
         {
-            string connectionString = GetConnectionstring();
-            BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
-            if (!await containerClient.ExistsAsync()) throw new FileNotFoundException("Container " + containerName + " does not exist!");
+            var containerClient = await GetBlobContainerClient(containerName);
 
             List<string> files = new List<string>();
 
@@ -69,11 +63,7 @@ namespace CPS_API.Helpers
 
         public async Task<string> GetContentAsStringAsync(string containerName, string filename)
         {
-            string connectionString = GetConnectionstring();
-            BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
-
-            if (!await containerClient.ExistsAsync())
-                throw new FileNotFoundException("Container " + containerName + " does not exist!");
+            var containerClient = await GetBlobContainerClient(containerName);
 
             BlobClient blobClient = containerClient.GetBlobClient(filename);
             if (!await blobClient.ExistsAsync())
@@ -89,11 +79,7 @@ namespace CPS_API.Helpers
 
         public async Task<byte[]> GetContentAsync(string containerName, string filename)
         {
-            string connectionString = GetConnectionstring();
-            BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
-
-            if (!await containerClient.ExistsAsync())
-                throw new FileNotFoundException("Container " + containerName + " does not exist!");
+            var containerClient = await GetBlobContainerClient(containerName);
 
             BlobClient blobClient = containerClient.GetBlobClient(filename);
             if (!await blobClient.ExistsAsync())
@@ -109,33 +95,14 @@ namespace CPS_API.Helpers
 
         public async Task CreateAsync(string containerName, string filename, string content, string contenttype, string objectId)
         {
-            string connectionString = GetConnectionstring();
-
-            BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
-            if (!await containerClient.ExistsAsync())
-                throw new FileNotFoundException("Container " + containerName + " does not exist!");
-
-            var initialMetadata = new Dictionary<string, string> { { "contenttype", contenttype } };
-            var tags = new Dictionary<string, string> { { "objectid", objectId } };
-            BlobClient blobClient = containerClient.GetBlobClient(filename);
-            await blobClient.UploadAsync(BinaryData.FromString(content), new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
+            await CreateAsync(containerName, filename, contenttype, objectId, contentStr: content);
         }
 
         public async Task CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId)
         {
             try
             {
-                string connectionString = GetConnectionstring();
-
-                BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
-                if (!await containerClient.ExistsAsync())
-                    throw new FileNotFoundException("Container " + containerName + " does not exist!");
-
-                var initialMetadata = new Dictionary<string, string> { { "contenttype", contenttype } };
-                var tags = new Dictionary<string, string> { { "objectid", objectId } };
-                BlobClient blobClient = containerClient.GetBlobClient(filename);
-                content.Position = 0;
-                await blobClient.UploadAsync(content, new BlobUploadOptions { Metadata = initialMetadata, Tags = tags });
+                await CreateAsync(containerName, filename, contenttype, objectId, contentStream: content);
             }
             finally
             {
@@ -144,17 +111,34 @@ namespace CPS_API.Helpers
             }
         }
 
-        public async Task DeleteAsync(string containerName, string objectId)
+        private async Task CreateAsync(string containerName, string filename, string contenttype, string objectId, string? contentStr = null, Stream? contentStream = null)
         {
-            string connectionString = GetConnectionstring();
+            var containerClient = await GetBlobContainerClient(containerName);
 
-            var containerClient = new BlobContainerClient(connectionString, containerName);
-            if (!await containerClient.ExistsAsync())
-                throw new FileNotFoundException("Container " + containerName + " does not exist!");
+            var initialMetadata = new Dictionary<string, string> { { "contenttype", contenttype } };
+            var tags = new Dictionary<string, string> { { "objectid", objectId } };
+            var options = new BlobUploadOptions { Metadata = initialMetadata, Tags = tags };
 
-            var query = $"objectid = '{objectId}'";
-            var taggedBlobItems = containerClient.FindBlobsByTags(query);
-            if (taggedBlobItems.IsNullOrEmpty()) throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
+            BlobClient blobClient = containerClient.GetBlobClient(filename);
+            if (contentStr != null)
+            {
+                await blobClient.UploadAsync(BinaryData.FromString(contentStr), options);
+            }
+            else
+            {
+                await blobClient.UploadAsync(contentStream, options);
+            }
+        }
+
+        public async Task DeleteAsync(string containerName, string objectId, bool deleteIfExists = false)
+        {
+            var containerClient = await GetBlobContainerClient(containerName);
+            var taggedBlobItems = FindBlobsByTags(containerClient, objectId);
+            if (taggedBlobItems.IsNullOrEmpty())
+            {
+                if (deleteIfExists) return;
+                throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
+            }
 
             foreach (var blobItem in taggedBlobItems)
             {
@@ -162,6 +146,26 @@ namespace CPS_API.Helpers
                 var blobClient = containerClient.GetBlobClient(blobName);
                 await blobClient.DeleteAsync();
             }
+        }
+
+        private Pageable<TaggedBlobItem>? FindBlobsByTags(BlobContainerClient containerClient, string objectId)
+        {
+            var query = $"objectid = '{objectId}'";
+            return containerClient.FindBlobsByTags(query);
+        }
+
+        private string GetConnectionstring()
+        {
+            return _globalSettings.FileStorageConnectionstring;
+        }
+
+        private async Task<BlobContainerClient> GetBlobContainerClient(string containerName)
+        {
+            var connectionString = GetConnectionstring();
+            var containerClient = new BlobContainerClient(connectionString, containerName);
+            if (!await containerClient.ExistsAsync())
+                throw new FileNotFoundException("Container " + containerName + " does not exist!");
+            return containerClient;
         }
     }
 }

@@ -14,7 +14,11 @@ namespace CPS_API.Helpers
 
         Task SaveAsync(CloudTable table, ITableEntity entity);
 
-        Task DeleteAsync(CloudTable table, List<ITableEntity> entities);
+        Task SaveBatchAsync<T>(CloudTable table, List<T> entities) where T : ITableEntity;
+
+        Task DeleteAsync(CloudTable table, ITableEntity entity);
+
+        Task DeleteBatchAsync<T>(CloudTable table, List<T> entities) where T : ITableEntity;
 
         Task<CloudBlobContainer> GetLeaseContainer();
 
@@ -72,9 +76,22 @@ namespace CPS_API.Helpers
             await table.ExecuteAsync(insertop);
         }
 
-        public async Task DeleteAsync(CloudTable table, List<ITableEntity> entities)
+        public async Task SaveBatchAsync<T>(CloudTable table, List<T> entities) where T : ITableEntity
         {
-            TableBatchOperation tableBatchOperation = new TableBatchOperation();
+            var tableBatchOperation = new TableBatchOperation();
+            entities.ForEach(entity => tableBatchOperation.Add(TableOperation.InsertOrReplace(entity)));
+            await table.ExecuteBatchAsync(tableBatchOperation);
+        }
+
+        public async Task DeleteAsync(CloudTable table, ITableEntity entity)
+        {
+            var delete = TableOperation.Delete(entity);
+            await table.ExecuteAsync(delete);
+        }
+
+        public async Task DeleteBatchAsync<T>(CloudTable table, List<T> entities) where T : ITableEntity
+        {
+            var tableBatchOperation = new TableBatchOperation();
             entities.ForEach(entity => tableBatchOperation.Add(TableOperation.Delete(entity)));
             await table.ExecuteBatchAsync(tableBatchOperation);
         }

@@ -1,18 +1,9 @@
-﻿using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
-using CPS_API.Helpers;
-using CPS_API.Models;
-using CPS_API.Models.Exceptions;
+﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Controllers
 {
@@ -21,38 +12,19 @@ namespace CPS_API.Controllers
     [ApiController]
     public class ExportController : Controller
     {
-        private readonly IDriveRepository _driveRepository;
         private readonly ISettingsRepository _settingsRepository;
-        private readonly IFilesRepository _filesRepository;
-        private readonly IMetadataRepository _sharePointRepository;
-
-        private readonly FileStorageService _fileStorageService;
-        private readonly StorageTableService _storageTableService;
-        private readonly XmlExportSerivce _xmlExportSerivce;
-
-        private readonly GlobalSettings _globalSettings;
+        private readonly IExportRepository _exportRepository;
 
         private readonly TelemetryClient _telemetryClient;
 
-        public ExportController(IDriveRepository driveRepository,
-                                ISettingsRepository settingsRepository,
-                                FileStorageService fileStorageService,
-                                StorageTableService storageTableService,
-                                IFilesRepository filesRepository,
-                                IOptions<GlobalSettings> settings,
-                                XmlExportSerivce xmlExportSerivce,
-                                TelemetryClient telemetryClient,
-                                IMetadataRepository sharePointRepository)
+        public ExportController(
+            ISettingsRepository settingsRepository,
+            TelemetryClient telemetryClient,
+            IExportRepository exportRepository)
         {
-            _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
-            _fileStorageService = fileStorageService;
-            _storageTableService = storageTableService;
-            _filesRepository = filesRepository;
-            _globalSettings = settings.Value;
-            _xmlExportSerivce = xmlExportSerivce;
             _telemetryClient = telemetryClient;
-            _sharePointRepository = sharePointRepository;
+            _exportRepository = exportRepository;
         }
 
         // GET
@@ -84,7 +56,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForNew");
             }
 
@@ -97,117 +69,36 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
-            // Get all new files from known locations
-            DeltaResponse deltaResponse;
+            ExportResponse result;
             try
             {
-                deltaResponse = await _driveRepository.GetNewItems(lastSynchronisation.Value, tokens);
+                result = await _exportRepository.SynchroniseNewDocumentsAsync(lastSynchronisation.Value, tokens);
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await NewSynchronisationStopped();
-                return StatusCode(500, ex.Message ?? "Error while getting new documents");
-            }
-            if (deltaResponse == null)
-            {
-                _telemetryClient.TrackException(new CpsException("Delta response is null"));
-                await NewSynchronisationStopped();
-                return StatusCode(500, "Error while getting new documents");
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
             }
 
-            // For each file:
-            // generate xml from metadata
-            // upload file to storage container
-            // upload xml to storage container
-            var itemsAdded = 0;
-            var notAddedItems = new List<DeltaDriveItem>();
-            foreach (var newItem in deltaResponse.Items)
-            {
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(newItem.DriveId, newItem.Id);
-                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = newItem?.DriveId,
-                        ["DriveItemId"] = newItem?.Id,
-                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
-                    };
-                    _telemetryClient.TrackException(ex, properties);
-
-                    notAddedItems.Add(newItem);
-                    _telemetryClient.TrackTrace($"New document synchronisation failed (driveId = {newItem.DriveId}, driveItemId = {newItem.Id}, name = {newItem.Name})");
-                    continue;
-                }
-
-                try
-                {
-                    var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, newItem.Name);
-
-                    // Callback for changed file.
-                    if (succeeded && !_globalSettings.CallbackUrl.IsNullOrEmpty())
-                    {
-                        var fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
-                        var callbackFileInfo = new CallbackCpsFile(fileInfo);
-                        var body = JsonSerializer.Serialize(callbackFileInfo);
-                        var callbackUrl = _globalSettings.CallbackUrl + $"/create/{objectIdentifiersEntity.ObjectId}";
-
-                        await CallCallbackUrl(callbackUrl, body);
-                    }
-
-                    if (succeeded)
-                    {
-                        _telemetryClient.TrackTrace($"New document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
-                        itemsAdded++;
-                    }
-                    else
-                    {
-                        _telemetryClient.TrackTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem.Id})");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = newItem?.DriveId,
-                        ["DriveItemId"] = newItem?.Id
-                    };
-                    _telemetryClient.TrackException(ex, properties);
-
-                    notAddedItems.Add(newItem);
-                    _telemetryClient.TrackTrace($"New document synchronisation failed  (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {newItem?.Id})");
-                }
-            }
-
-            // If all files are succesfully added then we update the last synchronisation date.
+            // If all files are succesfully added then we update the last synchronisation date and token.
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTimeOffset.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, result.NewNextTokens);
 
-            // If all files are succesfully added then we update the token.
-            string lastTokenForNew = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, lastTokenForNew);
-
-            await NewSynchronisationStopped();
-
-            var notDeletedItemsAsStr = notAddedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.").ToList();
-            var message = String.Join("\r\n", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
-            message = $"{itemsAdded} items added" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
-            return Ok(message);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+            return Ok(GetNewResponse(result));
         }
 
-        private async Task NewSynchronisationStopped()
+        private static string GetNewResponse(ExportResponse result)
         {
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("New item synchronisation has stopped");
+            var failedItemsStr = result.FailedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.\r\n").ToList();
+            var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
 
         [HttpGet]
@@ -241,7 +132,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForChanged");
             }
 
@@ -254,192 +145,37 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
 
-            // Get all updated files from known locations
-            DeltaResponse deltaResponse;
+
+            ExportResponse result;
             try
             {
-                deltaResponse = await _driveRepository.GetUpdatedItems(lastSynchronisation.Value, tokens);
+                result = await _exportRepository.SynchroniseUpdatedDocumentsAsync(lastSynchronisation.Value, tokens);
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await ChangedSynchronisationStopped();
-                return StatusCode(500, "Error while getting updated documents");
-            }
-            if (deltaResponse == null)
-            {
-                _telemetryClient.TrackException(new CpsException("Delta response is null"));
-                await ChangedSynchronisationStopped();
-                return StatusCode(500, "Error while getting updated documents");
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising updated documents");
             }
 
-            // For each file:
-            // generate xml from metadata
-            // upload file to storage container
-            // upload xml to storage container
-            var itemsUpdated = 0;
-            var notUpdatedItems = new List<DeltaDriveItem>();
-            foreach (var updatedItem in deltaResponse.Items)
-            {
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(updatedItem.DriveId, updatedItem.Id);
-                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = updatedItem?.DriveId,
-                        ["DriveItemId"] = updatedItem?.Id,
-                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
-                    };
-                    _telemetryClient.TrackException(ex, properties);
-
-                    notUpdatedItems.Add(updatedItem);
-                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (driveId = {updatedItem.DriveId}, driveItemId = {updatedItem.Id}, name = {updatedItem.Name})");
-                    continue;
-                }
-
-                try
-                {
-                    var succeeded = await UploadFileAndXmlToFileStorage(objectIdentifiersEntity, updatedItem.Name);
-
-                    // Callback for changed file.
-                    if (succeeded && !_globalSettings.CallbackUrl.IsNullOrEmpty())
-                    {
-                        var fileInfo = await _filesRepository.GetFileAsync(objectIdentifiersEntity.ObjectId);
-                        var callbackFileInfo = new CallbackCpsFile(fileInfo);
-                        var body = JsonSerializer.Serialize(callbackFileInfo);
-                        var callbackUrl = _globalSettings.CallbackUrl + $"/update/{objectIdentifiersEntity.ObjectId}";
-
-                        await CallCallbackUrl(callbackUrl, body);
-                    }
-
-                    if (succeeded)
-                    {
-                        _telemetryClient.TrackTrace($"Updated document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
-                        itemsUpdated++;
-                    }
-                    else
-                    {
-                        _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem.Id})");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = updatedItem?.DriveId,
-                        ["DriveItemId"] = updatedItem?.Id,
-                        ["ObjectId"] = objectIdentifiersEntity.ObjectId
-                    };
-                    _telemetryClient.TrackException(ex, properties);
-                    _telemetryClient.TrackEvent($"Error while updating file (DriveId: {updatedItem?.DriveId}, DriveItemId: {updatedItem?.Id}) in FileStorage: {ex.Message}");
-                    _telemetryClient.TrackTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {updatedItem?.Id})");
-                    notUpdatedItems.Add(updatedItem);
-                }
-            }
-
-            // If all files are succesfully updated then we update the last synchronisation date.      
+            // If all files are succesfully updated then we update the last synchronisation date and token. 
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTimeOffset.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, result.NewNextTokens);
 
-            // If all files are succesfully updated then we update the token.
-            string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, lastToken);
-
-            await ChangedSynchronisationStopped();
-
-            var notDeletedItemsAsStr = notUpdatedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
-            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
-            message = $"{itemsUpdated} items updated" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
-            return Ok(message);
-        }
-
-        private async Task ChangedSynchronisationStopped()
-        {
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("Changed item synchronisation has stopped");
+            return Ok(GetUpdatedResponse(result));
         }
 
-        private async Task<bool> UploadFileAndXmlToFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity, string name)
+        private string GetUpdatedResponse(ExportResponse result)
         {
-            bool metadataExists;
-            try
-            {
-                var ids = new ObjectIdentifiers(objectIdentifiersEntity);
-                metadataExists = await _sharePointRepository.FileContainsMetadata(ids);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting metadata", ex);
-            }
-            // When metadata is unknown, we skip the synchronisation.
-            // The file is a new incomplete file or something went wrong while adding the file.
-            if (!metadataExists)
-            {
-                return false;
-            }
-
-            FileInformation? metadata;
-            try
-            {
-                metadata = await _sharePointRepository.GetMetadataAsync(objectIdentifiersEntity.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting metadata", ex);
-            }
-            if (metadata == null) throw new CpsException("Error while getting metadata");
-
-            Stream? stream;
-            try
-            {
-                stream = await _driveRepository.GetStreamAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting content", ex);
-            }
-            if (stream == null) throw new CpsException("Error while getting content");
-
-            var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
-            try
-            {
-                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while uploading document", ex);
-            }
-
-            string metadataXml;
-            try
-            {
-                metadataXml = _xmlExportSerivce.GetMetadataAsXml(metadata);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while exporting metadata to xml", ex);
-            }
-
-            var metadataName = objectIdentifiersEntity.ObjectId + ".xml";
-            try
-            {
-                await _fileStorageService.CreateAsync(_globalSettings.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while uploading metadata", ex);
-            }
-
-            return true;
+            var failedItemsStr = result.FailedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
+            var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
+            return $"{result.NumberOfSucceededItems} items updated" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
 
         [HttpGet]
@@ -473,189 +209,61 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await DeletedSynchronisationStopped();
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastTokenForDeleted");
             }
 
-            // Get all deleted files from known locations
-            DeltaResponse deltaResponse;
+
+            ExportResponse result;
             try
             {
-                deltaResponse = await _driveRepository.GetDeletedItems(tokens);
+                result = await _exportRepository.SynchroniseDeletedDocumentsAsync(tokens);
             }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex);
-                await DeletedSynchronisationStopped();
-                return StatusCode(500, "Error while getting deleted documents");
-            }
-            if (deltaResponse == null)
-            {
-                _telemetryClient.TrackException(new CpsException("Delta response is null"));
-                await DeletedSynchronisationStopped();
-                return StatusCode(500, "Error while getting deleted documents");
-            }
-
-            // For each file:
-            // delete file from storage container
-            // delete xml from storage container
-            var itemsDeleted = 0;
-            var notDeletedItems = new List<DeltaDriveItem>();
-            foreach (var deletedItem in deltaResponse.Items)
-            {
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(deletedItem.DriveId, deletedItem.Id);
-                    if (objectIdentifiersEntity == null) throw new CpsException("Error while getting objectIdentifiers");
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = deletedItem?.DriveId,
-                        ["DriveItemId"] = deletedItem?.Id,
-                        ["ErrorMessage"] = "Error while getting objectIdentifiers"
-                    };
-                    _telemetryClient.TrackException(ex, properties);
-
-                    notDeletedItems.Add(deletedItem);
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (driveId = {deletedItem.DriveId}, driveItemId = {deletedItem.Id}, name = {deletedItem.Name})");
-                    continue;
-                }
-
-                try
-                {
-                    await DeleteFileAndXmlFromFileStorage(objectIdentifiersEntity);
-
-                    // Callback for changed file.
-                    if (!_globalSettings.CallbackUrl.IsNullOrEmpty())
-                    {
-                        var callbackUrl = _globalSettings.CallbackUrl + $"/delete/{objectIdentifiersEntity.ObjectId}";
-                        await CallCallbackUrl(callbackUrl);
-                    }
-                    itemsDeleted++;
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["DriveId"] = deletedItem?.DriveId,
-                        ["DriveItemId"] = deletedItem?.Id
-                    };
-
-                    _telemetryClient.TrackException(ex, properties);
-                    _telemetryClient.TrackEvent($"Error while deleting file (DriveId: {deletedItem?.DriveId}, DriveItemId: {deletedItem?.Id}) from FileStorage: {ex.Message}");
-                    _telemetryClient.TrackTrace($"Deleted document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {deletedItem?.Id})");
-                    notDeletedItems.Add(deletedItem);
-                }
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising deleted documents");
             }
 
             // If all files are succesfully deleted then we update the token.
-            string lastToken = string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForDeletedField, lastToken);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForDeletedField, result.NewNextTokens);
 
-            await DeletedSynchronisationStopped();
-
-            var notDeletedItemsAsStr = notDeletedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
-            var message = String.Join(",", notDeletedItemsAsStr.Select(x => x.ToString()).ToArray());
-            message = $"{itemsDeleted} items deleted" + (notDeletedItemsAsStr.Any() ? "\r\n" : "") + message;
-            return Ok(message);
-        }
-
-        private async Task DeletedSynchronisationStopped()
-        {
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
-            _telemetryClient.TrackEvent("Deleted item synchronisation has stopped");
+            return Ok(GetDeletedResponse(result));
         }
 
-        private async Task CallCallbackUrl(string url, string body = "")
+        private string GetDeletedResponse(ExportResponse result)
         {
-            using (var client = new HttpClient())
-            {
-                try
-                {
-                    var method = body.IsNullOrEmpty() ? HttpMethod.Get : HttpMethod.Post;
-                    var request = new HttpRequestMessage(method, url);
-                    request.Headers.Accept.Clear();
-                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _globalSettings.CallbackAccessToken);
-                    if (!body.IsNullOrEmpty())
-                    {
-                        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                    }
-
-                    var response = await client.SendAsync(request);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string responseContent = "";
-                        if (response.Content != null)
-                        {
-                            try
-                            {
-                                responseContent = await response.Content.ReadAsStringAsync();
-                            }
-                            catch { }
-                        }
-
-                        var properties = new Dictionary<string, string>
-                        {
-                            ["Body"] = body,
-                            ["Request"] = request.ToString(),
-                            ["Response"] = response.ToString(),
-                            ["ResponseBody"] = responseContent,
-                        };
-
-                        _telemetryClient.TrackException(new CpsException("Callback failed"), properties);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    var properties = new Dictionary<string, string>
-                    {
-                        ["Body"] = body
-                    };
-
-                    // Log error, otherwise ignore it
-                    _telemetryClient.TrackException(ex, properties);
-                }
-            }
+            var failedItemsStr = result.FailedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
+            var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
+            return $"{result.NumberOfSucceededItems} items deleted" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
 
-        private async Task DeleteFileAndXmlFromFileStorage(ObjectIdentifiersEntity objectIdentifiersEntity)
+        // GET
+        [HttpGet]
+        [Route("publish")]
+        public async Task<IActionResult> SynchroniseToBePublishedDocuments()
         {
+            ToBePublishedExportResponse result;
             try
             {
-                await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId);
-                await _fileStorageService.DeleteAsync(_globalSettings.MetadataContainerName, objectIdentifiersEntity.ObjectId);
+                result = await _exportRepository.SynchroniseToBePublishedDocumentsAsync();
             }
             catch (Exception ex)
             {
-                throw new CpsException("Error while deleting document", ex);
+                _telemetryClient.TrackException(ex);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
             }
+
+            return Ok(GetPublicationResponse(result));
         }
 
-        private CloudTable GetObjectIdentifiersTable()
+        private static string GetPublicationResponse(ToBePublishedExportResponse result)
         {
-            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
-            if (table == null)
-            {
-                throw new CpsException($"Tabel \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
-            }
-            return table;
-        }
-
-        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(string driveId, string driveItemId)
-        {
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
-
-            var filterDrive = TableQuery.GenerateFilterCondition("DriveId", QueryComparisons.Equal, driveId);
-            var filter = TableQuery.GenerateFilterCondition("DriveItemId", QueryComparisons.Equal, driveItemId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter);
-
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            return result.Results?.FirstOrDefault();
+            var failedItemsStr = result.FailedItems.Select(id => $"Error while adding file (ObjectId: {id}) to FileStorage.\r\n").ToList();
+            var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
         }
     }
 }
