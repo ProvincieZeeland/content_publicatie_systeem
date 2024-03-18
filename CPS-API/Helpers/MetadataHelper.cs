@@ -125,7 +125,12 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, out _))
+                if (!DateTimeOffset.TryParse(stringValue, out var dateTimeValue))
+                {
+                    return true;
+                }
+                // Nullable DateTime is set tot MinValue in metadata.
+                if (dateTimeValue.Equals(DateTimeOffset.MinValue))
                 {
                     return true;
                 }
