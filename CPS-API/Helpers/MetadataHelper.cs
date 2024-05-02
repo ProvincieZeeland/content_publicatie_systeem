@@ -219,5 +219,19 @@ namespace CPS_API.Helpers
             }
             return clone;
         }
+
+        /// <summary>
+        /// Get driveid or site matching classification & source
+        /// </summary>
+        public static LocationMapping? GetLocationMapping(List<LocationMapping> locationMapping, FileInformation metadata)
+        {
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
+
+            return locationMapping.Find(item =>
+                item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
+                && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
+            );
+        }
     }
 }

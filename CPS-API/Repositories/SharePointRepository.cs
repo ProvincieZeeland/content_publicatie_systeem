@@ -7,8 +7,10 @@ using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
+using PnP.Core.Model.SharePoint;
 using PnP.Framework;
 using Constants = CPS_API.Models.Constants;
+using CopyMigrationOptions = PnP.Core.Model.SharePoint.CopyMigrationOptions;
 using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
 using GraphSite = Microsoft.Graph.Site;
 
@@ -21,6 +23,8 @@ namespace CPS_API.Services
         Task UpdateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
 
         Task UpdateTermsForExternalReferencesAsync(string siteId, string listId, List<ExternalReferenceItem> externalReferenceItems, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
+
+        Task<string> MoveFileAsync(string siteId, string listId, string listItemId, string destinationSiteId, string destinationListId);
     }
 
     public class SharePointRepository : ISharePointRepository
@@ -266,5 +270,49 @@ namespace CPS_API.Services
         }
 
         #endregion Terms
+
+        public async Task<string> MoveFileAsync(string siteId, string listId, string listItemId, string destinationSiteId, string destinationListId)
+        {
+            var site = await GetSiteAsync(siteId);
+            var destinationSite = await GetSiteAsync(destinationSiteId);
+
+            var certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
+
+            using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
+            using ClientContext destinationContext = await authenticationManager.GetContextAsync(destinationSite.WebUrl);
+
+            using var pnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(context);
+            using var destinationPnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(destinationContext);
+
+            var rootSiteHostName = new Uri(destinationSite.WebUrl).GetLeftPart(UriPartial.Authority);
+
+            var destinationList = await destinationPnpCoreContext.Web.Lists.GetByIdAsync(new Guid(destinationListId));
+            await destinationList.RootFolder.LoadAsync();
+            var destinationAbsoluteUrl = $"{rootSiteHostName}{destinationList.RootFolder.ServerRelativeUrl}";
+
+            var list = await pnpCoreContext.Web.Lists.GetByIdAsync(new Guid(listId));
+            var listItemParsed = int.TryParse(listItemId, out var listItemIdAsInt);
+            if (!listItemParsed) throw new CpsException("Error while moving file");
+
+            var listItem = list.Items.FirstOrDefault(p => p.Id == listItemIdAsInt);
+            if (listItem == null) throw new CpsException(nameof(listItem) + " not found");
+            await listItem.File.LoadAsync();
+
+            var jobUris = new List<string> { rootSiteHostName + listItem.File.ServerRelativeUrl };
+            var copyJobs = await pnpCoreContext.Site.CreateCopyJobsAsync(jobUris.ToArray(), destinationAbsoluteUrl, new CopyMigrationOptions
+            {
+                IsMoveMode = true,
+                BypassSharedLock = true,
+                ExcludeChildren = true,
+                IgnoreVersionHistory = false,
+                NameConflictBehavior = SPMigrationNameConflictBehavior.Fail
+            });
+
+            await pnpCoreContext.Site.EnsureCopyJobHasFinishedAsync(copyJobs);
+
+            var file = await pnpCoreContext.Web.GetFileByLinkAsync(destinationAbsoluteUrl + "/" + listItem.File.Name, p => p.VroomItemID);
+            return file.VroomItemID;
+        }
     }
 }

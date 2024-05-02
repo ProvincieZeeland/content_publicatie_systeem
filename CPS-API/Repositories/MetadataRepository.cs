@@ -177,12 +177,86 @@ namespace CPS_API.Repositories
 
         #region Update
 
+        public async Task<ObjectIdentifiers> CopyAndDeleteFileAsync(FileInformation metadata, LocationMapping locationMapping)
+        {
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            ArgumentNullException.ThrowIfNull(nameof(locationMapping));
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+
+            var oldDriveId = metadata.Ids.DriveId;
+            var oldDriveItemId = metadata.Ids.DriveItemId;
+            string? driveItemId;
+            try
+            {
+                var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
+                driveItemId = await _driveRepository.CopyFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId, drive.Id, drive.ParentReference.Path);
+                if (string.IsNullOrEmpty(driveItemId)) throw new CpsException("Error while copying file");
+
+                metadata.Ids = new ObjectIdentifiers
+                {
+                    SiteId = locationMapping.SiteId,
+                    ListId = locationMapping.ListId,
+                    ObjectId = metadata.Ids.ObjectId,
+                    DriveItemId = driveItemId,
+                    ExternalReferenceListId = locationMapping.ExternalReferenceListId,
+                    AdditionalObjectId = metadata.Ids.AdditionalObjectId
+                };
+                // Get new listItemId
+                metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
+
+                await UpdateExternalReferencesAsync(metadata);
+            }
+            catch (Exception)
+            {
+                throw new CpsException("Error while copying file");
+            }
+
+            await _driveRepository.DeleteFileAsync(oldDriveId, oldDriveItemId);
+
+            await _objectIdRepository.SaveObjectIdentifiersAsync(metadata.Ids.ObjectId, metadata.Ids);
+
+            return metadata.Ids;
+        }
+
+        public async Task<ObjectIdentifiers> MoveFileAsync(FileInformation metadata, LocationMapping locationMapping)
+        {
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            ArgumentNullException.ThrowIfNull(nameof(locationMapping));
+
+            var driveItemId = await _sharePointRepository.MoveFileAsync(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, locationMapping.SiteId, locationMapping.ListId);
+            var ids = new ObjectIdentifiers
+            {
+                SiteId = metadata.Ids.SiteId,
+                ListId = locationMapping.ListId,
+                ObjectId = metadata.Ids.ObjectId,
+                DriveItemId = driveItemId,
+                ExternalReferenceListId = locationMapping.ExternalReferenceListId,
+                AdditionalObjectId = metadata.Ids.AdditionalObjectId
+            };
+            ids = await _objectIdRepository.FindMissingIds(ids);
+
+            if (ids == null) throw new CpsException("Error while moving file");
+
+            // Get new listItemId
+            ids = await _objectIdRepository.FindMissingIds(ids);
+
+            await _objectIdRepository.SaveObjectIdentifiersAsync(metadata.Ids.ObjectId, ids);
+            return ids;
+        }
+
         public async Task UpdateAllMetadataAsync(FileInformation metadata, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            if (metadata == null) throw new ArgumentNullException("metadata");
-            if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+            if (metadata.Ids.ObjectId == null) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
+
+            var updateMetadataData = await GetUpdateMetadataAction(metadata);
+            if (updateMetadataData.Action == UpdateMetadataAction.Move)
+            {
+                metadata.Ids = await MoveFileAsync(metadata, updateMetadataData.NewLocation);
+            }
 
             if (metadata.AdditionalMetadata != null)
             {
@@ -201,6 +275,32 @@ namespace CPS_API.Repositories
             {
                 await UpdateFileName(metadata.Ids.ObjectId, metadata.FileName, metadata);
             }
+        }
+
+        private async Task<UpdateMetadataModel> GetUpdateMetadataAction(FileInformation metadata)
+        {
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+            if (metadata.Ids.ObjectId == null) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
+
+            var currentMetadata = await GetMetadataAsync(metadata.Ids.ObjectId);
+            if (currentMetadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(currentMetadata)}");
+            if (currentMetadata.AdditionalMetadata.Source == metadata.AdditionalMetadata.Source && currentMetadata.AdditionalMetadata.Classification == metadata.AdditionalMetadata.Classification)
+            {
+                return new UpdateMetadataModel(UpdateMetadataAction.Update);
+            }
+
+            var currentLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, currentMetadata);
+            var newLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
+
+            // Different source or location in same documentlibrary?
+            if (currentLocation.SiteId == newLocation.SiteId && currentLocation.ListId == newLocation.ListId)
+            {
+                return new UpdateMetadataModel(UpdateMetadataAction.Update);
+            }
+
+            return new UpdateMetadataModel(UpdateMetadataAction.Move, newLocation);
         }
 
         public async Task UpdateMetadataWithoutExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)

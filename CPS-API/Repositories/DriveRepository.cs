@@ -2,10 +2,13 @@
 using System.Text.RegularExpressions;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using IExperts.SocialIntranet.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
+using Newtonsoft.Json;
+using HttpMethods = Microsoft.Graph.HttpMethods;
 
 namespace CPS_API.Repositories
 {
@@ -27,6 +30,10 @@ namespace CPS_API.Repositories
 
         Task<DriveItem?> UpdateFileNameAsync(string driveId, string driveItemId, string fileName, bool getAsUser = false);
 
+        Task<string?> CopyFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false);
+
+        Task<DriveItem?> MoveFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false);
+
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
@@ -42,11 +49,14 @@ namespace CPS_API.Repositories
     {
         private readonly GraphServiceClient _graphClient;
         private readonly GlobalSettings _globalSettings;
+        private readonly IRestClient _restClient;
 
-        public DriveRepository(GraphServiceClient graphClient, IOptions<GlobalSettings> settings)
+
+        public DriveRepository(GraphServiceClient graphClient, IOptions<GlobalSettings> settings, IRestClient restClient)
         {
             _graphClient = graphClient;
             _globalSettings = settings.Value;
+            _restClient = restClient;
         }
 
         public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false)
@@ -231,6 +241,113 @@ namespace CPS_API.Repositories
             {
                 Name = fileName
             };
+            return await request.UpdateAsync(driveItem);
+        }
+
+        private void HandleFailedPoll(AsyncOperationStatusResult asyncOperationStatus)
+        {
+            object? message = null;
+            object? error = null;
+            if (asyncOperationStatus.AdditionalData != null)
+            {
+                asyncOperationStatus.AdditionalData.TryGetValue("message", out message);
+                asyncOperationStatus.AdditionalData.TryGetValue("error", out error);
+            }
+
+            // Return error message to be handled further in the controller
+            if (error == null) throw new ServiceException(new Error { Code = "generalException", Message = message as string });
+
+            var errorResult = JsonConvert.DeserializeObject<RequestErrorResult>(error.ToString());
+            if (errorResult == null) throw new CpsException("Error while poll for operation completion");
+            throw new CpsException(errorResult.Message);
+        }
+
+        private async Task<AsyncOperationStatusResult?> PollForOperationCompletionAsync(
+            string monitorUrl,
+            IProgress<AsyncOperationStatus> progress,
+            CancellationToken cancellationToken)
+        {
+            AsyncOperationStatusResult? asyncOperationStatus = null;
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                using (var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, monitorUrl))
+                {
+                    using var responseMessage = await _restClient.HttpRequestAsync(httpRequestMessage).ConfigureAwait(false);
+                    using var responseStream = await responseMessage.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    asyncOperationStatus = _graphClient.HttpProvider.Serializer.DeserializeObject<AsyncOperationStatusResult>(responseStream);
+
+                    if (asyncOperationStatus == null) throw new ServiceException(new Error { Code = "generalException", Message = "Error retrieving monitor status." });
+
+                    if (string.Equals(asyncOperationStatus.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) return asyncOperationStatus;
+
+                    if (string.Equals(asyncOperationStatus.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(asyncOperationStatus.Status, "deleteFailed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandleFailedPoll(asyncOperationStatus);
+                    }
+
+                    if (progress != null) progress.Report(asyncOperationStatus);
+
+                    if (string.Equals(asyncOperationStatus.Status, "completed", StringComparison.OrdinalIgnoreCase)) return asyncOperationStatus;
+                }
+
+                await Task.Delay(CoreConstants.PollingIntervalInMs, cancellationToken).ConfigureAwait(false);
+            }
+
+            return asyncOperationStatus;
+        }
+
+        public async Task<string?> CopyFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false)
+        {
+            var parentReference = new ItemReference
+            {
+                DriveId = newDriveId,
+                Path = newDrivePath,
+            };
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Copy(parentReference: parentReference).Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
+            var implReq = ((DriveItemCopyRequest)request);
+            implReq.Method = HttpMethods.POST;
+
+            using var response = await implReq.SendRequestAsync(implReq.RequestBody, CancellationToken.None, HttpCompletionOption.ResponseContentRead).ConfigureAwait(false);
+            if (response?.IsSuccessStatusCode == true)
+            {
+                var progress = new Progress<AsyncOperationStatus>();
+
+                var monitorUrl = response.Headers.Location?.AbsoluteUri;
+                if (string.IsNullOrEmpty(monitorUrl)) throw new CpsException("Error while copying file");
+
+                var status = await PollForOperationCompletionAsync(monitorUrl, progress, CancellationToken.None);
+                if (status == null) throw new CpsException("Error while copying file");
+
+                if (status.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Return driveItemId
+                    return status.ResourceId;
+                }
+            }
+            return null;
+        }
+
+        public async Task<DriveItem?> MoveFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false)
+        {
+            var driveItem = new DriveItem
+            {
+                ParentReference = new ItemReference
+                {
+                    DriveId = newDriveId,
+                    Path = newDrivePath,
+                }
+            };
+            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
+            if (!getAsUser)
+            {
+                request = request.WithAppOnly();
+            }
             return await request.UpdateAsync(driveItem);
         }
 
