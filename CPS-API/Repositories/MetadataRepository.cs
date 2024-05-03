@@ -226,9 +226,9 @@ namespace CPS_API.Repositories
             var driveItemId = await _sharePointRepository.MoveFileAsync(metadata.Ids.SiteId, metadata.Ids.ListId, metadata.Ids.ListItemId, locationMapping.SiteId, locationMapping.ListId);
             var ids = new ObjectIdentifiers
             {
-                SiteId = metadata.Ids.SiteId,
-                ListId = locationMapping.ListId,
                 ObjectId = metadata.Ids.ObjectId,
+                SiteId = locationMapping.SiteId,
+                ListId = locationMapping.ListId,
                 DriveItemId = driveItemId,
                 ExternalReferenceListId = locationMapping.ExternalReferenceListId,
                 AdditionalObjectId = metadata.Ids.AdditionalObjectId

@@ -311,7 +311,7 @@ namespace CPS_API.Services
 
             await pnpCoreContext.Site.EnsureCopyJobHasFinishedAsync(copyJobs);
 
-            var file = await pnpCoreContext.Web.GetFileByLinkAsync(destinationAbsoluteUrl + "/" + listItem.File.Name, p => p.VroomItemID);
+            var file = await destinationPnpCoreContext.Web.GetFileByLinkAsync(destinationAbsoluteUrl + "/" + listItem.File.Name, p => p.VroomItemID);
             return file.VroomItemID;
         }
     }
