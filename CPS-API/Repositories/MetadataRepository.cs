@@ -292,10 +292,26 @@ namespace CPS_API.Repositories
             }
 
             var currentLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, currentMetadata);
+
+            // No location change?
+            if (string.IsNullOrWhiteSpace(metadata.AdditionalMetadata.Source) && string.IsNullOrWhiteSpace(metadata.AdditionalMetadata.Classification))
+            {
+                return new UpdateMetadataModel(UpdateMetadataAction.Update);
+            }
+
+            // Use current source or classification, when it does not change.
+            if (string.IsNullOrWhiteSpace(metadata.AdditionalMetadata.Source))
+            {
+                metadata.AdditionalMetadata.Source = currentMetadata.AdditionalMetadata.Source;
+            }
+            if (string.IsNullOrWhiteSpace(metadata.AdditionalMetadata.Classification))
+            {
+                metadata.AdditionalMetadata.Classification = currentMetadata.AdditionalMetadata.Classification;
+            }
             var newLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
 
             // No location change, different source or location in same documentlibrary?
-            if (newLocation == null || currentLocation.SiteId == newLocation.SiteId && currentLocation.ListId == newLocation.ListId)
+            if (currentLocation.SiteId == newLocation.SiteId && currentLocation.ListId == newLocation.ListId)
             {
                 return new UpdateMetadataModel(UpdateMetadataAction.Update);
             }
