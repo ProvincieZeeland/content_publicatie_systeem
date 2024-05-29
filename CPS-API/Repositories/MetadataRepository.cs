@@ -294,8 +294,8 @@ namespace CPS_API.Repositories
             var currentLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, currentMetadata);
             var newLocation = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
 
-            // Different source or location in same documentlibrary?
-            if (currentLocation.SiteId == newLocation.SiteId && currentLocation.ListId == newLocation.ListId)
+            // No location change, different source or location in same documentlibrary?
+            if (newLocation == null || currentLocation.SiteId == newLocation.SiteId && currentLocation.ListId == newLocation.ListId)
             {
                 return new UpdateMetadataModel(UpdateMetadataAction.Update);
             }
