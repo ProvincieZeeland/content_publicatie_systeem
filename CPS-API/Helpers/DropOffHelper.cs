@@ -19,7 +19,7 @@ namespace CPS_API.Helpers
         public static string GetDropOffLastChangeToken(this DropOffType dropOffType)
         {
             if (dropOffType == DropOffType.Financial) return Constants.DropOffLastChangeTokenFinancial;
-            else return Constants.DropOffLastChangeTokenFinancial;
+            else return Constants.DropOffLastChangeToken;
         }
 
         public static string? GetDropOffSiteId(this DropOffType dropOffType, List<WebHookList> webHookLists)
