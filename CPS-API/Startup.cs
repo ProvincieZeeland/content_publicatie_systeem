@@ -3,6 +3,7 @@ using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
 using CPS_API.Services;
+using IExperts.SocialIntranet.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -54,6 +55,14 @@ namespace CPS_API
             services.AddSingleton<XmlExportSerivce, XmlExportSerivce>();
             services.AddSingleton<EmailService, EmailService>();
             services.AddSingleton<CertificateService, CertificateService>();
+            services.AddSingleton<IRestClient, RestClient>();
+
+            services
+                .AddHttpClient("restClient")
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    EnableMultipleHttp2Connections = true
+                });
 
             // Configure for large file uploads
             services.Configure<FormOptions>(opt =>

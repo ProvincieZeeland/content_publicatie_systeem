@@ -125,7 +125,12 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, out _))
+                if (!DateTimeOffset.TryParse(stringValue, out var dateTimeValue))
+                {
+                    return true;
+                }
+                // Nullable DateTime is set tot MinValue in metadata.
+                if (dateTimeValue.Equals(DateTimeOffset.MinValue))
                 {
                     return true;
                 }
@@ -213,6 +218,20 @@ namespace CPS_API.Helpers
                 propertyInfo.SetValue(clone, propertyInfo.GetValue(metadata));
             }
             return clone;
+        }
+
+        /// <summary>
+        /// Get driveid or site matching classification & source
+        /// </summary>
+        public static LocationMapping? GetLocationMapping(List<LocationMapping> locationMapping, FileInformation metadata)
+        {
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
+            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
+
+            return locationMapping.Find(item =>
+                item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
+                && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
+            );
         }
     }
 }

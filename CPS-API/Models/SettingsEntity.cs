@@ -28,6 +28,12 @@ namespace CPS_API.Models
 
         public string DropOffLastChangeToken { get; set; }
 
+        public string DropOffSubscriptionExpirationDateTimeFinancial { get; set; }
+
+        public string DropOffSubscriptionIdFinancial { get; set; }
+
+        public string DropOffLastChangeTokenFinancial { get; set; }
+
         public SettingsEntity()
         {
 

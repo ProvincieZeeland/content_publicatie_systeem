@@ -30,7 +30,7 @@ namespace CPS_Jobs
             if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
             if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
 
-            await _appService.callService(baseUrl, scope, "/Export/new", log);
+            await _appService.callService(baseUrl, scope, "/Export/publish", log);
         }
     }
 }

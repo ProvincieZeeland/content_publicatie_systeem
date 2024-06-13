@@ -24,6 +24,8 @@
 
         public string? WOOInformationCategorySecondary { get; set; } = "";
 
+        public DateTimeOffset? DocumentDate { get; set; } = DateTimeOffset.MinValue;
+
         public CallbackFileMetadata()
         {
 
@@ -42,6 +44,7 @@
             ArchiveDate = metadata.ArchiveDate ?? DateTimeOffset.MinValue;
             WOOInformationCategoryPrimary = metadata.WOOInformationCategoryPrimary ?? string.Empty;
             WOOInformationCategorySecondary = metadata.WOOInformationCategorySecondary ?? string.Empty;
+            DocumentDate = metadata.DocumentDate ?? DateTimeOffset.MinValue;
         }
     }
 }

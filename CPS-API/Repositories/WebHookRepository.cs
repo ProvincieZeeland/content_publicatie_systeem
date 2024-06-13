@@ -16,9 +16,9 @@ namespace CPS_API.Repositories
 {
     public interface IWebHookRepository
     {
-        Task<SubscriptionModel> CreateWebHookForDropOffAsync();
+        Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType);
 
-        Task<DateTime?> ExtendWebHookForDropOffAsync();
+        Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType);
 
         Task<bool> DeleteWebHookAsync(GraphSite site, string listId, string subscriptionId);
 
@@ -75,31 +75,26 @@ namespace CPS_API.Repositories
 
         #region Create/Edit/Delete Webhook
 
-        public async Task<SubscriptionModel> CreateWebHookForDropOffAsync()
+        public async Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType)
         {
-            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.WebHookSettings.SiteId);
-            if (site == null)
-            {
-                throw new CpsException("Error while getting site");
-            }
+            var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
+            if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
+            var site = await _sharePointRepository.GetSiteAsync(siteId);
+            if (site == null) throw new CpsException("Error while getting webhook site");
 
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
-            if (accessToken == null)
-            {
-                throw new CpsException("Error while getting accessToken");
-            }
+            if (accessToken == null) throw new CpsException("Error while getting accessToken");
 
-            var subscription = await AddListWebHookAsync(site.WebUrl, _globalSettings.WebHookSettings.ListId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
-            if (subscription == null)
-            {
-                throw new CpsException("Error while adding webhook");
-            }
+            var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
+            if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
+            var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
+            if (subscription == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date and subscriptionId for extending webhook.
-            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionId, subscription.Id);
-            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, subscription.ExpirationDateTime);
+            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionId(), subscription.Id);
+            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionExpirationDateTime(), subscription.ExpirationDateTime);
 
             return subscription;
         }
@@ -150,31 +145,26 @@ namespace CPS_API.Repositories
             return await Task.Run(() => JsonConvert.DeserializeObject<SubscriptionModel>(responseString));
         }
 
-        public async Task<DateTime?> ExtendWebHookForDropOffAsync()
+        public async Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType)
         {
-            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.WebHookSettings.SiteId);
-            if (site == null)
-            {
-                throw new CpsException("Error while getting site");
-            }
+            var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
+            if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
+            var site = await _sharePointRepository.GetSiteAsync(siteId);
+            if (site == null) throw new CpsException("Error while getting webhook site");
 
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
-            if (accessToken == null)
-            {
-                throw new CpsException("Error while getting accessToken");
-            }
+            if (accessToken == null) throw new CpsException("Error while getting accessToken");
 
-            var subscriptionId = await _settingsRepository.GetSetting<string>(Constants.DropOffSubscriptionId);
-            var expirationDateTime = await UpdateListWebHookAsync(site.WebUrl, _globalSettings.WebHookSettings.ListId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
-            if (expirationDateTime == null)
-            {
-                throw new CpsException("Error while adding webhook");
-            }
+            var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
+            if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
+            var subscriptionId = await _settingsRepository.GetSetting<string>(dropOffType.GetDropOffSubscriptionId());
+            var expirationDateTime = await UpdateListWebHookAsync(site.WebUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
+            if (expirationDateTime == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date for renewing webhook.
-            await _settingsRepository.SaveSettingAsync(Constants.DropOffSubscriptionExpirationDateTime, expirationDateTime);
+            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionExpirationDateTime(), expirationDateTime);
 
             return expirationDateTime;
         }
@@ -339,8 +329,11 @@ namespace CPS_API.Repositories
         {
             var site = await _sharePointRepository.GetSiteAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
 
+            var dropOffList = _globalSettings.WebHookSettings.WebHookLists.Find(item => site.Id.Contains(item.SiteId) && item.ListId == notification.Resource);
+            if (dropOffList == null) throw new CpsException($"Error while getting list for DropOff (siteId = {site.Id}, listId = {notification.Resource})");
+
             // Get changes
-            var changeToken = await _settingsRepository.GetSetting<string>(Constants.DropOffLastChangeToken);
+            var changeToken = await _settingsRepository.GetSetting<string>(dropOffList.DropOffType.GetDropOffLastChangeToken());
             if (string.IsNullOrWhiteSpace(changeToken))
             {
                 _telemetryClient.TrackTrace("Change token is empty, attempting to retrieve whole change history.");
@@ -349,13 +342,13 @@ namespace CPS_API.Repositories
 
             // Process the changes
             var processedItems = await ProccessListItemsAsync(site.Id, notification.Resource, changes.Items);
-            await _settingsRepository.SaveSettingAsync(Constants.DropOffLastChangeToken, changes.NewChangeToken);
+            await _settingsRepository.SaveSettingAsync(dropOffList.DropOffType.GetDropOffLastChangeToken(), changes.NewChangeToken);
 
             // Extend the webhook when needed
             // If the webhook is about to expire within the coming 7 days then prolong it
             if (notification.ExpirationDateTime.AddDays(-7) < DateTime.Now)
             {
-                await ExtendWebHookForDropOffAsync();
+                await ExtendWebHookForDropOffAsync(dropOffList.DropOffType);
             }
 
             return processedItems;
