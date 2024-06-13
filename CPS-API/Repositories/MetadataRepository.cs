@@ -206,9 +206,9 @@ namespace CPS_API.Repositories
 
                 await UpdateExternalReferencesAsync(metadata);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw new CpsException("Error while copying file");
+                throw new CpsException("Error while copying file", ex);
             }
 
             await _driveRepository.DeleteFileAsync(oldDriveId, oldDriveItemId);
