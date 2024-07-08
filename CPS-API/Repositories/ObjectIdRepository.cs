@@ -267,13 +267,10 @@ namespace CPS_API.Repositories
             return locationMapping?.ExternalReferenceListId;
         }
 
-        private CloudTable? GetObjectIdentifiersTable()
+        private CloudTable GetObjectIdentifiersTable()
         {
             var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
-            if (table == null)
-            {
-                throw new CpsException($"Table \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
-            }
+            if (table == null) throw new CpsException($"Table \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             return table;
         }
 
@@ -306,15 +303,17 @@ namespace CPS_API.Repositories
 
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByAdditionalIdsAsync(string objectId)
         {
+            ArgumentNullException.ThrowIfNull(objectId);
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            objectId = objectId.ToUpper();
+            objectId = objectId.ToUpper().Trim();
             return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(ObjectIdentifiersEntity.AdditionalObjectId), objectId);
         }
 
         private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByObjectIdAsync(string objectId)
         {
+            ArgumentNullException.ThrowIfNull(objectId);
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            objectId = objectId.ToUpper();
+            objectId = objectId.ToUpper().Trim();
             return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(TableEntity.PartitionKey), objectId);
         }
 
@@ -338,8 +337,14 @@ namespace CPS_API.Repositories
 
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
+            var existingEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+            if (existingEntity != null) throw new CpsException($"File with objectId \"{objectId}\" already exists");
+
             var objectIdentifiersTable = GetObjectIdentifiersTable();
-            if (!string.IsNullOrEmpty(ids.AdditionalObjectId)) ids.AdditionalObjectId = ids.AdditionalObjectId.ToUpper();
+            if (!string.IsNullOrEmpty(ids.AdditionalObjectId))
+            {
+                ids.AdditionalObjectId = ids.AdditionalObjectId.ToUpper().Trim();
+            }
 
             var document = new ObjectIdentifiersEntity(objectId, ids);
             await _storageTableService.SaveAsync(objectIdentifiersTable, document);
@@ -347,8 +352,12 @@ namespace CPS_API.Repositories
 
         public async Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds)
         {
+            var existingEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(additionalIds);
+            if (existingEntity != null) throw new CpsException($"File with additionalObjectId \"{additionalIds}\" already exists");
+
             var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            ids.AdditionalObjectId = additionalIds.ToUpper();
+            if (ids == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
+            ids.AdditionalObjectId = additionalIds.ToUpper().Trim();
 
             try
             {
