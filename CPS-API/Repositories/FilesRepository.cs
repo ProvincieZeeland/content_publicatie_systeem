@@ -183,7 +183,7 @@ namespace CPS_API.Repositories
             if (metadata.AdditionalMetadata == null) throw new ArgumentNullException(nameof(metadata.AdditionalMetadata));
 
             // Get driveid or site matching classification & source
-            var locationMapping = GetLocationMapping(metadata);
+            var locationMapping = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
             if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(metadata.AdditionalMetadata.Classification)}: \"{metadata.AdditionalMetadata.Classification}\", {nameof(metadata.AdditionalMetadata.Source)}: \"{metadata.AdditionalMetadata.Source}\")");
 
             var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
@@ -217,17 +217,6 @@ namespace CPS_API.Repositories
 
             // Handle the new file.
             return await HandleCreatedFile(metadata, formFile != null);
-        }
-
-        /// <summary>
-        /// Get driveid or site matching classification & source
-        /// </summary>
-        private LocationMapping? GetLocationMapping(FileInformation metadata)
-        {
-            return _globalSettings.LocationMapping.Find(item =>
-                item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
-                && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
-            );
         }
 
         private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)

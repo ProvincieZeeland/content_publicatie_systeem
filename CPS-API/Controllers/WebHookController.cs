@@ -30,7 +30,7 @@ namespace CPS_API.Controllers
 
         [HttpPut]
         [Route("Create")]
-        public async Task<ActionResult> Create()
+        public async Task<ActionResult> Create(DropOffType dropOffType)
         {
             if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
@@ -40,7 +40,7 @@ namespace CPS_API.Controllers
             SubscriptionModel subscription;
             try
             {
-                subscription = await _webHookRepository.CreateWebHookForDropOffAsync();
+                subscription = await _webHookRepository.CreateWebHookForDropOffAsync(dropOffType);
             }
             catch (Exception ex)
             {

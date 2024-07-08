@@ -333,7 +333,7 @@ namespace CPS_API.Repositories
         private async Task<bool> CheckPublicationDateAsync(FileInformation metadata, string objectId)
         {
             if (metadata.AdditionalMetadata == null) throw new CpsException("Error while getting metadata: AdditionalMetadata is null");
-            if (metadata.AdditionalMetadata.PublicationDate.HasValue && metadata.AdditionalMetadata.PublicationDate.Value.Date > DateTimeOffset.UtcNow.Date)
+            if (metadata.AdditionalMetadata.PublicationDate.HasValue && metadata.AdditionalMetadata.PublicationDate > DateTime.Now.Date.ToUniversalTime())
             {
                 await _publicationRepository.AddToQueueAsync(objectId, metadata.AdditionalMetadata.PublicationDate.Value);
                 return false;

@@ -15,6 +15,9 @@
         public const string DropOffSubscriptionExpirationDateTime = "DropOffSubscriptionExpirationDateTime";
         public const string DropOffSubscriptionId = "DropOffSubscriptionId";
         public const string DropOffLastChangeToken = "DropOffLastChangeToken";
+        public const string DropOffSubscriptionExpirationDateTimeFinancial = "DropOffSubscriptionExpirationDateTimeFinancial";
+        public const string DropOffSubscriptionIdFinancial = "DropOffSubscriptionIdFinancial";
+        public const string DropOffLastChangeTokenFinancial = "DropOffLastChangeTokenFinancial";
         public const int InvalidChangeTokenErrorCode = -2146233086;
         public const int InvalidChangeTokenTimeErrorCode = -2130575172;
         public const int InvalidChangeTokenWrongObjectErrorCode = -2130575173;

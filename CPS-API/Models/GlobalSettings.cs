@@ -94,8 +94,15 @@
 
         public string ClientState { get; set; } = string.Empty;
 
+        public List<WebHookList> WebHookLists { get; set; } = new List<WebHookList>();
+    }
+
+    public class WebHookList
+    {
         public string SiteId { get; set; } = string.Empty;
 
         public string ListId { get; set; } = string.Empty;
+
+        public DropOffType DropOffType { get; set; } = DropOffType.Publications;
     }
 }

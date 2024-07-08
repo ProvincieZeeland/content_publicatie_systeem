@@ -1,7 +1,9 @@
-﻿using CPS_API.Helpers;
+﻿using System.Net;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
+using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 
 namespace CPS_API.Repositories
@@ -77,7 +79,15 @@ namespace CPS_API.Repositories
         public async Task RemoveFromQueueIfExistsAsync(string objectId)
         {
             var table = GetTable();
-            var entity = await GetToBePublishedEntityAsync(table, objectId);
+            ToBePublishedEntity? entity;
+            try
+            {
+                entity = await GetToBePublishedEntityAsync(table, objectId);
+            }
+            catch (StorageException ex) when (ex.RequestInformation.HttpStatusCode == (int)HttpStatusCode.NotFound)
+            {
+                return;
+            }
             if (entity == null)
             {
                 return;
