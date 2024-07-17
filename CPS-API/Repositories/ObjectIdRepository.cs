@@ -347,7 +347,7 @@ namespace CPS_API.Repositories
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
             var existingEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            if (existingEntity != null) throw new CpsException($"File with objectId \"{objectId}\" already exists");
+            if (existingEntity != null) throw new ObjectIdAlreadyExistsException($"File with objectId \"{objectId}\" already exists");
 
             var objectIdentifiersTable = GetObjectIdentifiersTable();
             if (!string.IsNullOrEmpty(ids.AdditionalObjectId))
@@ -362,7 +362,7 @@ namespace CPS_API.Repositories
         public async Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds)
         {
             var existingEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(additionalIds);
-            if (existingEntity != null) throw new CpsException($"File with additionalObjectId \"{additionalIds}\" already exists");
+            if (existingEntity != null) throw new ObjectIdAlreadyExistsException($"File with additionalObjectId \"{additionalIds}\" already exists");
 
             var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
             if (ids == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
