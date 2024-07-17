@@ -328,11 +328,20 @@ namespace CPS_API.Repositories
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(CloudTable objectIdentifiersTable, string filterPropertyName, string filterGivenValue)
         {
             var filter = TableQuery.GenerateFilterCondition(filterPropertyName, QueryComparisons.Equal, filterGivenValue);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter).Take(1);
 
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            var objectIdentifiersEntities = result.Results?.OrderByDescending(item => item.Timestamp).ToList();
-            return objectIdentifiersEntities?.FirstOrDefault();
+            // Querying the table not bases on partitionKey or rowKey sometimes gives strange behaviour.
+            // Results are empty in this situation and the item must be found by using the continuationtoken.
+            List<ObjectIdentifiersEntity> results = new List<ObjectIdentifiersEntity>();
+            TableContinuationToken? token = null;
+            do
+            {
+                var seg = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, token);
+                token = seg.ContinuationToken;
+                results.AddRange(seg.Results);
+            }
+            while (token != null && results.Count < 1);
+            return results.FirstOrDefault();
         }
 
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
