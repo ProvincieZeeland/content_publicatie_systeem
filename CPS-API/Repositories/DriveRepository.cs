@@ -5,6 +5,7 @@ using CPS_API.Models.Exceptions;
 using IExperts.SocialIntranet.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
+using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -113,6 +114,10 @@ namespace CPS_API.Repositories
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
+            }
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
