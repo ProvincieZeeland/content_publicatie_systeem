@@ -152,6 +152,11 @@ namespace CPS_API.Controllers
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(409, "Filename already exists");
             }
+            catch (ObjectIdAlreadyExistsException ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(500, ex.Message);
+            }
             catch (Exception ex)
             {
                 _telemetryClient.TrackException(ex, properties);
@@ -360,6 +365,11 @@ namespace CPS_API.Controllers
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(401, ex.Message ?? "Unauthorized");
+            }
+            catch (ObjectIdAlreadyExistsException ex)
+            {
+                _telemetryClient.TrackException(ex, properties);
+                return StatusCode(500, ex.Message);
             }
             catch (Exception ex)
             {

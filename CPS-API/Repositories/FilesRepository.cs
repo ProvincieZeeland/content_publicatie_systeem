@@ -330,6 +330,7 @@ namespace CPS_API.Repositories
                 // Remove file from Sharepoint
                 await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
 
+                if (ex is ObjectIdAlreadyExistsException) throw;
                 throw new CpsException("Error while updating additional IDs", ex);
             }
 
