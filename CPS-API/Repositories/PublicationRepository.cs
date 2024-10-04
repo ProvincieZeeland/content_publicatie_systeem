@@ -44,7 +44,9 @@ namespace CPS_API.Repositories
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
             }
-            return result.Results?.ToList();
+            var entities = result.Results?.ToList();
+            if (entities == null) throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
+            return entities;
         }
 
         private async Task<ToBePublishedEntity> GetToBePublishedEntityAsync(CloudTable table, string objectId)
@@ -56,7 +58,9 @@ namespace CPS_API.Repositories
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\" by \"{objectId}\"");
             }
-            return result.Results?.FirstOrDefault();
+            var entitiy = result.Results?.FirstOrDefault();
+            if (entitiy == null) throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
+            return entitiy;
         }
 
         #endregion

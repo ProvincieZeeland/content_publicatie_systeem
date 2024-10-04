@@ -8,8 +8,8 @@
 
         public DeltaResponse(List<DeltaDriveItem> items, Dictionary<string, string> nextTokens)
         {
-            this.Items = items;
-            this.NextTokens = nextTokens;
+            Items = items;
+            NextTokens = nextTokens;
         }
     }
 }

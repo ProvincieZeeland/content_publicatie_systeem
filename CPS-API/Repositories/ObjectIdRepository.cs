@@ -32,7 +32,6 @@ namespace CPS_API.Repositories
     public class ObjectIdRepository : IObjectIdRepository
     {
         private const string prefix = "ZLD";
-        private const string seperator = ";";
         private readonly ISettingsRepository _settingsRepository;
         private readonly StorageTableService _storageTableService;
         private readonly IDriveRepository _driveRepository;
@@ -111,17 +110,6 @@ namespace CPS_API.Repositories
             return objectId;
         }
 
-        public async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId)
-        {
-            var ids = new ObjectIdentifiers();
-            ids.SiteId = siteId;
-            ids.ListId = listId;
-            ids.ListItemId = listItemId;
-
-            // Get all ids for current location
-            return await FindMissingIds(ids);
-        }
-
         public async Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false)
         {
             ids = await FindMissingIdsBySharePointIds(ids, getAsUser);
@@ -162,9 +150,12 @@ namespace CPS_API.Repositories
 
         private async Task<string> FindMissingDriveIdBySharePointIds(ObjectIdentifiers ids, bool getAsUser)
         {
+            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+
             try
             {
-                var drive = await _driveRepository.GetDriveAsync(ids.SiteId, ids.ListId, getAsUser);
+                var drive = await _driveRepository.GetDriveAsync(ids.SiteId!, ids.ListId!, getAsUser);
                 return drive.Id;
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
@@ -183,9 +174,13 @@ namespace CPS_API.Repositories
 
         private async Task<string> FindMissingDriveItemIdBySharePointIds(ObjectIdentifiers ids, bool getAsUser)
         {
+            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+
             try
             {
-                var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId, ids.ListId, ids.ListItemId, getAsUser: getAsUser);
+                var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser: getAsUser);
                 return driveItem.Id;
             }
             catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -258,7 +253,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private string GetExternalReferenceListId(ObjectIdentifiers ids)
+        private string? GetExternalReferenceListId(ObjectIdentifiers ids)
         {
             var locationMapping = _globalSettings.LocationMapping.Find(item =>
                 item.SiteId == ids.SiteId
@@ -272,6 +267,17 @@ namespace CPS_API.Repositories
             var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
             if (table == null) throw new CpsException($"Table \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
             return table;
+        }
+
+        public async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId)
+        {
+            var ids = new ObjectIdentifiers();
+            ids.SiteId = siteId;
+            ids.ListId = listId;
+            ids.ListItemId = listItemId;
+
+            // Get all ids for current location
+            return await FindMissingIds(ids);
         }
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId)

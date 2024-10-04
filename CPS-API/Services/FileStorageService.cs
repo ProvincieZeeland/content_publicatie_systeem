@@ -140,15 +140,15 @@ namespace CPS_API.Helpers
                 throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
             }
 
-            foreach (var blobItem in taggedBlobItems)
+            var blobNames = taggedBlobItems!.Select(blobItem => blobItem.BlobName);
+            foreach (var blobName in blobNames)
             {
-                var blobName = blobItem.BlobName;
                 var blobClient = containerClient.GetBlobClient(blobName);
                 await blobClient.DeleteAsync();
             }
         }
 
-        private Pageable<TaggedBlobItem>? FindBlobsByTags(BlobContainerClient containerClient, string objectId)
+        private static Pageable<TaggedBlobItem>? FindBlobsByTags(BlobContainerClient containerClient, string objectId)
         {
             var query = $"objectid = '{objectId}'";
             return containerClient.FindBlobsByTags(query);

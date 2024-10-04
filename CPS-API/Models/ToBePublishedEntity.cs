@@ -4,7 +4,7 @@ namespace CPS_API.Models
 {
     public class ToBePublishedEntity : TableEntity
     {
-        public string ObjectId { get; set; }
+        public string ObjectId { get; set; } = string.Empty;
 
         public DateTimeOffset PublicationDate { get; set; }
 

@@ -171,7 +171,7 @@ namespace CPS_API.Controllers
             return Ok(GetUpdatedResponse(result));
         }
 
-        private string GetUpdatedResponse(ExportResponse result)
+        private static string GetUpdatedResponse(ExportResponse result)
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
@@ -233,7 +233,7 @@ namespace CPS_API.Controllers
             return Ok(GetDeletedResponse(result));
         }
 
-        private string GetDeletedResponse(ExportResponse result)
+        private static string GetDeletedResponse(ExportResponse result)
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());

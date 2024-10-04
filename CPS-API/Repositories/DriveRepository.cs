@@ -24,7 +24,7 @@ namespace CPS_API.Repositories
 
         Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
+        Task<DriveItem> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false);
 
         Task<DriveItem?> UpdateContentAsync(string driveId, string driveItemId, Stream fileStream, bool getAsUser = false);
 
@@ -140,7 +140,7 @@ namespace CPS_API.Repositories
             return await request.Select("sharepointids").GetAsync();
         }
 
-        public async Task<DriveItem?> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false)
+        public async Task<DriveItem> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false)
         {
             if (fileStream.Length > 0)
             {
@@ -244,7 +244,7 @@ namespace CPS_API.Repositories
             return await request.UpdateAsync(driveItem);
         }
 
-        private void HandleFailedPoll(AsyncOperationStatusResult asyncOperationStatus)
+        private static void HandleFailedPoll(AsyncOperationStatusResult asyncOperationStatus)
         {
             object? message = null;
             object? error = null;
@@ -255,9 +255,10 @@ namespace CPS_API.Repositories
             }
 
             // Return error message to be handled further in the controller
-            if (error == null) throw new ServiceException(new Error { Code = "generalException", Message = message as string });
+            var errorAsStr = error?.ToString();
+            if (errorAsStr == null) throw new ServiceException(new Error { Code = "generalException", Message = message as string });
 
-            var errorResult = JsonConvert.DeserializeObject<RequestErrorResult>(error.ToString());
+            var errorResult = JsonConvert.DeserializeObject<RequestErrorResult>(errorAsStr);
             if (errorResult == null) throw new CpsException("Error while poll for operation completion");
             throw new CpsException(errorResult.Message);
         }
@@ -404,6 +405,7 @@ namespace CPS_API.Repositories
                 try
                 {
                     var queryOptions = GetDeltaQueryOptions(tokens, driveId);
+                    if (queryOptions == null) throw new CpsException("Error while getting query token");
                     delta = await GetDeltaAsync(driveId, queryOptions, getAsUser);
                     driveItems.AddRange(delta.CurrentPage.Select(i => MapDriveItemToDeltaItem(driveId, i)));
 
@@ -435,7 +437,7 @@ namespace CPS_API.Repositories
             );
         }
 
-        private List<QueryOption>? GetDeltaQueryOptions(Dictionary<string, string> tokens, string driveId)
+        private static List<QueryOption>? GetDeltaQueryOptions(Dictionary<string, string> tokens, string driveId)
         {
             var gettingTokenSucceeded = tokens.TryGetValue(driveId, out var token);
             if (!gettingTokenSucceeded)
@@ -471,12 +473,11 @@ namespace CPS_API.Repositories
         private static string? GetDeltaNextToken(IDriveItemDeltaCollectionPage delta)
         {
             var nextTokenExists = delta.AdditionalData.TryGetValue("@odata.deltaLink", out var nextTokenCall);
-            if (!nextTokenExists)
-            {
-                return null;
-            }
+            if (!nextTokenExists || nextTokenCall == null) return null;
+            var nextTokenCallAsStr = nextTokenCall.ToString();
+            if (nextTokenCallAsStr == null) return null;
             var pattern = @".*\?token=(.*)";
-            var match = Regex.Match(nextTokenCall.ToString(), pattern);
+            var match = Regex.Match(nextTokenCallAsStr, pattern);
             if (!match.Success || match.Groups.Count < 2)
             {
                 return null;

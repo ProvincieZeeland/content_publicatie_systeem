@@ -33,7 +33,7 @@ namespace CPS_API.Helpers
 
         public static bool HasFormDataContentDisposition(ContentDispositionHeaderValue contentDisposition)
         {
-            // Content-Disposition: form-data; name="key";
+            // Content-Disposition: form-data; name="key";//NOSONAR
             return contentDisposition != null
                 && contentDisposition.DispositionType.Equals(Constants.DispositionTypeFormData)
                 && string.IsNullOrEmpty(contentDisposition.FileName.Value)

@@ -85,7 +85,7 @@ namespace CPS_API.Repositories
             return request;
         }
 
-        private async Task TrackCallbackExceptionAsync(Exception exception, string body, HttpRequestMessage request = null, HttpResponseMessage response = null)
+        private async Task TrackCallbackExceptionAsync(Exception exception, string body, HttpRequestMessage? request = null, HttpResponseMessage? response = null)
         {
             var properties = new Dictionary<string, string>
             {

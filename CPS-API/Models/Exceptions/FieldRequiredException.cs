@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models.Exceptions
 {
-    public class FieldRequiredException : Exception
+    public class FieldRequiredException : Exception//NOSONAR
     {
         public FieldRequiredException()
         {

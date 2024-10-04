@@ -8,14 +8,14 @@
 
         public CallbackCpsFile()
         {
-            this.ObjectId = string.Empty;
-            this.Metadata = new CallbackFileInformation();
+            ObjectId = string.Empty;
+            Metadata = new CallbackFileInformation();
         }
 
         public CallbackCpsFile(CpsFile file)
         {
-            this.ObjectId = file.Metadata?.Ids?.ObjectId ?? string.Empty;
-            this.Metadata = new CallbackFileInformation(file.Metadata);
+            ObjectId = file.Metadata?.Ids?.ObjectId ?? string.Empty;
+            Metadata = file.Metadata == null ? new CallbackFileInformation() : new CallbackFileInformation(file.Metadata);
         }
     }
 }

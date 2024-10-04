@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using CPS_Jobs.Helpers;
-using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Azure.Functions.Worker;
 
 namespace CPS_Jobs
 {
@@ -20,7 +20,7 @@ namespace CPS_Jobs
             _appService = appService;
         }
 
-        [FunctionName("SynchronisationFunction")]
+        [Function("SynchronisationFunction")]
         public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer, ILogger log)
         {
             log.LogInformation($"CPS Timer trigger function started at: {DateTime.Now}");

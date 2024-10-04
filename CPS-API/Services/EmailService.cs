@@ -1,4 +1,6 @@
-﻿using Microsoft.Graph;
+﻿using CPS_API.Models.Exceptions;
+using Microsoft.Graph;
+using Microsoft.IdentityModel.Tokens;
 using StringHelper = CPS_API.Helpers.StringHelper;
 
 namespace CPS_API.Services
@@ -13,10 +15,11 @@ namespace CPS_API.Services
         public async Task GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem)
         {
             var email = GetAuthorEmail(listItem.CreatedBy);
-            await SendMailAsync(subject, content, email);
+            if (email.IsNullOrEmpty()) throw new CpsException("No email found to send mail");
+            await SendMailAsync(subject, content, email!);
         }
 
-        private string GetAuthorEmail(IdentitySet identity)
+        private static string? GetAuthorEmail(IdentitySet identity)
         {
             if (identity == null || identity.User == null)
             {
@@ -25,9 +28,9 @@ namespace CPS_API.Services
             return StringHelper.GetStringValueOrDefault(identity.User.AdditionalData, "email");
         }
 
-        private async Task SendMailAsync(string subject, string content, string email)
+        private static async Task SendMailAsync(string subject, string content, string email)//NOSONAR
         {
-            var message = new Message
+            var message = new Message//NOSONAR
             {
                 Subject = subject,
                 Body = new ItemBody

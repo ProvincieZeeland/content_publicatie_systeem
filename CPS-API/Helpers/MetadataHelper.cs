@@ -21,7 +21,7 @@ namespace CPS_API.Helpers
             }
             if (fieldMapping.FieldName.Equals(nameof(ObjectIdentifiers.ObjectId), StringComparison.InvariantCultureIgnoreCase))
             {
-                return metadata?.Ids?.GetType().GetProperty(fieldMapping.FieldName);
+                return metadata.Ids?.GetType().GetProperty(fieldMapping.FieldName);
             }
             else if (FieldIsMainMetadata(fieldMapping.FieldName))
             {
@@ -73,6 +73,30 @@ namespace CPS_API.Helpers
             return value;
         }
 
+        public static bool SkipFieldForXml(PropertyInfo propertyInfo)
+        {
+            var fieldNamesToSkip = GetFieldNamesToSkipForXml();
+            if (fieldNamesToSkip.Contains(propertyInfo.Name)) return true;
+
+            if (propertyInfo.PropertyType == typeof(ObjectIdentifiers)) return true;
+
+            if (propertyInfo.PropertyType == typeof(List<ExternalReferences>)) return true;
+
+            return false;
+        }
+
+        public static List<string> GetFieldNamesToSkipForXml()
+        {
+            return new List<string>
+            {
+                Constants.ItemPropertyInfoName,
+                nameof(FileInformation.CreatedBy),
+                nameof(FileInformation.ModifiedBy),
+                nameof(FileInformation.SourceCreatedBy),
+                nameof(FileInformation.SourceModifiedBy)
+            };
+        }
+
         public static bool FieldIsMainMetadata(string name)
         {
             var mainMetadataFieldNames = GetMainMetadataFieldNames();
@@ -103,7 +127,8 @@ namespace CPS_API.Helpers
 
             if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
             {
-                if (fieldMapping.DefaultValue.ToString().Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
+                var defaultValue = fieldMapping.DefaultValue.ToString();
+                if (defaultValue != null && defaultValue.Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
                 {
                     return DateTimeOffset.Now;
                 }
@@ -125,7 +150,7 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, out var dateTimeValue))
+                if (!DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out var dateTimeValue))
                 {
                     return true;
                 }

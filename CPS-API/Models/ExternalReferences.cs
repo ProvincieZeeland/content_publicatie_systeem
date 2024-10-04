@@ -5,7 +5,7 @@ namespace CPS_API.Models
 {
     public class ExternalReferences
     {
-        public string ExternalApplication { get; set; }
+        public string ExternalApplication { get; set; } = string.Empty;
 
         public string ExternalReference { get; set; } = string.Empty;
 

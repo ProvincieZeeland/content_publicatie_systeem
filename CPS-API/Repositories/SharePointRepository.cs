@@ -5,6 +5,7 @@ using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
 using PnP.Core.Model.SharePoint;
@@ -64,20 +65,24 @@ namespace CPS_API.Services
 
         public async Task UpdateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            var site = await GetSiteAsync(metadata.Ids.SiteId, getAsUser);
+            if (metadata.Ids!.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (metadata.Ids!.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (metadata.Ids!.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+
+            var site = await GetSiteAsync(metadata.Ids.SiteId!, getAsUser);
 
             // Graph does not support full Term management yet, using PnP for SPO API instead
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
 
-            var termStore = GetAllTerms(context, metadata.Ids.SiteId);
+            var termStore = GetAllTerms(context, metadata.Ids.SiteId!);
             if (termStore == null) throw new CpsException("Term store not found!");
 
             var newValues = GetNewMetadataTermValues(termStore, metadata, isForNewFile, ignoreRequiredFields);
 
             // actually update fields
-            UpdateTermFields(metadata.Ids.ListId, metadata.Ids.ListItemId, context, newValues);
+            UpdateTermFields(metadata.Ids.ListId!, metadata.Ids.ListItemId!, context, newValues);
         }
 
         private Dictionary<string, FieldTaxonomyValue> GetNewMetadataTermValues(TermGroup termStore, FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
@@ -91,6 +96,7 @@ namespace CPS_API.Services
                 }
 
                 var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping, metadata);
+                if (propertyInfo == null) throw new CpsException($"FieldMapping {fieldMapping.FieldName} not found!");
                 var value = MetadataHelper.GetMetadataValue(metadata, fieldMapping);
 
                 var newValue = GetNewTermValue(propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields, termStore);
@@ -104,7 +110,7 @@ namespace CPS_API.Services
 
         public async Task UpdateTermsForExternalReferencesAsync(string siteId, string listId, List<ExternalReferenceItem> externalReferenceItems, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            if (listId == null) throw new ArgumentNullException("metadata.ExternalReferences");
+            ArgumentNullException.ThrowIfNull(nameof(listId));
 
             var site = await GetSiteAsync(siteId, getAsUser);
 
@@ -236,7 +242,7 @@ namespace CPS_API.Services
 
         private TermGroup? GetAllTerms(ClientContext context, string siteId)
         {
-            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermGroup + siteId, out TermGroup cacheValue))
+            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermGroup + siteId, out TermGroup? cacheValue))
             {
                 var taxonomySession = TaxonomySession.GetTaxonomySession(context);
                 var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();

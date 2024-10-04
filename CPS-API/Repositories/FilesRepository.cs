@@ -180,7 +180,7 @@ namespace CPS_API.Repositories
         private async Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
             if (metadata == null) throw new ArgumentNullException(nameof(metadata));
-            if (metadata.AdditionalMetadata == null) throw new ArgumentNullException(nameof(metadata.AdditionalMetadata));
+            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
 
             // Get driveid or site matching classification & source
             var locationMapping = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
@@ -219,36 +219,6 @@ namespace CPS_API.Repositories
             return await HandleCreatedFile(metadata, formFile != null);
         }
 
-        private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
-        {
-            var stream = fileStream;
-            if (formFile != null)
-            {
-                stream = formFile.OpenReadStream();
-            }
-            else if (content != null)
-            {
-                stream = new MemoryStream(content);
-                if (stream.Length > 0)
-                {
-                    stream.Position = 0;
-                }
-            }
-            using (stream)
-            {
-                return await CreateFileAsync(drive.Id, metadata.FileName, stream);
-            }
-        }
-
-        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(Drive drive, DriveItem driveItem, LocationMapping locationMapping)
-        {
-            var ids = new ObjectIdentifiers();
-            ids.DriveId = drive.Id;
-            ids.DriveItemId = driveItem.Id;
-            ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
-            return await _objectIdRepository.FindMissingIds(ids);
-        }
-
         private async Task<DriveItem> CreateFileAsync(string driveId, string fileName, Stream fileStream)
         {
             if (fileStream.Length > 0)
@@ -261,8 +231,52 @@ namespace CPS_API.Repositories
             }
         }
 
+        private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
+        {
+            if (metadata.FileName.IsNullOrEmpty()) throw new CpsException("No filename found for creating file");
+
+            Stream stream;
+            if (formFile != null)
+            {
+                stream = formFile.OpenReadStream();
+            }
+            else if (content != null)
+            {
+                stream = new MemoryStream(content);
+                if (stream.Length > 0)
+                {
+                    stream.Position = 0;
+                }
+            }
+            else if (fileStream != null)
+            {
+                stream = fileStream;
+            }
+            else
+            {
+                throw new CpsException("No stream found for creating file");
+            }
+            using (stream)
+            {
+                return await CreateFileAsync(drive.Id, metadata.FileName!, stream);
+            }
+        }
+
+        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(Drive drive, DriveItem driveItem, LocationMapping locationMapping)
+        {
+            var ids = new ObjectIdentifiers();
+            ids.DriveId = drive.Id;
+            ids.DriveItemId = driveItem.Id;
+            ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
+            return await _objectIdRepository.FindMissingIds(ids);
+        }
+
         private async Task<ObjectIdentifiers> HandleCreatedFile(FileInformation metadata, bool ignoreRequiredFields = false)
         {
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+            if (metadata.Ids.DriveId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveId)} found for {nameof(FileInformation.Ids)}");
+            if (metadata.Ids.DriveItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveItemId)} found for {nameof(FileInformation.Ids)}");
+
             // Generate objectId
             try
             {
@@ -274,7 +288,7 @@ namespace CPS_API.Repositories
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 throw new CpsException("Error while generating ObjectId", ex);
             }
@@ -287,14 +301,14 @@ namespace CPS_API.Repositories
             catch (FieldRequiredException)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 throw;
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 throw new CpsException("Error while updating metadata", ex);
             }
@@ -307,14 +321,14 @@ namespace CPS_API.Repositories
             catch (FieldRequiredException)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 throw;
             }
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 throw new CpsException("Error while updating external references", ex);
             }
@@ -328,7 +342,7 @@ namespace CPS_API.Repositories
             catch (Exception ex)
             {
                 // Remove file from Sharepoint
-                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                await _driveRepository.DeleteFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
 
                 if (ex is ObjectIdAlreadyExistsException) throw;
                 throw new CpsException("Error while updating additional IDs", ex);

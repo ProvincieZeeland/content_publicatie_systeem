@@ -94,7 +94,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var boolParsed = DateTimeOffset.TryParse(stringValue, out var boolValue);
+                var boolParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out var boolValue);
                 if (boolParsed)
                 {
                     property.SetValue(parent, boolValue, null);
@@ -165,8 +165,8 @@ namespace CPS_API.Helpers
 
         private static bool IntegerPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var stringDefaultValue = defaultValue.ToString();
+            var stringValue = value?.ToString();
+            var stringDefaultValue = defaultValue?.ToString();
             var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
             var decimalDefaultValue = Convert.ToDecimal(stringDefaultValue, new CultureInfo("en-US"));
             if (decimalValue != decimalDefaultValue)
@@ -178,15 +178,15 @@ namespace CPS_API.Helpers
 
         private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var dateParsed = DateTimeOffset.TryParse(stringValue, out DateTimeOffset dateTimeValue);
+            var stringValue = value?.ToString();
+            var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out DateTimeOffset dateTimeValue);
             DateTimeOffset? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
-            var stringDefaultValue = defaultValue.ToString();
-            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, out DateTimeOffset dateTimeDefaultValue);
+            var stringDefaultValue = defaultValue?.ToString();
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, new CultureInfo("en-US"), out DateTimeOffset dateTimeDefaultValue);
             DateTimeOffset? nullableDateDefaultValue = null;
             if (dateParsed)
             {
@@ -201,8 +201,8 @@ namespace CPS_API.Helpers
 
         private static bool StringPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var stringDefaultValue = defaultValue.ToString();
+            var stringValue = value?.ToString();
+            var stringDefaultValue = defaultValue?.ToString();
             if (stringValue != stringDefaultValue)
             {
                 return true;

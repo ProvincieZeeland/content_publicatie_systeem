@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models.Exceptions
 {
-    public class NameAlreadyExistsException : Exception
+    public class NameAlreadyExistsException : Exception//NOSONAR
     {
         public NameAlreadyExistsException()
         {

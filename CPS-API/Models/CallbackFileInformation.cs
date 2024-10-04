@@ -32,7 +32,7 @@
             ModifiedOn = fileInfo.ModifiedOn ?? DateTimeOffset.MinValue;
             SourceCreatedOn = fileInfo.SourceCreatedOn ?? DateTimeOffset.MinValue;
             SourceModifiedOn = fileInfo.SourceModifiedOn ?? DateTimeOffset.MinValue;
-            AdditionalMetadata = new CallbackFileMetadata(fileInfo.AdditionalMetadata);
+            AdditionalMetadata = fileInfo.AdditionalMetadata == null ? new CallbackFileMetadata() : new CallbackFileMetadata(fileInfo.AdditionalMetadata);
         }
     }
 }

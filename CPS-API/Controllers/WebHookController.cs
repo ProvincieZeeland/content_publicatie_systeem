@@ -1,6 +1,5 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using CPS_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,16 +15,13 @@ namespace CPS_API.Controllers
     {
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
-        private readonly ISharePointRepository _sharePointRepository;
 
         public WebHookController(
             IOptions<GlobalSettings> settings,
-            IWebHookRepository webHookRepository,
-            ISharePointRepository sharePointRepository)
+            IWebHookRepository webHookRepository)
         {
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
-            _sharePointRepository = sharePointRepository;
         }
 
         [HttpPut]

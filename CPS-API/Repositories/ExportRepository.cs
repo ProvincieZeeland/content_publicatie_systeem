@@ -358,6 +358,7 @@ namespace CPS_API.Repositories
 
         private async Task CreateContentAsync(ObjectIdentifiersEntity objectIdentifiersEntity, FileInformation metadata, Stream stream)
         {
+            if (metadata.MimeType == null) throw new CpsException($"No {nameof(FileInformation.MimeType)} found for {nameof(metadata)}");
             try
             {
                 var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
@@ -530,7 +531,9 @@ namespace CPS_API.Repositories
                 succeeded = await UploadFileAndXmlToFileStorageAsync(objectIdentifiersEntity);
             }
 
-            var traceSynchronisationPart = synchronisationType == SynchronisationType.create ? "New" : synchronisationType == SynchronisationType.update ? "Updated" : "Deleted";
+            var traceSynchronisationPart = "Deleted";
+            if (synchronisationType == SynchronisationType.create) traceSynchronisationPart = "New";
+            if (synchronisationType == SynchronisationType.update) traceSynchronisationPart = "Updated";
             if (!succeeded)
             {
                 _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");

@@ -5,7 +5,7 @@ namespace CPS_API.Models
     public class WebHookNotification
     {
         [JsonProperty(PropertyName = "subscriptionId")]
-        public string SubscriptionId { get; set; }
+        public string SubscriptionId { get; set; } = string.Empty;
 
         [JsonProperty(PropertyName = "clientState")]
         public string? ClientState { get; set; }
@@ -14,15 +14,15 @@ namespace CPS_API.Models
         public DateTime ExpirationDateTime { get; set; }
 
         [JsonProperty(PropertyName = "resource")]
-        public string Resource { get; set; }
+        public string Resource { get; set; } = string.Empty;
 
         [JsonProperty(PropertyName = "tenantId")]
-        public string TenantId { get; set; }
+        public string TenantId { get; set; } = string.Empty;
 
         [JsonProperty(PropertyName = "siteUrl")]
-        public string SiteUrl { get; set; }
+        public string SiteUrl { get; set; } = string.Empty;
 
         [JsonProperty(PropertyName = "webId")]
-        public string WebId { get; set; }
+        public string WebId { get; set; } = string.Empty;
     }
 }

@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models
 {
-    public class Constants
+    public static class Constants
     {
         public const string SettingsSequenceField = "SequenceNumber";
         public const string SettingsLastSynchronisationNewField = "LastSynchronisationNew";

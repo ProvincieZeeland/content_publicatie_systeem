@@ -9,7 +9,7 @@ namespace CPS_API.Repositories
 {
     public interface ISettingsRepository
     {
-        Task<T> GetSetting<T>(string fieldName);
+        Task<T?> GetSetting<T>(string fieldName);
 
         Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName);
 
@@ -44,16 +44,15 @@ namespace CPS_API.Repositories
             return currentSetting;
         }
 
-        public async Task<T> GetSetting<T>(string fieldName)
+        public async Task<T?> GetSetting<T>(string fieldName)
         {
             var currentSetting = await GetCurrentSettings();
             return FieldPropertyHelper.GetFieldValue<T>(currentSetting, fieldName);
-
         }
 
         public async Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName)
         {
-            string value = await GetSetting<string>(fieldName);
+            var value = await GetSetting<string>(fieldName);
             if (string.IsNullOrEmpty(value)) return new Dictionary<string, string>();
             return value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
@@ -156,19 +155,20 @@ namespace CPS_API.Repositories
                     }
 
                     // Get new sequence number after acquiring lease.
-                    var setting = await GetCurrentSettings();
+                    var settings = await GetCurrentSettings();
+                    if (settings == null) throw new CpsException("Error while getting settings");
                     try
                     {
-                        if (!setting.SequenceNumber.HasValue) setting.SequenceNumber = 1;
-                        else setting.SequenceNumber++;
+                        if (!settings.SequenceNumber.HasValue) settings.SequenceNumber = 1;
+                        else settings.SequenceNumber++;
 
-                        await SaveSettingsAsync(setting);
+                        await SaveSettingsAsync(settings);
                     }
                     finally
                     {
                         await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                     }
-                    return setting.SequenceNumber;
+                    return settings.SequenceNumber;
                 }
                 catch (AcquiringLeaseException)
                 {

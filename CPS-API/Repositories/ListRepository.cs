@@ -145,11 +145,10 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                if (ex is ServerException)
+                if (ex is ServerException serverEx)
                 {
                     // The Exception that is thrown when ChangeTokenStart is invalid:
                     //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
-                    var serverEx = ex as ServerException;
                     if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
                     || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
                     || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
@@ -186,7 +185,7 @@ namespace CPS_API.Repositories
             return changes;
         }
 
-        private async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointClientList list, string lastChangeToken)
+        private static async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointClientList list, string lastChangeToken)
         {
             ChangeQuery query = new ChangeQuery(false, false)
             {
@@ -225,7 +224,7 @@ namespace CPS_API.Repositories
             return changeCollection;
         }
 
-        private List<SharePointListItemDelta> getDeltaListItems(ChangeCollection changes)
+        private static List<SharePointListItemDelta> getDeltaListItems(ChangeCollection changes)
         {
             var deltaListItems = new List<SharePointListItemDelta>();
             foreach (var change in changes)

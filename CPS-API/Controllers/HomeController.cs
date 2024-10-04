@@ -201,12 +201,22 @@ namespace CPS_API.Controllers
 
     public class ErrorViewModel
     {
-        public string RequestId { get; set; }
+        public string RequestId { get; set; } = string.Empty;
 
         public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
-        public string ErrorMessage { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
 
-        public bool ShowErrorMessage => !string.IsNullOrEmpty(ErrorMessage);
+        public bool ShowErrorMessage
+        {
+            get
+            {
+#if DEBUG
+                return !string.IsNullOrEmpty(ErrorMessage);
+#else
+                return false;
+#endif
+            }
+        }
     }
 }

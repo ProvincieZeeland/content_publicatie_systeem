@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
@@ -22,7 +22,7 @@ namespace CPS_Jobs
             _configuration = config;
         }
 
-        [FunctionName("HandleWebHookQueue")]
+        [Function("HandleWebHookQueue")]
         public async Task Run(
             [QueueTrigger("sharepointlistwebhooknotifications")] string myQueueItem,
             ILogger log)
