@@ -1,9 +1,10 @@
 using System;
 using System.Threading.Tasks;
 using CPS_Jobs.Helpers;
+using CPS_Jobs.Models;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Azure.Functions.Worker;
 
 namespace CPS_Jobs
 {
@@ -27,8 +28,8 @@ namespace CPS_Jobs
             string scope = _configuration.GetValue<string>("Settings:Scope");
             string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
 
-            if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
-            if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
+            if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
+            if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");
 
             await _appService.callService(baseUrl, scope, "/Export/publish", log);
         }

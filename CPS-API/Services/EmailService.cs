@@ -7,16 +7,16 @@ namespace CPS_API.Services
 {
     public interface IEmailService
     {
-        Task GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem);
+        void GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem);
     }
 
     public class EmailService : IEmailService
     {
-        public async Task GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem)
+        public void GetAuthorEmailAndSendMailAsync(string subject, string content, ListItem listItem)
         {
             var email = GetAuthorEmail(listItem.CreatedBy);
             if (email.IsNullOrEmpty()) throw new CpsException("No email found to send mail");
-            await SendMailAsync(subject, content, email!);
+            SendMailAsync(subject, content, email!);
         }
 
         private static string? GetAuthorEmail(IdentitySet identity)
@@ -28,7 +28,7 @@ namespace CPS_API.Services
             return StringHelper.GetStringValueOrDefault(identity.User.AdditionalData, "email");
         }
 
-        private static async Task SendMailAsync(string subject, string content, string email)//NOSONAR
+        private static void SendMailAsync(string subject, string content, string email)
         {
             var message = new Message//NOSONAR
             {

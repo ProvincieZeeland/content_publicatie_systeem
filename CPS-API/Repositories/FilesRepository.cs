@@ -130,7 +130,7 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateLargeFileAsync(string source, string classification, IFormFile formFile)
         {
-            if (formFile == null) throw new ArgumentNullException(nameof(formFile));
+            ArgumentNullException.ThrowIfNull(nameof(formFile));
             var file = GetNewLargeFile(source, classification, formFile);
             return await CreateFileAsync(file.Metadata, formFile: formFile);
         }
@@ -167,19 +167,19 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateFileByBytesAsync(FileInformation metadata, byte[] content)
         {
-            if (content == null) throw new ArgumentNullException(nameof(content));
+            ArgumentNullException.ThrowIfNull(nameof(content));
             return await CreateFileAsync(metadata, content: content);
         }
 
         public async Task<ObjectIdentifiers> CreateFileByStreamAsync(FileInformation metadata, Stream fileStream)
         {
-            if (fileStream == null) throw new ArgumentNullException(nameof(fileStream));
+            ArgumentNullException.ThrowIfNull(nameof(fileStream));
             return await CreateFileAsync(metadata, fileStream: fileStream);
         }
 
         private async Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
-            if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
 
             // Get driveid or site matching classification & source

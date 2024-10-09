@@ -4,11 +4,11 @@
     {
         public static string? GetStringValueOrDefault(IDictionary<string, object> AdditionalData, string key)
         {
-            if (AdditionalData == null || !AdditionalData.ContainsKey(key))
+            if (AdditionalData == null || !AdditionalData.TryGetValue(key, out var value))
             {
                 return "";
             }
-            return AdditionalData[key].ToString();
+            return value.ToString();
         }
     }
 }

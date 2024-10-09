@@ -24,7 +24,7 @@ namespace CPS_API.Repositories
 
         Task<List<ListItem>?> GetListItemsAsync(string siteId, string listId, string fieldName, string fieldValue, bool getAsUser = false);
 
-        Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken);
+        Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken);
     }
 
     public class ListRepository : IListRepository
@@ -129,7 +129,7 @@ namespace CPS_API.Repositories
             return list;
         }
 
-        public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken)
+        public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken)
         {
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
@@ -145,18 +145,9 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                if (ex is ServerException serverEx)
+                if (ex is ServerException serverEx && !IsValidChangeToken(serverEx))
                 {
-                    // The Exception that is thrown when ChangeTokenStart is invalid:
-                    //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
-                    if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
-                    || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
-                    || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
-                    || ((serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenTimeErrorCode)
-                    || ((serverEx.Message.Equals(Constants.InvalidChangeTokenWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenWrongObjectErrorCode))
-                    {
-                        throw new CpsException("Invalid ChangeToken");
-                    }
+                    throw new CpsException("Invalid ChangeToken");
                 }
 
                 _telemetryClient.TrackException(new CpsException($"Error while getting list changes {siteUrl}", ex));
@@ -167,14 +158,29 @@ namespace CPS_API.Repositories
             return FilterChangesOnDeletedAndUnique(changes);
         }
 
-        private async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointClientList list, string changeToken)
+        private static bool IsValidChangeToken(ServerException serverEx)
+        {
+            // The Exception that is thrown when ChangeTokenStart is invalid:
+            //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
+            if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
+            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenTimeErrorCode)
+            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenWrongObjectErrorCode))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private static async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointClientList list, string? changeToken)
         {
             ChangeCollection changeCollection;
             var changes = new SharePointListItemsDelta
             {
-                Items = new List<SharePointListItemDelta>(),
-                NewChangeToken = changeToken
+                Items = []
             };
+            if (changeToken != null) changes.NewChangeToken = changeToken;
             do
             {
                 changeCollection = await GetListChangesAsync(context, list, changes.NewChangeToken);

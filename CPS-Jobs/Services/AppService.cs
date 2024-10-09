@@ -24,18 +24,16 @@ namespace CPS_Jobs.Helpers
         {
             try
             {
-                HttpResponseMessage response;
                 string token = await _tokenAcquisition.GetAccessTokenForAppAsync(scope);
-                using (var client = new HttpClient())
-                {
-                    var method = HttpMethod.Get;
-                    var request = new HttpRequestMessage(method, baseUrl + url);
-                    request.Headers.Accept.Clear();
-                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                using var client = new HttpClient();
 
-                    response = await client.SendAsync(request);
-                }
+                var method = HttpMethod.Get;
+                var request = new HttpRequestMessage(method, baseUrl + url);
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                await client.SendAsync(request);
             }
             catch
             {

@@ -126,9 +126,9 @@ namespace CPS_API.Controllers
             var properties = new Dictionary<string, string>
             {
                 ["ObjectId"] = "",
-                ["FileName"] = file.Metadata.FileName,
-                ["Source"] = file.Metadata.AdditionalMetadata.Source,
-                ["Classification"] = file.Metadata.AdditionalMetadata.Classification
+                ["FileName"] = file.Metadata.FileName!,
+                ["Source"] = file.Metadata.AdditionalMetadata!.Source,
+                ["Classification"] = file.Metadata.AdditionalMetadata!.Classification!
             };
 
             string? objectId;

@@ -542,7 +542,7 @@ namespace CPS_API.Repositories
 
         public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, FileInformation metadata, bool getAsUser = false)
         {
-            if (metadata == null) throw new ArgumentNullException("metadata");
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
             if (metadata.Ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
             if (metadata.Ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
@@ -684,7 +684,7 @@ namespace CPS_API.Repositories
             return fields;
         }
 
-        private object? GetValue(FieldMapping fieldMapping, object? value, PropertyInfo propertyInfo, bool isForNewFile = false, bool ignoreRequiredFields = false)
+        private static object? GetValue(FieldMapping fieldMapping, object? value, PropertyInfo propertyInfo, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
             // Get default value
             var defaultValue = MetadataHelper.GetMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
@@ -714,7 +714,7 @@ namespace CPS_API.Repositories
 
         private List<ExternalReferenceItem> MapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
-            if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 

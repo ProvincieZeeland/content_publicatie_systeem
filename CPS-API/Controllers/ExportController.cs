@@ -98,7 +98,7 @@ namespace CPS_API.Controllers
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while adding file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) to FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
-            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Count == 0 ? "" : "\r\n") + message;
         }
 
         [HttpGet]
@@ -175,7 +175,7 @@ namespace CPS_API.Controllers
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while updating file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) in FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
-            return $"{result.NumberOfSucceededItems} items updated" + (failedItemsStr.Any() ? "\r\n" : "") + message;
+            return $"{result.NumberOfSucceededItems} items updated" + (failedItemsStr.Count == 0 ? "" : "\r\n") + message;
         }
 
         [HttpGet]
@@ -237,7 +237,7 @@ namespace CPS_API.Controllers
         {
             var failedItemsStr = result.FailedItems.Select(item => $"Error while deleting file (DriveId: {item.DriveId}, DriveItemId: {item.Id}) from FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
-            return $"{result.NumberOfSucceededItems} items deleted" + (failedItemsStr.Any() ? "\r\n" : "") + message;
+            return $"{result.NumberOfSucceededItems} items deleted" + (failedItemsStr.Count == 0 ? "" : "\r\n") + message;
         }
 
         // GET
@@ -263,7 +263,7 @@ namespace CPS_API.Controllers
         {
             var failedItemsStr = result.FailedItems.Select(id => $"Error while adding file (ObjectId: {id}) to FileStorage.\r\n").ToList();
             var message = String.Join(",", failedItemsStr.Select(x => x.ToString()).ToArray());
-            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Any() ? "\r\n" : "") + message;
+            return $"{result.NumberOfSucceededItems} items added" + (failedItemsStr.Count == 0 ? "" : "\r\n") + message;
         }
     }
 }

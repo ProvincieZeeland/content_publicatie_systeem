@@ -275,7 +275,7 @@ namespace CPS_API.Repositories
                 using (var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, monitorUrl))
                 {
                     using var responseMessage = await _restClient.HttpRequestAsync(httpRequestMessage).ConfigureAwait(false);
-                    using var responseStream = await responseMessage.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    using var responseStream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                     asyncOperationStatus = _graphClient.HttpProvider.Serializer.DeserializeObject<AsyncOperationStatusResult>(responseStream);
 
                     if (asyncOperationStatus == null) throw new ServiceException(new Error { Code = "generalException", Message = "Error retrieving monitor status." });

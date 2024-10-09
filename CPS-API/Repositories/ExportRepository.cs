@@ -34,17 +34,7 @@ namespace CPS_API.Repositories
 
         private readonly TelemetryClient _telemetryClient;
 
-        public ExportRepository(
-            IDriveRepository driveRepository,
-            ISettingsRepository settingsRepository,
-            IMetadataRepository sharePointRepository,
-            IObjectIdRepository objectIdRepository,
-            IPublicationRepository publicationRepository,
-            ICallbackRepository callbackRepository,
-            FileStorageService fileStorageService,
-            XmlExportSerivce xmlExportSerivce,
-            IOptions<GlobalSettings> settings,
-            TelemetryClient telemetryClient)
+        public ExportRepository(IDriveRepository driveRepository, ISettingsRepository settingsRepository, IMetadataRepository sharePointRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient)//NOSONAR
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
