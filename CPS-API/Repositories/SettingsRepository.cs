@@ -4,6 +4,7 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
 
 namespace CPS_API.Repositories
 {
@@ -143,16 +144,7 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    // Create blob for acquiring lease.
-                    var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
-                    await blob.UploadTextAsync("");
-
-                    // Acquire lease.
-                    var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
-                    if (string.IsNullOrEmpty(leaseId))
-                    {
-                        throw new AcquiringLeaseException("Error while acquiring lease");
-                    }
+                    (CloudBlockBlob blob, string leaseId) = await GetLeaseId(leaseContainer);
 
                     // Get new sequence number after acquiring lease.
                     var settings = await GetCurrentSettings();
@@ -186,6 +178,18 @@ namespace CPS_API.Repositories
             }
             s.Stop();
             return null;
+        }
+
+        private async Task<(CloudBlockBlob, string)> GetLeaseId(CloudBlobContainer leaseContainer)
+        {
+            // Create blob for acquiring lease.
+            var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
+            await blob.UploadTextAsync("");
+
+            // Acquire lease.
+            var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
+            if (string.IsNullOrEmpty(leaseId)) throw new AcquiringLeaseException("Error while acquiring lease");
+            return (blob, leaseId);
         }
     }
 }

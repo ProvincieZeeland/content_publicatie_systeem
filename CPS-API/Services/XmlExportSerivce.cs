@@ -3,6 +3,7 @@ using System.Xml;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Services
 {
@@ -34,19 +35,7 @@ namespace CPS_API.Services
 
                     if (propertyInfo.PropertyType == typeof(FileMetadata))
                     {
-                        var value = propertyInfo.GetValue(metadata);
-                        if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
-                        foreach (var secondPropertyInfo in value.GetType().GetProperties())
-                        {
-                            if (secondPropertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
-                                || secondPropertyInfo.Name.Equals(nameof(FileMetadata.Source), StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                continue;
-                            }
-                            writer.WriteStartElement(secondPropertyInfo.Name);
-                            writer.WriteString(GetPropertyValue(secondPropertyInfo, value));
-                            writer.WriteEndElement();
-                        }
+                        WriteFileMetadataToXml(propertyInfo, metadata, writer);
                     }
                     else
                     {
@@ -62,6 +51,23 @@ namespace CPS_API.Services
                 writer.Close();
             }
             return sw.ToString();
+        }
+
+        private void WriteFileMetadataToXml(PropertyInfo propertyInfo, FileInformation metadata, XmlWriter writer)
+        {
+            var value = propertyInfo.GetValue(metadata);
+            if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
+            foreach (var secondPropertyInfo in value.GetType().GetProperties())
+            {
+                if (secondPropertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
+                    || secondPropertyInfo.Name.Equals(nameof(FileMetadata.Source), StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+                writer.WriteStartElement(secondPropertyInfo.Name);
+                writer.WriteString(GetPropertyValue(secondPropertyInfo, value));
+                writer.WriteEndElement();
+            }
         }
 
         private string? GetPropertyValue(PropertyInfo? propertyInfo, object obj)

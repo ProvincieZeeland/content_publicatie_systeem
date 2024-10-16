@@ -590,24 +590,25 @@ namespace CPS_API.Repositories
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
                 var succeeded = additionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
-                if (!succeeded) continue;
-                if (value == null) continue;
+                if (!succeeded || value == null) continue;
 
-                var defaultValue = fieldMapping.DefaultValue;
-                if (defaultValue == null) return true;
+                if (fieldMapping.DefaultValue == null) return true;
 
-                if (fieldMapping.FieldName.Equals(nameof(ids.ObjectId), StringComparison.InvariantCultureIgnoreCase))
-                {
-                    continue;
-                }
+                if (fieldMapping.FieldName.Equals(nameof(ids.ObjectId), StringComparison.InvariantCultureIgnoreCase)) continue;
 
-                var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping);
-                if (propertyInfo == null) throw new CpsException("Error while getting type of metadata");
+                if (PropertyContainsData(value, fieldMapping)) return true;
+            }
+            return false;
+        }
 
-                if (FieldPropertyHelper.PropertyContainsData(value, defaultValue, propertyInfo))
-                {
-                    return true;
-                }
+        private static bool PropertyContainsData(object? value, FieldMapping fieldMapping)
+        {
+            var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping);
+            if (propertyInfo == null) throw new CpsException("Error while getting type of metadata");
+
+            if (FieldPropertyHelper.PropertyContainsData(value, fieldMapping.DefaultValue, propertyInfo))
+            {
+                return true;
             }
             return false;
         }

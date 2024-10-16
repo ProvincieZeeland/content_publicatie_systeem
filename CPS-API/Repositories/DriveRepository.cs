@@ -8,6 +8,7 @@ using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using Constants = CPS_API.Models.Constants;
 using HttpMethods = Microsoft.Graph.HttpMethods;
 
 namespace CPS_API.Repositories
@@ -477,7 +478,7 @@ namespace CPS_API.Repositories
             var nextTokenCallAsStr = nextTokenCall.ToString();
             if (nextTokenCallAsStr == null) return null;
             var pattern = @".*\?token=(.*)";
-            var match = Regex.Match(nextTokenCallAsStr, pattern);
+            var match = Regex.Match(nextTokenCallAsStr, pattern, RegexOptions.IgnoreCase, matchTimeout: Constants.RegexMatchTimeout);
             if (!match.Success || match.Groups.Count < 2)
             {
                 return null;

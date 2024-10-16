@@ -39,5 +39,6 @@
         public const string DropOffMetadataStatusProcessed = "Verwerkt";
         public const string DispositionTypeFormData = "form-data";
         public const string ItemPropertyInfoName = "Item";
+        public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
     }
 }
