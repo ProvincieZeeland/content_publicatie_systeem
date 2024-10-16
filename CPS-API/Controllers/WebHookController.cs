@@ -1,6 +1,5 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -8,7 +7,7 @@ using Newtonsoft.Json;
 
 namespace CPS_API.Controllers
 {
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize]
     [Route("[controller]")]
     [ApiController]
     public class WebHookController : Controller

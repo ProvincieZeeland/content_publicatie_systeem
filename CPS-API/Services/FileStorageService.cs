@@ -2,7 +2,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using CPS_API.Models;
-using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Helpers
 {
@@ -40,7 +39,7 @@ namespace CPS_API.Helpers
             var resultSegment = containerClient.GetBlobsByHierarchyAsync(prefix: folder, delimiter: "/").AsPages(default, 500);
 
             // Enumerate the blobs returned for each page.
-            await foreach (Azure.Page<BlobHierarchyItem> blobPage in resultSegment)
+            await foreach (Page<BlobHierarchyItem> blobPage in resultSegment)
             {
                 // A hierarchical listing may return both virtual directories and blobs.
                 foreach (BlobHierarchyItem blobhierarchyItem in blobPage.Values)
@@ -134,7 +133,7 @@ namespace CPS_API.Helpers
         {
             var containerClient = await GetBlobContainerClient(containerName);
             var taggedBlobItems = FindBlobsByTags(containerClient, objectId);
-            if (taggedBlobItems.IsNullOrEmpty())
+            if (taggedBlobItems == null || !taggedBlobItems.Any())
             {
                 if (deleteIfExists) return;
                 throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");

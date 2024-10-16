@@ -8,12 +8,13 @@ using CPS_API.Models.Exceptions;
 using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Graph;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
+using Microsoft.Kiota.Abstractions.Serialization;
 using PnP.Framework.Extensions;
 using Constants = CPS_API.Models.Constants;
 using FileInformation = CPS_API.Models.FileInformation;
-using ListItem = Microsoft.Graph.ListItem;
+using ListItem = Microsoft.Graph.Models.ListItem;
 
 namespace CPS_API.Repositories
 {
@@ -79,9 +80,9 @@ namespace CPS_API.Repositories
             }
             var ids = new ObjectIdentifiers(objectIdentifiers);
 
-            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser);
 
@@ -128,9 +129,9 @@ namespace CPS_API.Repositories
 
         private async Task<string> GetFileNameAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false)
         {
-            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             try
             {
@@ -186,59 +187,15 @@ namespace CPS_API.Repositories
 
         #region Update
 
-        public async Task<ObjectIdentifiers> CopyAndDeleteFileAsync(FileInformation metadata, LocationMapping locationMapping)
+        private async Task<ObjectIdentifiers> MoveFileAsync(FileInformation metadata, LocationMapping locationMapping)
         {
             ArgumentNullException.ThrowIfNull(nameof(metadata));
             ArgumentNullException.ThrowIfNull(nameof(locationMapping));
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.DriveId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.DriveItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveItemId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
-
-            string oldDriveId = metadata.Ids.DriveId!;
-            string oldDriveItemId = metadata.Ids.DriveItemId!;
-            string? driveItemId;
-            try
-            {
-                var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
-                driveItemId = await _driveRepository.CopyFileAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!, drive.Id, drive.ParentReference.Path);
-                if (string.IsNullOrEmpty(driveItemId)) throw new CpsException("Error while copying file");
-
-                metadata.Ids = new ObjectIdentifiers
-                {
-                    SiteId = locationMapping.SiteId,
-                    ListId = locationMapping.ListId,
-                    ObjectId = metadata.Ids.ObjectId,
-                    DriveItemId = driveItemId,
-                    ExternalReferenceListId = locationMapping.ExternalReferenceListId,
-                    AdditionalObjectId = metadata.Ids.AdditionalObjectId
-                };
-                // Get new listItemId
-                metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids);
-
-                await UpdateExternalReferencesAsync(metadata);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while copying file", ex);
-            }
-
-            await _driveRepository.DeleteFileAsync(oldDriveId, oldDriveItemId);
-
-            await _objectIdRepository.SaveObjectIdentifiersAsync(metadata.Ids.ObjectId!, metadata.Ids);
-
-            return metadata.Ids;
-        }
-
-        public async Task<ObjectIdentifiers> MoveFileAsync(FileInformation metadata, LocationMapping locationMapping)
-        {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
-            ArgumentNullException.ThrowIfNull(nameof(locationMapping));
-            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var driveItemId = await _sharePointRepository.MoveFileAsync(metadata.Ids.SiteId!, metadata.Ids.ListId!, metadata.Ids.ListItemId!, locationMapping.SiteId, locationMapping.ListId);
             var ids = new ObjectIdentifiers
@@ -257,7 +214,7 @@ namespace CPS_API.Repositories
             // Get new listItemId
             ids = await _objectIdRepository.FindMissingIds(ids);
 
-            await _objectIdRepository.SaveObjectIdentifiersAsync(metadata.Ids.ObjectId!, ids);
+            await _objectIdRepository.UpdateObjectIdentifiersAsync(metadata.Ids.ObjectId!, ids);
             return ids;
         }
 
@@ -265,7 +222,7 @@ namespace CPS_API.Repositories
         {
             ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             metadata.Ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
 
@@ -342,9 +299,9 @@ namespace CPS_API.Repositories
         {
             ArgumentNullException.ThrowIfNull(metadata);
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             // map received metadata to SPO object
             var fields = MapMetadata(metadata, isForNewFile, ignoreRequiredFields);
@@ -371,8 +328,8 @@ namespace CPS_API.Repositories
         {
             ArgumentNullException.ThrowIfNull(metadata);
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ExternalReferenceListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
 
             // Keep the existing value, if value equals null.
             if (metadata.ExternalReferences == null)
@@ -413,8 +370,8 @@ namespace CPS_API.Repositories
 
         private async Task<ListItem> AddOrUpdateListItem(ListItem listItem, ExternalReferences externalReference, List<ListItem> existingListItems, ObjectIdentifiers ids, bool getAsUser = false)
         {
-            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ExternalReferenceListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
 
             var existingListItem = GetExistingListItem(externalReference, existingListItems);
             if (existingListItem == null)
@@ -453,11 +410,15 @@ namespace CPS_API.Repositories
             {
                 if (!item.Fields.AdditionalData.TryGetValue(externalApplicationSpoColumnName, out var value)) continue;
                 if (value == null) continue;
-                var stringValue = value.ToString();
-                if (stringValue == null) continue;
-                var taxonomyItem = JsonSerializer.Deserialize<TaxonomyItemDto>(stringValue);
-                if (taxonomyItem == null) continue;
-                if (taxonomyItem.Label == externalReference.ExternalApplication) return item;
+                var untypedObject = value as UntypedObject;
+                if (untypedObject == null) continue;
+                foreach (var (name, node) in untypedObject.GetValue())
+                {
+                    if (name != "Label") continue;
+                    var untypedString = node as UntypedString;
+                    if (untypedString == null) continue;
+                    if (untypedString.GetValue() == externalReference.ExternalApplication) return item;
+                }
             }
             return null;
         }
@@ -476,7 +437,7 @@ namespace CPS_API.Repositories
             {
                 await _driveRepository.UpdateFileNameAsync(ids.DriveId, ids.DriveItemId, fileName, getAsUser);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
             }
@@ -500,7 +461,7 @@ namespace CPS_API.Repositories
             fields.AdditionalData = new Dictionary<string, object>();
 
             // Update mimetype
-            if (metadata == null || metadata.MimeType.IsNullOrEmpty())
+            if (metadata == null || string.IsNullOrEmpty(metadata.MimeType))
             {
                 new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var mimeType);
                 if (mimeType != null)
@@ -514,7 +475,7 @@ namespace CPS_API.Repositories
             }
 
             // Update fileExtension
-            if (metadata == null || metadata.FileExtension.IsNullOrEmpty())
+            if (metadata == null || string.IsNullOrEmpty(metadata.FileExtension))
             {
                 var fileExtension = Path.GetExtension(fileName).Replace(".", "");
 
@@ -526,7 +487,7 @@ namespace CPS_API.Repositories
             }
 
             // Update title
-            if (metadata == null || metadata.AdditionalMetadata == null || metadata.AdditionalMetadata.Title.IsNullOrEmpty())
+            if (metadata == null || metadata.AdditionalMetadata == null || string.IsNullOrEmpty(metadata.AdditionalMetadata.Title))
             {
                 var title = Path.GetFileNameWithoutExtension(fileName);
 
@@ -544,9 +505,9 @@ namespace CPS_API.Repositories
         {
             ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
-            if (metadata.Ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             // map received metadata to SPO object
             var fields = MapMetadata(metadata, true, true);
@@ -567,7 +528,7 @@ namespace CPS_API.Repositories
         public async Task UpdateAdditionalIdentifiers(FileInformation metadata)
         {
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var additionalObjectIds = MapAdditionalIds(metadata);
             if (!string.IsNullOrEmpty(additionalObjectIds)) await _objectIdRepository.SaveAdditionalIdentifiersAsync(metadata.Ids.ObjectId!, additionalObjectIds);
@@ -577,9 +538,9 @@ namespace CPS_API.Repositories
 
         public async Task<bool> FileContainsMetadata(ObjectIdentifiers ids)
         {
-            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!);
             if (listItem == null) throw new CpsException($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
@@ -698,7 +659,7 @@ namespace CPS_API.Repositories
             if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value?.ToString();
-                var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out DateTimeOffset dateValue);
+                var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out DateTimeOffset dateValue);
                 if (!dateParsed && !ignoreRequiredFields && fieldMapping.Required)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
@@ -797,9 +758,9 @@ namespace CPS_API.Repositories
 
         private async Task<List<ListItem>> GetExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
         {
-            if (ids.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ExternalReferenceListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
-            if (ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var field = _globalSettings.ExternalReferencesMapping.Find(s => s.FieldName.Equals(Constants.ObjectIdSpoColumnName, StringComparison.InvariantCultureIgnoreCase));
             if (field == null) throw new CpsException("Object ID field not found in external reference mapping");

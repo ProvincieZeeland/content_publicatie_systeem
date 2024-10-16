@@ -566,7 +566,7 @@ namespace CPS_API.Repositories
         /// </summary>
         private static string GetNewNextToken(DeltaResponse deltaResponse)
         {
-            return string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            return string.Join(";", deltaResponse.DeltaLinks.Select(x => x.Key + "=" + x.Value).ToArray());
         }
 
         private void TrackCpsException(Exception exception, string? driveId = null, string? driveItemId = null, string? objectId = null, string? errorMessage = null)

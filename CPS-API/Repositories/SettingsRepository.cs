@@ -57,7 +57,7 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(value)) return new Dictionary<string, string>();
             return value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
-               .ToDictionary(split => split[0], split => split[1]);
+               .ToDictionary(split => split[0], split => split[1] + "=" + split[2]);
         }
 
         public async Task<bool> SaveSettingAsync(string fieldName, object? value)

@@ -1,10 +1,9 @@
 ﻿using System.Globalization;
 using System.Reflection;
-using System.Text.Json;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using Microsoft.Graph;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Graph.Models;
+using Microsoft.Kiota.Abstractions.Serialization;
 using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Helpers
@@ -64,10 +63,15 @@ namespace CPS_API.Helpers
             // Term to string
             if (value != null && !string.IsNullOrEmpty(fieldMapping.TermsetName))
             {
-                var jsonString = value.ToString();
-                if (jsonString == null) return null;
-                var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
-                value = term?.Label;
+                var untypedObject = value as UntypedObject;
+                if (untypedObject == null) return null;
+                foreach (var (name, node) in untypedObject.GetValue())
+                {
+                    if (name != "Label") continue;
+                    var untypedString = node as UntypedString;
+                    if (untypedString == null) return null;
+                    return untypedString.GetValue();
+                }
             }
 
             return value;
@@ -125,7 +129,7 @@ namespace CPS_API.Helpers
             var fieldIsEmpty = IsMetadataFieldEmpty(value, propertyInfo);
             if (!fieldMapping.Required || !fieldIsEmpty) return null;
 
-            if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+            if (isForNewFile && fieldMapping.DefaultValue != null && !string.IsNullOrEmpty(fieldMapping.DefaultValue.ToString()))
             {
                 var defaultValue = fieldMapping.DefaultValue.ToString();
                 if (defaultValue != null && defaultValue.Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
@@ -150,7 +154,7 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out var dateTimeValue))
+                if (!DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out var dateTimeValue))
                 {
                     return true;
                 }
@@ -191,7 +195,7 @@ namespace CPS_API.Helpers
             }
             // When editing terms, only edit term fields.
             // Terms are edited separately.
-            if (isForTermEdit == fieldMapping.TermsetName.IsNullOrEmpty())
+            if (isForTermEdit == string.IsNullOrEmpty(fieldMapping.TermsetName))
             {
                 return false;
             }

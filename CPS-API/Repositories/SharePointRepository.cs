@@ -5,7 +5,7 @@ using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Graph;
 using Microsoft.Identity.Web;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.SharePoint.Client;
 using Microsoft.SharePoint.Client.Taxonomy;
 using PnP.Core.Model.SharePoint;
@@ -13,7 +13,7 @@ using PnP.Framework;
 using Constants = CPS_API.Models.Constants;
 using CopyMigrationOptions = PnP.Core.Model.SharePoint.CopyMigrationOptions;
 using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
-using GraphSite = Microsoft.Graph.Site;
+using GraphSite = Microsoft.Graph.Models.Site;
 
 namespace CPS_API.Services
 {
@@ -32,31 +32,38 @@ namespace CPS_API.Services
     {
         private readonly GlobalSettings _globalSettings;
         private readonly IMemoryCache _memoryCache;
-        private readonly GraphServiceClient _graphClient;
+        private readonly GraphServiceClient _graphServiceClient;
+        private readonly GraphServiceClient _graphAppServiceClient;
         private readonly CertificateService _certificateService;
 
         public SharePointRepository(
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IMemoryCache memoryCache,
-            GraphServiceClient graphClient,
-            CertificateService certificateService)
+            GraphServiceClient graphServiceClient,
+            CertificateService certificateService,
+            ITokenAcquisition tokenAcquisition)
         {
             _globalSettings = settings.Value;
             _memoryCache = memoryCache;
-            _graphClient = graphClient;
+            _graphServiceClient = graphServiceClient;
+            _graphAppServiceClient = new GraphServiceClient(new BaseBearerTokenAuthenticationProvider(new AppOnlyAuthenticationProvider(tokenAcquisition, settings)));
             _certificateService = certificateService;
+        }
+
+        private GraphServiceClient GetGraphServiceClient(bool getAsUser)
+        {
+            if (getAsUser) return _graphServiceClient;
+            return _graphAppServiceClient;
         }
 
         #region Site 
 
         public async Task<GraphSite> GetSiteAsync(string siteId, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[siteId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.GetAsync();
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var site = await graphServiceClient.Sites[siteId].GetAsync();
+            if (site == null) throw new CpsException($"Error while getting site (siteId:{siteId})");
+            return site;
         }
 
         #endregion
@@ -65,15 +72,15 @@ namespace CPS_API.Services
 
         public async Task UpdateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            if (metadata.Ids!.SiteId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids!.ListId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids!.ListItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids!.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids!.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids!.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             var site = await GetSiteAsync(metadata.Ids.SiteId!, getAsUser);
 
             // Graph does not support full Term management yet, using PnP for SPO API instead
             var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
 
             var termStore = GetAllTerms(context, metadata.Ids.SiteId!);

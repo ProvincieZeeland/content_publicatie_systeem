@@ -4,12 +4,12 @@
     {
         public List<DeltaDriveItem> Items { get; set; }
 
-        public Dictionary<string, string> NextTokens { get; set; }
+        public Dictionary<string, string> DeltaLinks { get; set; }
 
-        public DeltaResponse(List<DeltaDriveItem> items, Dictionary<string, string> nextTokens)
+        public DeltaResponse(List<DeltaDriveItem> items, Dictionary<string, string> deltaLinks)
         {
             Items = items;
-            NextTokens = nextTokens;
+            DeltaLinks = deltaLinks;
         }
     }
 }

@@ -6,12 +6,11 @@ using CPS_API.Models.Exceptions;
 using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
 using Constants = CPS_API.Models.Constants;
-using GraphListItem = Microsoft.Graph.ListItem;
-using GraphSite = Microsoft.Graph.Site;
+using GraphListItem = Microsoft.Graph.Models.ListItem;
+using GraphSite = Microsoft.Graph.Models.Site;
 
 namespace CPS_API.Repositories
 {
@@ -429,7 +428,7 @@ namespace CPS_API.Repositories
                 await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to get new metadata for DropOff file.", ex, metadata);
                 return false;
             }
-            if (metadata.Ids == null || metadata.Ids.DriveId.IsNullOrEmpty() || metadata.Ids.DriveItemId.IsNullOrEmpty())
+            if (metadata.Ids == null || string.IsNullOrEmpty(metadata.Ids.DriveId) || string.IsNullOrEmpty(metadata.Ids.DriveItemId))
             {
                 await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to process DropOff file.", metadata: metadata);
                 return false;
@@ -483,7 +482,7 @@ namespace CPS_API.Repositories
         private async Task<string?> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
         {
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.ObjectId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var isNewFile = metadata.Ids.ObjectId == null;
             if (isNewFile)

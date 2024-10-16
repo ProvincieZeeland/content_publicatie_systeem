@@ -2,14 +2,13 @@
 using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.ApplicationInsights;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Graph;
+using Microsoft.Graph.Models.ODataErrors;
 
 namespace CPS_API.Controllers
 {
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize]
     [Route("/files/[controller]")]
     [ApiController]
     public class ObjectIdController : Controller
@@ -43,7 +42,7 @@ namespace CPS_API.Controllers
                 string objectId = await _objectIdRepository.GenerateObjectIdAsync(ids);
                 return Ok(objectId);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");

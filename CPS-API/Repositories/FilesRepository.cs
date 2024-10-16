@@ -3,9 +3,9 @@ using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
-using Microsoft.Graph;
+using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
-using Microsoft.IdentityModel.Tokens;
 using Constants = CPS_API.Models.Constants;
 using FileInformation = CPS_API.Models.FileInformation;
 
@@ -15,7 +15,7 @@ namespace CPS_API.Repositories
     {
         Task<CpsFile> GetFileAsync(string objectId);
 
-        Task<string> GetUrlAsync(string objectId, bool getAsUser = false);
+        Task<string?> GetUrlAsync(string objectId, bool getAsUser = false);
 
         Task<ObjectIdentifiers> CreateLargeFileAsync(string source, string classification, IFormFile formFile);
 
@@ -52,7 +52,7 @@ namespace CPS_API.Repositories
             _metadataRepository = metadataRepository;
         }
 
-        public async Task<string> GetUrlAsync(string objectId, bool getAsUser = false)
+        public async Task<string?> GetUrlAsync(string objectId, bool getAsUser = false)
         {
             var objectIdentifiers = await GetObjectIdentifiersAsync(objectId);
             var driveItem = await GetDriveItemAsync(objectId, objectIdentifiers, getAsUser);
@@ -85,13 +85,10 @@ namespace CPS_API.Repositories
             {
                 driveItem = await _driveRepository.GetDriveItemAsync(objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId, getAsUser);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (FileNotFoundException) { throw; }
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 throw;
-            }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-            {
-                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
             }
             catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
             {
@@ -149,7 +146,7 @@ namespace CPS_API.Repositories
                 if (fieldMapping.DefaultValue != null)
                 {
                     var defaultAsStr = fieldMapping.DefaultValue?.ToString();
-                    if (!defaultAsStr.IsNullOrEmpty())
+                    if (!string.IsNullOrEmpty(defaultAsStr))
                     {
                         if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
                         {
@@ -199,7 +196,7 @@ namespace CPS_API.Repositories
                     throw new CpsException("Error while adding new file");
                 }
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Conflict && ex.Error != null && ex.Error.Code != null && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Conflict && ex.Error != null && ex.Error.Code != null && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
             {
                 throw new NameAlreadyExistsException($"The specified {nameof(metadata.FileName)} ({metadata.FileName}) already exists");
             }
@@ -233,7 +230,7 @@ namespace CPS_API.Repositories
 
         private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
-            if (metadata.FileName.IsNullOrEmpty()) throw new CpsException("No filename found for creating file");
+            if (string.IsNullOrEmpty(metadata.FileName)) throw new CpsException("No filename found for creating file");
 
             Stream stream;
             if (formFile != null)
@@ -274,8 +271,8 @@ namespace CPS_API.Repositories
         private async Task<ObjectIdentifiers> HandleCreatedFile(FileInformation metadata, bool ignoreRequiredFields = false)
         {
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (metadata.Ids.DriveId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveId)} found for {nameof(FileInformation.Ids)}");
-            if (metadata.Ids.DriveItemId.IsNullOrEmpty()) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.DriveId)) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(metadata.Ids.DriveItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.DriveItemId)} found for {nameof(FileInformation.Ids)}");
 
             // Generate objectId
             try
@@ -403,7 +400,7 @@ namespace CPS_API.Repositories
                     throw new CpsException("File cannot be empty");
                 }
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
             }

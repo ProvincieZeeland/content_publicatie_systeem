@@ -94,10 +94,10 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var boolParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out var boolValue);
-                if (boolParsed)
+                var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out var dateValue);
+                if (dateParsed)
                 {
-                    property.SetValue(parent, boolValue, null);
+                    property.SetValue(parent, dateValue, null);
                 }
                 else
                 {
@@ -142,7 +142,7 @@ namespace CPS_API.Helpers
                     return true;
                 }
             }
-            else if (propertyInfo.PropertyType == typeof(DateTimeOffset))
+            else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 if (DateTimeOffsetPropertyContainsData(value, defaultValue))
                 {
@@ -179,14 +179,14 @@ namespace CPS_API.Helpers
         private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
         {
             var stringValue = value?.ToString();
-            var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("en-US"), out DateTimeOffset dateTimeValue);
+            var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out DateTimeOffset dateTimeValue);
             DateTimeOffset? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
             var stringDefaultValue = defaultValue?.ToString();
-            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, new CultureInfo("en-US"), out DateTimeOffset dateTimeDefaultValue);
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, new CultureInfo("nl-NL"), out DateTimeOffset dateTimeDefaultValue);
             DateTimeOffset? nullableDateDefaultValue = null;
             if (dateParsed)
             {

@@ -1,25 +1,23 @@
 ﻿using System.Net;
-using System.Text.RegularExpressions;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using IExperts.SocialIntranet.Services;
+using CPS_API.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
+using Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession;
+using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Web;
-using Microsoft.IdentityModel.Tokens;
-using Newtonsoft.Json;
+using Microsoft.Kiota.Abstractions.Authentication;
 using Constants = CPS_API.Models.Constants;
-using HttpMethods = Microsoft.Graph.HttpMethods;
+using Drive = Microsoft.Graph.Models.Drive;
+using GraphDeltaResponse = Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse;
 
 namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
-        Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false);
-
         Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false);
-
-        Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false);
 
         Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false);
 
@@ -30,10 +28,6 @@ namespace CPS_API.Repositories
         Task<DriveItem?> UpdateContentAsync(string driveId, string driveItemId, Stream fileStream, bool getAsUser = false);
 
         Task<DriveItem?> UpdateFileNameAsync(string driveId, string driveItemId, string fileName, bool getAsUser = false);
-
-        Task<string?> CopyFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false);
-
-        Task<DriveItem?> MoveFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false);
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
@@ -48,70 +42,61 @@ namespace CPS_API.Repositories
 
     public class DriveRepository : IDriveRepository
     {
-        private readonly GraphServiceClient _graphClient;
+        private readonly GraphServiceClient _graphServiceClient;
+        private readonly GraphServiceClient _graphAppServiceClient;
         private readonly GlobalSettings _globalSettings;
-        private readonly IRestClient _restClient;
 
-
-        public DriveRepository(GraphServiceClient graphClient, IOptions<GlobalSettings> settings, IRestClient restClient)
+        public DriveRepository(
+            GraphServiceClient graphServiceClient,
+            IOptions<GlobalSettings> settings,
+            ITokenAcquisition tokenAcquisition)
         {
-            _graphClient = graphClient;
+            _graphServiceClient = graphServiceClient;
+            _graphAppServiceClient = new GraphServiceClient(new BaseBearerTokenAuthenticationProvider(new AppOnlyAuthenticationProvider(tokenAcquisition, settings)));
             _globalSettings = settings.Value;
-            _restClient = restClient;
+        }
+
+        private GraphServiceClient GetGraphServiceClient(bool getAsUser)
+        {
+            if (getAsUser) return _graphServiceClient;
+            return _graphAppServiceClient;
         }
 
         public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[siteId].Lists[listId].Drive.Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.GetAsync();
-        }
-
-        public async Task<Drive> GetDriveAsync(string driveId, bool getAsUser = false)
-        {
-            var request = _graphClient.Drives[driveId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.GetAsync();
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var drive = await graphServiceClient.Sites[siteId].Lists[listId].Drive.GetAsync();
+            if (drive == null) throw new CpsException($"Error while getting drive (siteId={siteId}, listId={listId})");
+            return drive;
         }
 
         public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false)
         {
-            if (siteId.IsNullOrEmpty())
+            if (string.IsNullOrEmpty(siteId))
             {
                 throw new CpsException("Error while getting driveItem, unkown SiteId");
             }
-            else if (listId.IsNullOrEmpty())
+            else if (string.IsNullOrEmpty(listId))
             {
                 throw new CpsException("Error while getting driveItem, unkown ListId");
             }
-            else if (listItemId.IsNullOrEmpty())
+            else if (string.IsNullOrEmpty(listItemId))
             {
                 throw new CpsException("Error while getting driveItem, unkown ListItemId");
             }
 
-            var request = _graphClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-
             try
             {
-                var driveItem = await request.GetAsync();
+                var graphServiceClient = GetGraphServiceClient(getAsUser);
+                var driveItem = await graphServiceClient.Sites[siteId].Lists[listId].Items[listItemId].DriveItem.GetAsync();
                 if (driveItem == null) throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
                 return driveItem;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 throw;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
             }
@@ -121,65 +106,26 @@ namespace CPS_API.Repositories
             }
         }
 
-        public async Task<DriveItem> GetDriveItemAsync(string driveId, string driveItemId, bool getAsUser = false)
-        {
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.GetAsync();
-        }
-
         public async Task<DriveItem> GetDriveItemIdsAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
-            if (!getAsUser)
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var driveItem = await graphServiceClient.Drives[driveId].Items[driveItemId].GetAsync(x =>
             {
-                request = request.WithAppOnly();
-            }
-            return await request.Select("sharepointids").GetAsync();
+                x.QueryParameters.Select = new[] { Constants.SelectSharePointIds };
+            });
+            if (driveItem == null) throw new CpsException($"Error while getting driveItem (driveId={driveId}, driveItemId={driveItemId})");
+            return driveItem;
         }
 
         public async Task<DriveItem> CreateAsync(string driveId, string fileName, Stream fileStream, bool getAsUser = false)
         {
             if (fileStream.Length > 0)
             {
-                var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
-                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "fail");
-
-                var request = _graphClient.Drives[driveId].Root
-                    .ItemWithPath(fileName).CreateUploadSession(properties)
-                    .Request();
-                if (!getAsUser)
-                {
-                    request = request.WithAppOnly();
-                }
-                var uploadSession = await request.PostAsync();
-
-                // 10 MB; recommended fragment size is between 5-10 MiB
-                var chunkSize = (320 * 1024) * 32;
-                var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
-
-                DriveItem? driveItem = null;
-                try
-                {
-                    // Upload the file
-                    var uploadResult = await fileUploadTask.UploadAsync();
-                    if (uploadResult.UploadSucceeded)
-                        driveItem = uploadResult.ItemResponse;
-                }
-                catch (ServiceException ex)
-                {
-                    throw new CpsException("Failed to upload file.", ex);
-                }
-
-                if (driveItem == null)
-                {
-                    throw new CpsException("Failed to upload file.");
-                }
-
-                return driveItem;
+                var graphServiceClient = GetGraphServiceClient(getAsUser);
+                var uploadSessionRequestBody = GetUploadSessionRequestBody("fail");
+                var uploadSession = await graphServiceClient.Drives[driveId].Root.ItemWithPath(fileName).CreateUploadSession.PostAsync(uploadSessionRequestBody);
+                if (uploadSession == null) throw new CpsException($"Error while creating file (driveId={driveId}, fileName={fileName})");
+                return await UploadFileAsync(uploadSession, fileStream);
             }
             else
             {
@@ -191,39 +137,11 @@ namespace CPS_API.Repositories
         {
             if (fileStream.Length > 0)
             {
-                var properties = new DriveItemUploadableProperties() { ODataType = null, AdditionalData = new Dictionary<string, object>() };
-                properties.AdditionalData.Add("@microsoft.graph.conflictBehavior", "replace");
-
-                var request = _graphClient.Drives[driveId].Items[driveItemId].CreateUploadSession(properties).Request();
-                if (!getAsUser)
-                {
-                    request = request.WithAppOnly();
-                }
-                var uploadSession = await request.PostAsync();
-
-                // 10 MB; recommended fragment size is between 5-10 MiB
-                var chunkSize = (320 * 1024) * 32;
-                var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
-
-                DriveItem? driveItem = null;
-                try
-                {
-                    // Upload the file
-                    var uploadResult = await fileUploadTask.UploadAsync();
-                    if (uploadResult.UploadSucceeded)
-                        driveItem = uploadResult.ItemResponse;
-                }
-                catch (ServiceException ex)
-                {
-                    throw new CpsException("Failed to upload file.", ex);
-                }
-
-                if (driveItem == null)
-                {
-                    throw new CpsException("Failed to upload file.");
-                }
-
-                return driveItem;
+                var graphServiceClient = GetGraphServiceClient(getAsUser);
+                var uploadSessionRequestBody = GetUploadSessionRequestBody("replace");
+                var uploadSession = await graphServiceClient.Drives[driveId].Items[driveItemId].CreateUploadSession.PostAsync(uploadSessionRequestBody);
+                if (uploadSession == null) throw new CpsException($"Error while creating file (driveId={driveId}, driveItemId={driveItemId})");
+                return await UploadFileAsync(uploadSession, fileStream);
             }
             else
             {
@@ -231,136 +149,63 @@ namespace CPS_API.Repositories
             }
         }
 
+        private static CreateUploadSessionPostRequestBody GetUploadSessionRequestBody(string conflictBehavior)
+        {
+            return new CreateUploadSessionPostRequestBody
+            {
+                Item = new DriveItemUploadableProperties
+                {
+                    AdditionalData = new Dictionary<string, object>
+                        {
+                            { "@microsoft.graph.conflictBehavior", conflictBehavior },
+                    },
+                },
+            };
+        }
+
+        private static async Task<DriveItem> UploadFileAsync(UploadSession uploadSession, Stream fileStream)
+        {
+            // 10 MB; recommended fragment size is between 5-10 MiB
+            var chunkSize = (320 * 1024) * 32;
+            var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fileStream, chunkSize);
+
+            DriveItem? driveItem = null;
+            try
+            {
+                // Upload the file
+                var uploadResult = await fileUploadTask.UploadAsync();
+                if (uploadResult.UploadSucceeded)
+                    driveItem = uploadResult.ItemResponse;
+            }
+            catch (ODataError ex)
+            {
+                throw new CpsException("Failed to upload file.", ex);
+            }
+
+            if (driveItem == null)
+            {
+                throw new CpsException("Failed to upload file.");
+            }
+
+            return driveItem;
+        }
+
         public async Task<DriveItem?> UpdateFileNameAsync(string driveId, string driveItemId, string fileName, bool getAsUser = false)
         {
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
             var driveItem = new DriveItem
             {
                 Name = fileName
             };
-            return await request.UpdateAsync(driveItem);
-        }
-
-        private static void HandleFailedPoll(AsyncOperationStatusResult asyncOperationStatus)
-        {
-            object? message = null;
-            object? error = null;
-            if (asyncOperationStatus.AdditionalData != null)
-            {
-                asyncOperationStatus.AdditionalData.TryGetValue("message", out message);
-                asyncOperationStatus.AdditionalData.TryGetValue("error", out error);
-            }
-
-            // Return error message to be handled further in the controller
-            var errorAsStr = error?.ToString();
-            if (errorAsStr == null) throw new ServiceException(new Error { Code = "generalException", Message = message as string });
-
-            var errorResult = JsonConvert.DeserializeObject<RequestErrorResult>(errorAsStr);
-            if (errorResult == null) throw new CpsException("Error while poll for operation completion");
-            throw new CpsException(errorResult.Message);
-        }
-
-        private async Task<AsyncOperationStatusResult?> PollForOperationCompletionAsync(
-            string monitorUrl,
-            IProgress<AsyncOperationStatus> progress,
-            CancellationToken cancellationToken)
-        {
-            AsyncOperationStatusResult? asyncOperationStatus = null;
-
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                using (var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, monitorUrl))
-                {
-                    using var responseMessage = await _restClient.HttpRequestAsync(httpRequestMessage).ConfigureAwait(false);
-                    using var responseStream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                    asyncOperationStatus = _graphClient.HttpProvider.Serializer.DeserializeObject<AsyncOperationStatusResult>(responseStream);
-
-                    if (asyncOperationStatus == null) throw new ServiceException(new Error { Code = "generalException", Message = "Error retrieving monitor status." });
-
-                    if (string.Equals(asyncOperationStatus.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) return asyncOperationStatus;
-
-                    if (string.Equals(asyncOperationStatus.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(asyncOperationStatus.Status, "deleteFailed", StringComparison.OrdinalIgnoreCase))
-                    {
-                        HandleFailedPoll(asyncOperationStatus);
-                    }
-
-                    if (progress != null) progress.Report(asyncOperationStatus);
-
-                    if (string.Equals(asyncOperationStatus.Status, "completed", StringComparison.OrdinalIgnoreCase)) return asyncOperationStatus;
-                }
-
-                await Task.Delay(CoreConstants.PollingIntervalInMs, cancellationToken).ConfigureAwait(false);
-            }
-
-            return asyncOperationStatus;
-        }
-
-        public async Task<string?> CopyFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false)
-        {
-            var parentReference = new ItemReference
-            {
-                DriveId = newDriveId,
-                Path = newDrivePath,
-            };
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Copy(parentReference: parentReference).Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            var implReq = ((DriveItemCopyRequest)request);
-            implReq.Method = HttpMethods.POST;
-
-            using var response = await implReq.SendRequestAsync(implReq.RequestBody, CancellationToken.None, HttpCompletionOption.ResponseContentRead).ConfigureAwait(false);
-            if (response?.IsSuccessStatusCode == true)
-            {
-                var progress = new Progress<AsyncOperationStatus>();
-
-                var monitorUrl = response.Headers.Location?.AbsoluteUri;
-                if (string.IsNullOrEmpty(monitorUrl)) throw new CpsException("Error while copying file");
-
-                var status = await PollForOperationCompletionAsync(monitorUrl, progress, CancellationToken.None);
-                if (status == null) throw new CpsException("Error while copying file");
-
-                if (status.Status.Equals("completed", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Return driveItemId
-                    return status.ResourceId;
-                }
-            }
-            return null;
-        }
-
-        public async Task<DriveItem?> MoveFileAsync(string driveId, string driveItemId, string newDriveId, string newDrivePath, bool getAsUser = false)
-        {
-            var driveItem = new DriveItem
-            {
-                ParentReference = new ItemReference
-                {
-                    DriveId = newDriveId,
-                    Path = newDrivePath,
-                }
-            };
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.UpdateAsync(driveItem);
+            var updatedDriveItem = await graphServiceClient.Drives[driveId].Items[driveItemId].PatchAsync(driveItem);
+            if (updatedDriveItem == null) throw new CpsException($"Error while updating filename (driveId={driveId}, driveItemId={driveItemId}, fileName={fileName})");
+            return updatedDriveItem;
         }
 
         public async Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            await request.DeleteAsync();
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            await graphServiceClient.Drives[driveId].Items[driveItemId].DeleteAsync();
         }
 
         public async Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
@@ -375,7 +220,7 @@ namespace CPS_API.Repositories
         public async Task<DeltaResponse> GetUpdatedItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
             var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
-            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation).ToList();
+            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation && item.LastModifiedDateTime >= lastSynchronisation).ToList();
             response.Items = response.Items.Where(item => item.Folder == null).ToList();
             response.Items = response.Items.OrderBy(item => item.LastModifiedDateTime).ToList();
             return response;
@@ -394,39 +239,17 @@ namespace CPS_API.Repositories
         {
             // Get all public drives
             var driveIds = _globalSettings.PublicDriveIds;
-            if (driveIds.IsNullOrEmpty()) throw new CpsException("Drives not found");
+            if (driveIds == null || driveIds.Count == 0) throw new CpsException("Drives not found");
 
             // For each drive:
             // Call graph delta and get changed items since time
             var driveItems = new List<DeltaDriveItem>();
-            var nextTokens = new Dictionary<string, string>();
+            var deltaLinks = new Dictionary<string, string>();
             foreach (var driveId in driveIds)
             {
-                IDriveItemDeltaCollectionPage delta;
-                try
-                {
-                    var queryOptions = GetDeltaQueryOptions(tokens, driveId);
-                    if (queryOptions == null) throw new CpsException("Error while getting query token");
-                    delta = await GetDeltaAsync(driveId, queryOptions, getAsUser);
-                    driveItems.AddRange(delta.CurrentPage.Select(i => MapDriveItemToDeltaItem(driveId, i)));
-
-                    // Fetch additional pages for delta; we get max of 500 per request by default
-                    while (delta.NextPageRequest != null)
-                    {
-                        delta = await GetNextPageForDeltaAsync(delta, getAsUser);
-                        driveItems.AddRange(delta.CurrentPage.Select(i => MapDriveItemToDeltaItem(driveId, i)));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    throw new CpsException("Error while getting changed driveItems with delta", ex);
-                }
-
-                var nextToken = GetDeltaNextToken(delta);
-                if (nextToken != null)
-                {
-                    nextTokens.Add(driveId, nextToken);
-                }
+                var response = await GetDeltaResponseAsync(driveId, tokens, getAsUser);
+                driveItems.AddRange(response.driveItems);
+                if (response.deltaLink != null) deltaLinks.Add(driveId, response.deltaLink!);
             }
 
             // Delta can contain doubles
@@ -434,56 +257,102 @@ namespace CPS_API.Repositories
 
             return new DeltaResponse(
                 items: driveItems,
-                nextTokens: nextTokens
+                deltaLinks: deltaLinks
             );
         }
 
-        private static List<QueryOption>? GetDeltaQueryOptions(Dictionary<string, string> tokens, string driveId)
+        private async Task<(List<DeltaDriveItem> driveItems, string? deltaLink)> GetDeltaResponseAsync(string driveId, Dictionary<string, string> tokens, bool getAsUser = false)
         {
-            var gettingTokenSucceeded = tokens.TryGetValue(driveId, out var token);
-            if (!gettingTokenSucceeded)
+            var driveItems = new List<DeltaDriveItem>();
+            GraphDeltaResponse delta;
+            try
+            {
+                var deltaLink = await GetDeltaLinkForDelta(tokens, driveId, getAsUser);
+                if (deltaLink == null) throw new CpsException("Error while getting query token");
+                delta = await GetDeltaAsync(driveId, deltaLink, getAsUser);
+                if (delta.Value == null) throw new CpsException($"Error while getting delta (driveId:{driveId})");
+                driveItems.AddRange(delta.Value.Select(i => MapDriveItemToDeltaItem(driveId, i)));
+
+                // Fetch additional pages for delta; we get max of 500 per request by default
+                while (delta.OdataNextLink != null)
+                {
+                    delta = await GetNextPageForDeltaAsync(delta, driveId, getAsUser);
+                    if (delta.Value == null) throw new CpsException($"Error while getting next delta (driveId:{driveId},OdataNextLink:{delta.OdataNextLink})");
+                    driveItems.AddRange(delta.Value.Select(i => MapDriveItemToDeltaItem(driveId, i)));
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new CpsException("Error while getting changed driveItems with delta", ex);
+            }
+
+            if (delta.OdataDeltaLink != null) return (driveItems, delta.OdataDeltaLink);
+            return (driveItems, null);
+        }
+
+        private async Task<string?> GetDeltaLinkForDelta(Dictionary<string, string> tokens, string driveId, bool getAsUser = false)
+        {
+            var gettingDeltaLinkSucceeded = tokens.TryGetValue(driveId, out var deltaLink);
+            if (!gettingDeltaLinkSucceeded)
             {
                 return null;
             }
-            return new List<QueryOption>()
+
+            // Transition to Graph SDK 5 requires an other format for deltaLink.
+            // TODO: This validation is only required for the first time using the new graph sdk, after this the code can be deleted.
+            if (Uri.TryCreate(deltaLink, UriKind.Absolute, out var outUri)
+               && (outUri.Scheme == Uri.UriSchemeHttp || outUri.Scheme == Uri.UriSchemeHttps))
             {
-                new QueryOption("token", token)
-            };
+                return deltaLink;
+            }
+
+            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
+            return $"https://graph.microsoft.com/v1.0/drives/{driveId}/items/{rootDriveItemId}/delta()?token={deltaLink}";
         }
 
-        private async Task<IDriveItemDeltaCollectionPage> GetDeltaAsync(string driveId, List<QueryOption> queryOptions, bool getAsUser)
+        private async Task<GraphDeltaResponse> GetDeltaAsync(string driveId, string? deltaLink = null, bool getAsUser = false)
         {
-            var request = _graphClient.Drives[driveId].Root.Delta().Request(queryOptions);
-            if (!getAsUser)
+            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
+
+            GraphDeltaResponse? deltaResponse;
+            if (string.IsNullOrWhiteSpace(deltaLink))
             {
-                request = request.WithAppOnly();
+                // Initial call does not contain a nextLink.
+                var graphServiceClient = GetGraphServiceClient(getAsUser);
+                deltaResponse = await graphServiceClient.Drives[driveId].Items[rootDriveItemId].Delta.GetAsDeltaGetResponseAsync();
             }
-            return await request.GetAsync();
+            else
+            {
+                return await GetDeltaByLinkAsync(driveId, rootDriveItemId, deltaLink, getAsUser);
+            }
+            if (deltaResponse == null) throw new CpsException($"Error while getting delta (driveId:{driveId},rootDriveItemId:{rootDriveItemId})");
+            return deltaResponse;
         }
 
-        private static async Task<IDriveItemDeltaCollectionPage> GetNextPageForDeltaAsync(IDriveItemDeltaCollectionPage delta, bool getAsUser)
+        private async Task<GraphDeltaResponse> GetNextPageForDeltaAsync(GraphDeltaResponse delta, string driveId, bool getAsUser = false)
         {
-            var newPageRequest = delta.NextPageRequest;
-            if (!getAsUser)
-            {
-                newPageRequest = delta.NextPageRequest.WithAppOnly();
-            }
-            return await newPageRequest.GetAsync();
+            if (string.IsNullOrWhiteSpace(delta.OdataNextLink)) throw new CpsException($"Error while getting next page for delta (driveId:{driveId})");
+
+            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
+
+            return await GetDeltaByLinkAsync(driveId, rootDriveItemId, delta.OdataNextLink, getAsUser);
         }
 
-        private static string? GetDeltaNextToken(IDriveItemDeltaCollectionPage delta)
+        private async Task<string> GetRootDriveItemIdAsync(string driveId, bool getAsUser = false)
         {
-            var nextTokenExists = delta.AdditionalData.TryGetValue("@odata.deltaLink", out var nextTokenCall);
-            if (!nextTokenExists || nextTokenCall == null) return null;
-            var nextTokenCallAsStr = nextTokenCall.ToString();
-            if (nextTokenCallAsStr == null) return null;
-            var pattern = @".*\?token=(.*)";
-            var match = Regex.Match(nextTokenCallAsStr, pattern, RegexOptions.IgnoreCase, matchTimeout: Constants.RegexMatchTimeout);
-            if (!match.Success || match.Groups.Count < 2)
-            {
-                return null;
-            }
-            return match.Groups[1]?.Value;
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+
+            var rootDriveItem = await graphServiceClient.Drives[driveId].Root.GetAsync();
+            if (rootDriveItem == null || string.IsNullOrWhiteSpace(rootDriveItem.Id)) throw new CpsException($"Error while getting root for delta (driveId:{driveId})");
+            return rootDriveItem.Id;
+        }
+
+        private async Task<GraphDeltaResponse> GetDeltaByLinkAsync(string driveId, string rootDriveItemId, string link, bool getAsUser = false)
+        {
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var deltaResponse = await graphServiceClient.Drives[driveId].Items[rootDriveItemId].Delta.WithUrl(link).GetAsDeltaGetResponseAsync();
+            if (deltaResponse == null) throw new CpsException($"Error while getting delta (driveId:{driveId},rootDriveId:{rootDriveItemId},link:{link})");
+            return deltaResponse;
         }
 
         private static DeltaDriveItem MapDriveItemToDeltaItem(string driveId, DriveItem item)
@@ -502,12 +371,10 @@ namespace CPS_API.Repositories
 
         public async Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
-            var request = _graphClient.Drives[driveId].Items[driveItemId].Content.Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.GetAsync();
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var request = await graphServiceClient.Drives[driveId].Items[driveItemId].Content.GetAsync();
+            if (request == null) throw new CpsException($"Error while getting stream (driveId:{driveId}, driveItemId:{driveItemId})");
+            return request;
         }
     }
 }
