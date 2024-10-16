@@ -81,12 +81,13 @@ namespace CPS_API
             services.Configure<GlobalSettings>(globalSettings);
 
             string[]? initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
+            var tenantId = Configuration.GetValue<string>("GlobalSettings:TenantId");
 
             services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
                 .AddMicrosoftIdentityWebApp(Configuration.GetSection("AzureAd"))
                 .EnableTokenAcquisitionToCallDownstreamApi(initialScopes)
                 .AddInMemoryTokenCaches(options => options.AbsoluteExpirationRelativeToNow = new TimeSpan(0, 30, 0)); // cache 30 min max
-            AddMicrosoftGraphClient(services);
+            AddMicrosoftGraphClient(services, tenantId);
 
             // Setup keyvault
             services.AddAzureClients(builder =>
@@ -127,12 +128,12 @@ namespace CPS_API
                  .AddInMemoryTokenCaches();
         }
 
-        public static IServiceCollection AddMicrosoftGraphClient(IServiceCollection services)
+        public static IServiceCollection AddMicrosoftGraphClient(IServiceCollection services, string tenantId)
         {
             services.AddScoped(sp =>
             {
                 var tokenAcquisition = sp.GetRequiredService<ITokenAcquisition>();
-                var authenticationProvider = new BaseBearerTokenAuthenticationProvider(new UserOnlyAuthenticationProvider(tokenAcquisition));
+                var authenticationProvider = new BaseBearerTokenAuthenticationProvider(new UserOnlyAuthenticationProvider(tokenAcquisition, tenantId));
                 var graphServiceClient = new GraphServiceClient(authenticationProvider);
                 return graphServiceClient;
             });
