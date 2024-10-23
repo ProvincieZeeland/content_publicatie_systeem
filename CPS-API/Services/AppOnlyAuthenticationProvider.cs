@@ -26,24 +26,16 @@ namespace CPS_API.Services
 
             if (string.IsNullOrWhiteSpace(token)) return token;
 
-            try
-            {
-                var handler = new JwtSecurityTokenHandler();
-                var jwtToken = handler.ReadToken(token) as JwtSecurityToken;
-                if (jwtToken == null) throw new CpsException("Error while getting access token");
-                var tokenExpiryDate = jwtToken.ValidTo;
+            var handler = new JwtSecurityTokenHandler();
+            var jwtToken = handler.ReadToken(token) as JwtSecurityToken;
+            if (jwtToken == null) throw new CpsException("Error while getting access token");
+            var tokenExpiryDate = jwtToken.ValidTo;
 
-                // If token is less then 45 min valid, we need a new one for Teams Notifications so refresh it
-                if (tokenExpiryDate.CompareTo(DateTime.Now.AddMinutes(45).ToUniversalTime()) <= 0)
-                {
-                    token = await _tokenAcquisition.GetAccessTokenForAppAsync("https://graph.microsoft.com/.default", _globalSettings.TenantId, new TokenAcquisitionOptions { ForceRefresh = true });
-                }
-            }
-            catch
+            // If token is less then 45 min valid, we need a new one for Teams Notifications so refresh it
+            if (tokenExpiryDate.CompareTo(DateTime.Now.AddMinutes(45).ToUniversalTime()) <= 0)
             {
-                // Failed to refresh token; ignore error and return current one
+                token = await _tokenAcquisition.GetAccessTokenForAppAsync("https://graph.microsoft.com/.default", _globalSettings.TenantId, new TokenAcquisitionOptions { ForceRefresh = true });
             }
-
             return token;
         }
     }

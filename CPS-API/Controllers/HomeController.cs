@@ -37,9 +37,9 @@ namespace CPS_API.Controllers
 
         public async Task<IActionResult> Index()
         {
-            var user = await _graphServiceClient.Sites["root"].GetAsync();
-            if (user == null) throw new CpsException("Error while getting user");
-            ViewData["ApiResult"] = user.DisplayName;
+            var site = await _graphServiceClient.Sites["root"].GetAsync();
+            if (site == null) throw new CpsException("Error while getting site");
+            ViewData["ApiResult"] = site.DisplayName;
             return View();
         }
 
