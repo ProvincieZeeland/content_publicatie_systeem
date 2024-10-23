@@ -12,11 +12,9 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Extensions.Azure;
-using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
-using Microsoft.Kiota.Abstractions.Authentication;
 using Constants = Microsoft.Identity.Web.Constants;
 
 namespace CPS_API
@@ -81,13 +79,12 @@ namespace CPS_API
             services.Configure<GlobalSettings>(globalSettings);
 
             string[]? initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
-            var tenantId = Configuration.GetValue<string>("GlobalSettings:TenantId");
 
             services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
                 .AddMicrosoftIdentityWebApp(Configuration.GetSection("AzureAd"))
                 .EnableTokenAcquisitionToCallDownstreamApi(initialScopes)
+                .AddMicrosoftGraph(Configuration.GetSection("DownstreamApi"))
                 .AddInMemoryTokenCaches(options => options.AbsoluteExpirationRelativeToNow = new TimeSpan(0, 30, 0)); // cache 30 min max
-            AddMicrosoftGraphClient(services, tenantId);
 
             // Setup keyvault
             services.AddAzureClients(builder =>
@@ -126,19 +123,6 @@ namespace CPS_API
                  .AddMicrosoftIdentityWebApi(Configuration)
                  .EnableTokenAcquisitionToCallDownstreamApi()
                  .AddInMemoryTokenCaches();
-        }
-
-        public static IServiceCollection AddMicrosoftGraphClient(IServiceCollection services, string tenantId)
-        {
-            services.AddScoped(sp =>
-            {
-                var tokenAcquisition = sp.GetRequiredService<ITokenAcquisition>();
-                var authenticationProvider = new BaseBearerTokenAuthenticationProvider(new UserOnlyAuthenticationProvider(tokenAcquisition, tenantId));
-                var graphServiceClient = new GraphServiceClient(authenticationProvider);
-                return graphServiceClient;
-            });
-
-            return services;
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
