@@ -6,7 +6,7 @@
         {
             if (AdditionalData == null || !AdditionalData.TryGetValue(key, out var value))
             {
-                return "";
+                return string.Empty;
             }
             return value.ToString();
         }
