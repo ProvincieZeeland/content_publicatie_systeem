@@ -1,5 +1,6 @@
 ﻿using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
@@ -8,36 +9,53 @@ namespace CPS_Jobs.Helpers
 {
     public interface IAppService
     {
-        Task callService(string baseUrl, string scope, string url, ILogger log);
+        Task<HttpResponseMessage> GetAsync(string baseUrl, string scope, string url);
+
+        Task<HttpResponseMessage> PutAsync(string baseUrl, string scope, string url, string body);
     }
 
     public class AppService : IAppService
     {
+        private readonly ILogger<HandleWebHookQueue> _logger;
         private readonly ITokenAcquisition _tokenAcquisition;
 
-        public AppService(ITokenAcquisition tokenAcquisition)
+        public AppService(ILogger<HandleWebHookQueue> logger, ITokenAcquisition tokenAcquisition)
         {
+            _logger = logger;
             _tokenAcquisition = tokenAcquisition;
         }
 
-        public async Task callService(string baseUrl, string scope, string url, ILogger log)
+        public async Task<HttpResponseMessage> GetAsync(string baseUrl, string scope, string url)
+        {
+            return await callAsync(HttpMethod.Get, baseUrl, scope, url);
+        }
+
+        public async Task<HttpResponseMessage> PutAsync(string baseUrl, string scope, string url, string body)
+        {
+            return await callAsync(HttpMethod.Put, baseUrl, scope, url, body);
+        }
+
+        public async Task<HttpResponseMessage> callAsync(HttpMethod method, string baseUrl, string scope, string url, string body = null)
         {
             try
             {
                 string token = await _tokenAcquisition.GetAccessTokenForAppAsync(scope);
                 using var client = new HttpClient();
 
-                var method = HttpMethod.Get;
                 var request = new HttpRequestMessage(method, baseUrl + url);
                 request.Headers.Accept.Clear();
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                if (!string.IsNullOrEmpty(body))
+                {
+                    request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                }
 
-                await client.SendAsync(request);
+                return await client.SendAsync(request);
             }
             catch
             {
-                log.LogError("Could not start sync for url " + url);
+                _logger.LogError("Could not start sync for url " + url);
                 throw;
             }
         }

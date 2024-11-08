@@ -94,7 +94,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out var dateValue);
+                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateValue);
                 if (dateParsed)
                 {
                     property.SetValue(parent, dateValue, null);
@@ -179,14 +179,14 @@ namespace CPS_API.Helpers
         private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
         {
             var stringValue = value?.ToString();
-            var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out DateTimeOffset dateTimeValue);
+            var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeValue);
             DateTimeOffset? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
             var stringDefaultValue = defaultValue?.ToString();
-            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, new CultureInfo("nl-NL"), out DateTimeOffset dateTimeDefaultValue);
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeDefaultValue);
             DateTimeOffset? nullableDateDefaultValue = null;
             if (dateParsed)
             {

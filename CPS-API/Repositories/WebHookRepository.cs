@@ -8,6 +8,7 @@ using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
+using PnP.Framework.Entities;
 using Constants = CPS_API.Models.Constants;
 using GraphListItem = Microsoft.Graph.Models.ListItem;
 using GraphSite = Microsoft.Graph.Models.Site;
@@ -16,7 +17,7 @@ namespace CPS_API.Repositories
 {
     public interface IWebHookRepository
     {
-        Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType);
+        Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType);
 
         Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType);
 
@@ -63,7 +64,7 @@ namespace CPS_API.Repositories
 
         #region Create/Edit/Delete Webhook
 
-        public async Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType)
+        public async Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType)
         {
             var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
@@ -97,7 +98,7 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
         /// <returns>subscription ID of the new web hook</returns>
-        private static async Task<SubscriptionModel?> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        private static async Task<WebhookSubscription?> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
             string? responseString = null;
             using (var httpClient = new HttpClient())
@@ -108,7 +109,7 @@ namespace CPS_API.Repositories
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new SubscriptionModel()
+                    new WebhookSubscription()
                     {
                         Resource = String.Format("{0}/_api/web/lists('{1}')", siteUrl, listId.ToString()),
                         NotificationUrl = webHookEndPoint,
@@ -130,7 +131,7 @@ namespace CPS_API.Repositories
                 }
             }
 
-            return await Task.Run(() => JsonConvert.DeserializeObject<SubscriptionModel>(responseString));
+            return await Task.Run(() => JsonConvert.DeserializeObject<WebhookSubscription>(responseString));
         }
 
         public async Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType)
@@ -181,7 +182,7 @@ namespace CPS_API.Repositories
 
                 var expirationDateTime = DateTime.Now.AddMonths(validityInMonths).ToUniversalTime();
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new SubscriptionModel()
+                    new WebhookSubscription()
                     {
                         ExpirationDateTime = expirationDateTime,
                         NotificationUrl = webHookEndPoint,
@@ -482,7 +483,6 @@ namespace CPS_API.Repositories
         private async Task<string?> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
         {
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-            if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var isNewFile = metadata.Ids.ObjectId == null;
             if (isNewFile)

@@ -123,8 +123,12 @@ namespace CPS_API.Helpers
             {
                 await blobClient.UploadAsync(BinaryData.FromString(contentStr), options);
             }
-            else
+            else if (contentStream != null)
             {
+                if (contentStream.Length > 0)
+                {
+                    contentStream.Position = 0;
+                }
                 await blobClient.UploadAsync(contentStream, options);
             }
         }

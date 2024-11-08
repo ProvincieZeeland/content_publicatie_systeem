@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using PnP.Framework.Entities;
 
 namespace CPS_API.Controllers
 {
@@ -32,7 +33,7 @@ namespace CPS_API.Controllers
                 return StatusCode(404);
             }
 
-            SubscriptionModel subscription;
+            WebhookSubscription subscription;
             try
             {
                 subscription = await _webHookRepository.CreateWebHookForDropOffAsync(dropOffType);

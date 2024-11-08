@@ -10,20 +10,21 @@ namespace CPS_Jobs
 {
     public class PublicationFunction
     {
+        private readonly ILogger<PublicationFunction> _logger;
         private readonly IConfiguration _configuration;
         private readonly AppService _appService;
 
-        public PublicationFunction(IConfiguration config,
-                                   AppService appService)
+        public PublicationFunction(ILogger<PublicationFunction> logger, IConfiguration config, AppService appService)
         {
+            _logger = logger;
             _configuration = config;
             _appService = appService;
         }
 
         [Function("PublicationFunction")]
-        public async Task Run([TimerTrigger("0 0 0 * * *")] TimerInfo timer, ILogger log)
+        public async Task Run([TimerTrigger("0 0 0 * * *")] TimerInfo timer)
         {
-            log.LogInformation($"CPS Publication Timer trigger function started at: {DateTime.Now}");
+            _logger.LogInformation($"CPS Publication Timer trigger function started at: {DateTime.Now}");
 
             string scope = _configuration.GetValue<string>("Settings:Scope");
             string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
@@ -31,7 +32,7 @@ namespace CPS_Jobs
             if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
             if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");
 
-            await _appService.callService(baseUrl, scope, "/Export/publish", log);
+            await _appService.GetAsync(baseUrl, scope, "/Export/publish");
         }
     }
 }

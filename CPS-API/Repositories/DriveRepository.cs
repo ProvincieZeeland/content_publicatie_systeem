@@ -372,9 +372,11 @@ namespace CPS_API.Repositories
         public async Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false)
         {
             var graphServiceClient = GetGraphServiceClient(getAsUser);
-            var request = await graphServiceClient.Drives[driveId].Items[driveItemId].Content.GetAsync();
-            if (request == null) throw new CpsException($"Error while getting stream (driveId:{driveId}, driveItemId:{driveItemId})");
-            return request;
+            Stream? memStream = await graphServiceClient.Drives[driveId].Items[driveItemId].Content.GetAsync();
+            if (memStream == null) throw new CpsException($"Error while getting stream (driveId:{driveId}, driveItemId:{driveItemId})");
+            var bufferedStream = new MemoryStream();
+            await memStream.CopyToAsync(bufferedStream);//buffer the stream so that its seekable.
+            return bufferedStream;
         }
     }
 }

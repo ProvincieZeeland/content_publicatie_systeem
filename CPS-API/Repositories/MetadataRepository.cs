@@ -659,7 +659,7 @@ namespace CPS_API.Repositories
             if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value?.ToString();
-                var dateParsed = DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out DateTimeOffset dateValue);
+                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateValue);
                 if (!dateParsed && !ignoreRequiredFields && fieldMapping.Required)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");

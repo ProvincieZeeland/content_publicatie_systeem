@@ -154,7 +154,7 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, new CultureInfo("nl-NL"), out var dateTimeValue))
+                if (!DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue))
                 {
                     return true;
                 }
