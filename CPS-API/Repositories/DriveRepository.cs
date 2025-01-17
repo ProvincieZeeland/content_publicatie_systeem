@@ -7,6 +7,7 @@ using Microsoft.Graph;
 using Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
+using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Constants = CPS_API.Models.Constants;
@@ -99,6 +100,10 @@ namespace CPS_API.Repositories
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"DriveItem (SiteId = {siteId}, ListId = {listId}, ListItemId = {listItemId}) does not exist!");
+            }
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
