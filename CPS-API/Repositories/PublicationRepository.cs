@@ -44,10 +44,12 @@ namespace CPS_API.Repositories
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
             }
-            return result.Results?.ToList();
+            var entities = result.Results?.ToList();
+            if (entities == null) throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
+            return entities;
         }
 
-        private async Task<ToBePublishedEntity> GetToBePublishedEntityAsync(CloudTable table, string objectId)
+        private async Task<ToBePublishedEntity?> GetToBePublishedEntityAsync(CloudTable table, string objectId)
         {
             var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, objectId);
             var query = new TableQuery<ToBePublishedEntity>().Where(filter);

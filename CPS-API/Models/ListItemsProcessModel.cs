@@ -2,8 +2,8 @@
 {
     public class ListItemsProcessModel
     {
-        public List<string> processedItemIds { get; set; }
+        public List<string> processedItemIds { get; set; } = [];
 
-        public List<string> notProcessedItemIds { get; set; }
+        public List<string> notProcessedItemIds { get; set; } = [];
     }
 }

@@ -1,10 +1,9 @@
 ﻿using System.Globalization;
 using System.Reflection;
-using System.Text.Json;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using Microsoft.Graph;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Graph.Models;
+using Microsoft.Kiota.Abstractions.Serialization;
 using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Helpers
@@ -21,7 +20,7 @@ namespace CPS_API.Helpers
             }
             if (fieldMapping.FieldName.Equals(nameof(ObjectIdentifiers.ObjectId), StringComparison.InvariantCultureIgnoreCase))
             {
-                return metadata?.Ids?.GetType().GetProperty(fieldMapping.FieldName);
+                return metadata.Ids?.GetType().GetProperty(fieldMapping.FieldName);
             }
             else if (FieldIsMainMetadata(fieldMapping.FieldName))
             {
@@ -64,13 +63,42 @@ namespace CPS_API.Helpers
             // Term to string
             if (value != null && !string.IsNullOrEmpty(fieldMapping.TermsetName))
             {
-                var jsonString = value.ToString();
-                if (jsonString == null) return null;
-                var term = JsonSerializer.Deserialize<TaxonomyItemDto>(jsonString);
-                value = term?.Label;
+                var untypedObject = value as UntypedObject;
+                if (untypedObject == null) return null;
+                foreach (var (name, node) in untypedObject.GetValue())
+                {
+                    if (name != "Label") continue;
+                    var untypedString = node as UntypedString;
+                    if (untypedString == null) return null;
+                    return untypedString.GetValue();
+                }
             }
 
             return value;
+        }
+
+        public static bool SkipFieldForXml(PropertyInfo propertyInfo)
+        {
+            var fieldNamesToSkip = GetFieldNamesToSkipForXml();
+            if (fieldNamesToSkip.Contains(propertyInfo.Name)) return true;
+
+            if (propertyInfo.PropertyType == typeof(ObjectIdentifiers)) return true;
+
+            if (propertyInfo.PropertyType == typeof(List<ExternalReferences>)) return true;
+
+            return false;
+        }
+
+        public static List<string> GetFieldNamesToSkipForXml()
+        {
+            return new List<string>
+            {
+                Constants.ItemPropertyInfoName,
+                nameof(FileInformation.CreatedBy),
+                nameof(FileInformation.ModifiedBy),
+                nameof(FileInformation.SourceCreatedBy),
+                nameof(FileInformation.SourceModifiedBy)
+            };
         }
 
         public static bool FieldIsMainMetadata(string name)
@@ -101,9 +129,10 @@ namespace CPS_API.Helpers
             var fieldIsEmpty = IsMetadataFieldEmpty(value, propertyInfo);
             if (!fieldMapping.Required || !fieldIsEmpty) return null;
 
-            if (isForNewFile && fieldMapping.DefaultValue != null && !fieldMapping.DefaultValue.ToString().IsNullOrEmpty())
+            if (isForNewFile && fieldMapping.DefaultValue != null && !string.IsNullOrEmpty(fieldMapping.DefaultValue.ToString()))
             {
-                if (fieldMapping.DefaultValue.ToString().Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
+                var defaultValue = fieldMapping.DefaultValue.ToString();
+                if (defaultValue != null && defaultValue.Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
                 {
                     return DateTimeOffset.Now;
                 }
@@ -125,7 +154,7 @@ namespace CPS_API.Helpers
             else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, out var dateTimeValue))
+                if (!DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue))
                 {
                     return true;
                 }
@@ -166,7 +195,7 @@ namespace CPS_API.Helpers
             }
             // When editing terms, only edit term fields.
             // Terms are edited separately.
-            if (isForTermEdit == fieldMapping.TermsetName.IsNullOrEmpty())
+            if (isForTermEdit == string.IsNullOrEmpty(fieldMapping.TermsetName))
             {
                 return false;
             }

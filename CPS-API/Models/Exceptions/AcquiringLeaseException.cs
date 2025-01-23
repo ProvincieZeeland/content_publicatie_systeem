@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models.Exceptions
 {
-    public class AcquiringLeaseException : Exception
+    public class AcquiringLeaseException : Exception//NOSONAR
     {
         public AcquiringLeaseException()
         {

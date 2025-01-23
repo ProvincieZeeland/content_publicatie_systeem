@@ -10,11 +10,11 @@ namespace CPS_API.Models
 
         public DateTimeOffset? LastSynchronisationChanged { get; set; }
 
-        public string LastTokenForNew { get; set; }
+        public string LastTokenForNew { get; set; } = string.Empty;
 
-        public string LastTokenForChanged { get; set; }
+        public string LastTokenForChanged { get; set; } = string.Empty;
 
-        public string LastTokenForDeleted { get; set; }
+        public string LastTokenForDeleted { get; set; } = string.Empty;
 
         public bool? IsNewSynchronisationRunning { get; set; }
 
@@ -22,17 +22,17 @@ namespace CPS_API.Models
 
         public bool? IsDeletedSynchronisationRunning { get; set; }
 
-        public string DropOffSubscriptionExpirationDateTime { get; set; }
+        public string DropOffSubscriptionExpirationDateTime { get; set; } = string.Empty;
 
-        public string DropOffSubscriptionId { get; set; }
+        public string DropOffSubscriptionId { get; set; } = string.Empty;
 
-        public string DropOffLastChangeToken { get; set; }
+        public string DropOffLastChangeToken { get; set; } = string.Empty;
 
-        public string DropOffSubscriptionExpirationDateTimeFinancial { get; set; }
+        public string DropOffSubscriptionExpirationDateTimeFinancial { get; set; } = string.Empty;
 
-        public string DropOffSubscriptionIdFinancial { get; set; }
+        public string DropOffSubscriptionIdFinancial { get; set; } = string.Empty;
 
-        public string DropOffLastChangeTokenFinancial { get; set; }
+        public string DropOffLastChangeTokenFinancial { get; set; } = string.Empty;
 
         public SettingsEntity()
         {

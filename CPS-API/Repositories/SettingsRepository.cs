@@ -4,12 +4,13 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
 
 namespace CPS_API.Repositories
 {
     public interface ISettingsRepository
     {
-        Task<T> GetSetting<T>(string fieldName);
+        Task<T?> GetSetting<T>(string fieldName);
 
         Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName);
 
@@ -44,20 +45,19 @@ namespace CPS_API.Repositories
             return currentSetting;
         }
 
-        public async Task<T> GetSetting<T>(string fieldName)
+        public async Task<T?> GetSetting<T>(string fieldName)
         {
             var currentSetting = await GetCurrentSettings();
             return FieldPropertyHelper.GetFieldValue<T>(currentSetting, fieldName);
-
         }
 
         public async Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName)
         {
-            string value = await GetSetting<string>(fieldName);
+            var value = await GetSetting<string>(fieldName);
             if (string.IsNullOrEmpty(value)) return new Dictionary<string, string>();
             return value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                .Select(part => part.Split('='))
-               .ToDictionary(split => split[0], split => split[1]);
+               .ToDictionary(split => split[0], split => split.Length == 2 ? split[1] : split[1] + "=" + split[2]);
         }
 
         public async Task<bool> SaveSettingAsync(string fieldName, object? value)
@@ -144,31 +144,23 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    // Create blob for acquiring lease.
-                    var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
-                    await blob.UploadTextAsync("");
-
-                    // Acquire lease.
-                    var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
-                    if (string.IsNullOrEmpty(leaseId))
-                    {
-                        throw new AcquiringLeaseException("Error while acquiring lease");
-                    }
+                    (CloudBlockBlob blob, string leaseId) = await GetLeaseId(leaseContainer);
 
                     // Get new sequence number after acquiring lease.
-                    var setting = await GetCurrentSettings();
+                    var settings = await GetCurrentSettings();
+                    if (settings == null) throw new CpsException("Error while getting settings");
                     try
                     {
-                        if (!setting.SequenceNumber.HasValue) setting.SequenceNumber = 1;
-                        else setting.SequenceNumber++;
+                        if (!settings.SequenceNumber.HasValue) settings.SequenceNumber = 1;
+                        else settings.SequenceNumber++;
 
-                        await SaveSettingsAsync(setting);
+                        await SaveSettingsAsync(settings);
                     }
                     finally
                     {
                         await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                     }
-                    return setting.SequenceNumber;
+                    return settings.SequenceNumber;
                 }
                 catch (AcquiringLeaseException)
                 {
@@ -186,6 +178,18 @@ namespace CPS_API.Repositories
             }
             s.Stop();
             return null;
+        }
+
+        private async Task<(CloudBlockBlob, string)> GetLeaseId(CloudBlobContainer leaseContainer)
+        {
+            // Create blob for acquiring lease.
+            var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
+            await blob.UploadTextAsync("");
+
+            // Acquire lease.
+            var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
+            if (string.IsNullOrEmpty(leaseId)) throw new AcquiringLeaseException("Error while acquiring lease");
+            return (blob, leaseId);
         }
     }
 }

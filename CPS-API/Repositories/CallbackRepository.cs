@@ -5,7 +5,6 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Repositories
 {
@@ -32,7 +31,7 @@ namespace CPS_API.Repositories
 
         public async Task CallCallbackAsync(string objectId, SynchronisationType synchronisationType)
         {
-            if (_globalSettings.CallbackUrl.IsNullOrEmpty())
+            if (string.IsNullOrEmpty(_globalSettings.CallbackUrl))
             {
                 return;
             }
@@ -73,19 +72,19 @@ namespace CPS_API.Repositories
 
         private HttpRequestMessage GetCallbackRequest(string url, string body)
         {
-            var method = body.IsNullOrEmpty() ? HttpMethod.Get : HttpMethod.Post;
+            var method = string.IsNullOrEmpty(body) ? HttpMethod.Get : HttpMethod.Post;
             var request = new HttpRequestMessage(method, url);
             request.Headers.Accept.Clear();
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _globalSettings.CallbackAccessToken);
-            if (!body.IsNullOrEmpty())
+            if (!string.IsNullOrEmpty(body))
             {
                 request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             }
             return request;
         }
 
-        private async Task TrackCallbackExceptionAsync(Exception exception, string body, HttpRequestMessage request = null, HttpResponseMessage response = null)
+        private async Task TrackCallbackExceptionAsync(Exception exception, string body, HttpRequestMessage? request = null, HttpResponseMessage? response = null)
         {
             var properties = new Dictionary<string, string>
             {

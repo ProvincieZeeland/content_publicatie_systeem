@@ -4,12 +4,15 @@ using CPS_API.Models.Exceptions;
 using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Graph;
+using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
+using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.SharePoint.Client;
 using ChangeType = Microsoft.SharePoint.Client.ChangeType;
 using Constants = CPS_API.Models.Constants;
-using ListItem = Microsoft.Graph.ListItem;
+using ListItem = Microsoft.Graph.Models.ListItem;
 using SharePointClientList = Microsoft.SharePoint.Client.List;
 
 namespace CPS_API.Repositories
@@ -24,55 +27,57 @@ namespace CPS_API.Repositories
 
         Task<List<ListItem>?> GetListItemsAsync(string siteId, string listId, string fieldName, string fieldValue, bool getAsUser = false);
 
-        Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken);
+        Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken);
     }
 
     public class ListRepository : IListRepository
     {
         private readonly GlobalSettings _globalSettings;
-        private readonly GraphServiceClient _graphClient;
+        private readonly GraphServiceClient _graphServiceClient;
+        private readonly GraphServiceClient _graphAppServiceClient;
         private readonly TelemetryClient _telemetryClient;
         private readonly CertificateService _certificateService;
 
         public ListRepository(
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
-            GraphServiceClient graphClient,
+            GraphServiceClient graphServiceClient,
             TelemetryClient telemetryClient,
-            CertificateService certificateService)
+            CertificateService certificateService,
+            ITokenAcquisition tokenAcquisition)
         {
             _globalSettings = settings.Value;
-            _graphClient = graphClient;
+            _graphServiceClient = graphServiceClient;
+            _graphAppServiceClient = new GraphServiceClient(new BaseBearerTokenAuthenticationProvider(new AppOnlyAuthenticationProvider(tokenAcquisition, settings)));
             _telemetryClient = telemetryClient;
             _certificateService = certificateService;
+        }
+
+        private GraphServiceClient GetGraphServiceClient(bool getAsUser)
+        {
+            if (getAsUser) return _graphServiceClient;
+            return _graphAppServiceClient;
         }
 
         #region Graph
 
         public async Task<ListItem> GetListItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false)
         {
-            // Find file in SharePoint using ids
-            var queryOptions = new List<QueryOption>()
-            {
-                new QueryOption("expand", "fields")
-            };
-
-            var request = _graphClient.Sites[siteId].Lists[listId].Items[listItemId].Request(queryOptions);
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-
             try
             {
-                var listItem = await request.GetAsync();
+                // Find file in SharePoint using ids
+                var graphServiceClient = GetGraphServiceClient(getAsUser);
+                var listItem = await graphServiceClient.Sites[siteId].Lists[listId].Items[listItemId].GetAsync(x =>
+                {
+                    x.QueryParameters.Expand = new[] { "fields" };
+                });
                 if (listItem == null) throw new FileNotFoundException($"ListItem (siteId = {siteId}, listId = {listId}, listItemId = {listItemId}) does not exist!");
                 return listItem;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 throw;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
                 throw new FileNotFoundException($"ListItem (siteId = {siteId}, listId = {listId}, listItemId = {listItemId}) does not exist!");
             }
@@ -88,33 +93,38 @@ namespace CPS_API.Repositories
 
         public async Task<ListItem> AddListItemAsync(string siteId, string listId, ListItem listItem, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[siteId].Lists[listId].Items.Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            return await request.AddAsync(listItem);
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var addedListItem = await graphServiceClient.Sites[siteId].Lists[listId].Items.PostAsync(listItem);
+            if (addedListItem == null) throw new CpsException($"Error while adding listItem (siteId={siteId}, listId={listId})");
+            return addedListItem;
         }
 
         public async Task UpdateListItemAsync(string siteId, string listId, string listItemId, FieldValueSet fields, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[siteId].Lists[listId].Items[listItemId].Fields.Request();
-            if (!getAsUser)
-            {
-                request = request.WithAppOnly();
-            }
-            await request.UpdateAsync(fields);
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var updatedFields = await graphServiceClient.Sites[siteId].Lists[listId].Items[listItemId].Fields.PatchAsync(fields);
+            if (updatedFields == null) throw new CpsException($"Error while updating listItem (siteId={siteId}, listId={listId}, listItemId={listItemId})");
         }
 
         public async Task<List<ListItem>?> GetListItemsAsync(string siteId, string listId, string fieldName, string fieldValue, bool getAsUser = false)
         {
-            var request = _graphClient.Sites[siteId].Lists[listId].Items.Request().Expand("Fields").Filter($"Fields/{fieldName} eq '{fieldValue}'");
-            if (!getAsUser)
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var response = await graphServiceClient.Sites[siteId].Lists[listId].Items.GetAsync(x =>
             {
-                request = request.WithAppOnly();
-            }
-            var listItemsPage = await request.GetAsync();
-            return listItemsPage?.CurrentPage?.ToList();
+                x.QueryParameters.Expand = new[] { Constants.SelectFields };
+                x.QueryParameters.Filter = $"Fields/{fieldName} eq '{fieldValue}'";
+            });
+            if (response == null) throw new CpsException($"Error while getting listItems (siteId={siteId}, listId={listId}, fieldName={fieldName}, fieldValue={fieldValue})");
+
+            // list which contains all items
+            var listItems = new List<ListItem>();
+            var pageIterator = PageIterator<ListItem, ListItemCollectionResponse>.CreatePageIterator(graphServiceClient, response, item =>
+            {
+                listItems.Add(item);
+                return true;
+            });
+            await pageIterator.IterateAsync();
+            return listItems;
         }
 
         #endregion
@@ -129,7 +139,7 @@ namespace CPS_API.Repositories
             return list;
         }
 
-        public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string changeToken)
+        public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken)
         {
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
@@ -145,19 +155,9 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                if (ex is ServerException)
+                if (ex is ServerException serverEx && !IsValidChangeToken(serverEx))
                 {
-                    // The Exception that is thrown when ChangeTokenStart is invalid:
-                    //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
-                    var serverEx = ex as ServerException;
-                    if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
-                    || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
-                    || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
-                    || ((serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenTimeErrorCode)
-                    || ((serverEx.Message.Equals(Constants.InvalidChangeTokenWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenWrongObjectErrorCode))
-                    {
-                        throw new CpsException("Invalid ChangeToken");
-                    }
+                    throw new CpsException("Invalid ChangeToken");
                 }
 
                 _telemetryClient.TrackException(new CpsException($"Error while getting list changes {siteUrl}", ex));
@@ -168,14 +168,29 @@ namespace CPS_API.Repositories
             return FilterChangesOnDeletedAndUnique(changes);
         }
 
-        private async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointClientList list, string changeToken)
+        private static bool IsValidChangeToken(ServerException serverEx)
+        {
+            // The Exception that is thrown when ChangeTokenStart is invalid:
+            //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
+            if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
+            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenTimeErrorCode)
+            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenWrongObjectErrorCode))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private static async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointClientList list, string? changeToken)
         {
             ChangeCollection changeCollection;
             var changes = new SharePointListItemsDelta
             {
-                Items = new List<SharePointListItemDelta>(),
-                NewChangeToken = changeToken
+                Items = []
             };
+            if (changeToken != null) changes.NewChangeToken = changeToken;
             do
             {
                 changeCollection = await GetListChangesAsync(context, list, changes.NewChangeToken);
@@ -186,7 +201,7 @@ namespace CPS_API.Repositories
             return changes;
         }
 
-        private async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointClientList list, string lastChangeToken)
+        private static async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointClientList list, string lastChangeToken)
         {
             ChangeQuery query = new ChangeQuery(false, false)
             {
@@ -225,7 +240,7 @@ namespace CPS_API.Repositories
             return changeCollection;
         }
 
-        private List<SharePointListItemDelta> getDeltaListItems(ChangeCollection changes)
+        private static List<SharePointListItemDelta> getDeltaListItems(ChangeCollection changes)
         {
             var deltaListItems = new List<SharePointListItemDelta>();
             foreach (var change in changes)

@@ -10,9 +10,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
-using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Controllers
 {
@@ -37,8 +37,9 @@ namespace CPS_API.Controllers
 
         public async Task<IActionResult> Index()
         {
-            var user = await _graphServiceClient.Sites.Root.Request().GetAsync();
-            ViewData["ApiResult"] = user.DisplayName;
+            var site = await _graphServiceClient.Sites["root"].GetAsync();
+            if (site == null) throw new CpsException("Error while getting site");
+            ViewData["ApiResult"] = site.DisplayName;
             return View();
         }
 
@@ -63,7 +64,7 @@ namespace CPS_API.Controllers
                 HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
                 return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
@@ -103,7 +104,7 @@ namespace CPS_API.Controllers
                 };
                 return View("Error", viewmodel);
             }
-            if (fileUrl.IsNullOrEmpty())
+            if (string.IsNullOrEmpty(fileUrl))
             {
                 _telemetryClient.TrackException(new CpsException("File URL is null"), properties);
                 var viewmodel = new ErrorViewModel
@@ -137,7 +138,7 @@ namespace CPS_API.Controllers
                 HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
                 return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 var viewmodel = new ErrorViewModel
@@ -201,12 +202,22 @@ namespace CPS_API.Controllers
 
     public class ErrorViewModel
     {
-        public string RequestId { get; set; }
+        public string RequestId { get; set; } = string.Empty;
 
         public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
-        public string ErrorMessage { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
 
-        public bool ShowErrorMessage => !string.IsNullOrEmpty(ErrorMessage);
+        public bool ShowErrorMessage
+        {
+            get
+            {
+#if DEBUG
+                return !string.IsNullOrEmpty(ErrorMessage);
+#else
+                return false;
+#endif
+            }
+        }
     }
 }

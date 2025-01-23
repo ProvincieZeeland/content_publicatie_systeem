@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using CPS_Jobs.Helpers;
-using Microsoft.Azure.WebJobs;
+using CPS_Jobs.Models;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -10,36 +11,37 @@ namespace CPS_Jobs
 {
     public class SynchronisationFunction
     {
+        private readonly ILogger<SynchronisationFunction> _logger;
         private readonly IConfiguration _configuration;
         private readonly AppService _appService;
 
-        public SynchronisationFunction(IConfiguration config,
-                                       AppService appService)
+        public SynchronisationFunction(ILogger<SynchronisationFunction> logger, IConfiguration config, AppService appService)
         {
+            _logger = logger;
             _configuration = config;
             _appService = appService;
         }
 
-        [FunctionName("SynchronisationFunction")]
-        public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer, ILogger log)
+        [Function("SynchronisationFunction")]
+        public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo timer)
         {
-            log.LogInformation($"CPS Timer trigger function started at: {DateTime.Now}");
+            _logger.LogInformation($"CPS Timer trigger function started at: {DateTime.Now}");
 
             string scope = _configuration.GetValue<string>("Settings:Scope");
             string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
 
-            if (string.IsNullOrEmpty(scope)) throw new Exception("Scope cannot be empty");
-            if (string.IsNullOrEmpty(baseUrl)) throw new Exception("BaseUrl cannot be empty");
+            if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
+            if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");
 
             List<Task> tasks = new List<Task>();
             // Start New sync     
-            tasks.Add(_appService.callService(baseUrl, scope, "/Export/new", log));
+            tasks.Add(_appService.GetAsync(baseUrl, scope, "/Export/new"));
 
             // Start Update sync  
-            tasks.Add(_appService.callService(baseUrl, scope, "/Export/updated", log));
+            tasks.Add(_appService.GetAsync(baseUrl, scope, "/Export/updated"));
 
             // Start Delete sync  
-            tasks.Add(_appService.callService(baseUrl, scope, "/Export/deleted", log));
+            tasks.Add(_appService.GetAsync(baseUrl, scope, "/Export/deleted"));
 
             // Wait for all to finish
             await Task.WhenAll(tasks);

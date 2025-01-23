@@ -9,6 +9,6 @@ namespace CPS_API.Models
         // Summary:
         //     Gets or sets status.
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore, PropertyName = "resourceId", Required = Required.Default)]
-        public string ResourceId { get; set; }
+        public string ResourceId { get; set; } = string.Empty;
     }
 }

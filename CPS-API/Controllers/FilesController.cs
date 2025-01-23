@@ -3,15 +3,13 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
 using Microsoft.ApplicationInsights;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Graph;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Graph.Models.ODataErrors;
 
 namespace CPS_API.Controllers
 {
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize]
     [Route("[controller]")]
     [ApiController]
     public class FilesController : ControllerBase
@@ -44,7 +42,7 @@ namespace CPS_API.Controllers
             {
                 fileUrl = await _filesRepository.GetUrlAsync(objectId);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Access denied");
@@ -64,7 +62,7 @@ namespace CPS_API.Controllers
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while getting url");
             }
-            if (fileUrl.IsNullOrEmpty())
+            if (string.IsNullOrEmpty(fileUrl))
             {
                 _telemetryClient.TrackEvent("Error while getting url", properties);
                 return StatusCode(500, "Error while getting url");
@@ -87,7 +85,7 @@ namespace CPS_API.Controllers
             {
                 metadata = await _metadataRepository.GetMetadataAsync(objectId);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Access denied");
@@ -126,9 +124,9 @@ namespace CPS_API.Controllers
             var properties = new Dictionary<string, string>
             {
                 ["ObjectId"] = "",
-                ["FileName"] = file.Metadata.FileName,
-                ["Source"] = file.Metadata.AdditionalMetadata.Source,
-                ["Classification"] = file.Metadata.AdditionalMetadata.Classification
+                ["FileName"] = file.Metadata.FileName!,
+                ["Source"] = file.Metadata.AdditionalMetadata!.Source,
+                ["Classification"] = file.Metadata.AdditionalMetadata!.Classification!
             };
 
             string? objectId;
@@ -137,7 +135,7 @@ namespace CPS_API.Controllers
                 var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
                 objectId = spoIds.ObjectId;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
@@ -162,7 +160,7 @@ namespace CPS_API.Controllers
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while creating file");
             }
-            if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating file");
+            if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating file");
 
             return Ok(objectId);
         }
@@ -228,7 +226,7 @@ namespace CPS_API.Controllers
                 var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
                 objectId = spoIds.ObjectId;
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
@@ -248,7 +246,7 @@ namespace CPS_API.Controllers
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(500, ex.Message ?? "Error while creating large file");
             }
-            if (objectId.IsNullOrEmpty()) return StatusCode(500, "Error while creating large file");
+            if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating large file");
 
             return Ok(objectId);
         }
@@ -268,7 +266,7 @@ namespace CPS_API.Controllers
             {
                 await _filesRepository.UpdateContentAsync(objectId, content);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
@@ -308,7 +306,7 @@ namespace CPS_API.Controllers
                 var formFile = Request.Form.Files[0];
                 await _filesRepository.UpdateContentAsync(objectId, formFile);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
@@ -351,7 +349,7 @@ namespace CPS_API.Controllers
             {
                 await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");
@@ -393,7 +391,7 @@ namespace CPS_API.Controllers
             {
                 await _metadataRepository.UpdateFileName(objectId, data.FileName);
             }
-            catch (ServiceException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
                 _telemetryClient.TrackException(ex, properties);
                 return StatusCode(403, ex.Message ?? "Forbidden");

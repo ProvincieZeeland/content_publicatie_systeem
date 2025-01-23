@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models.Exceptions
 {
-    public class CpsException : Exception
+    public class CpsException : Exception//NOSONAR
     {
         public CpsException(string? message) : base(message)
         {

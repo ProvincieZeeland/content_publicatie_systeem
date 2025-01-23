@@ -2,7 +2,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using CPS_API.Models;
-using Microsoft.IdentityModel.Tokens;
 
 namespace CPS_API.Helpers
 {
@@ -40,7 +39,7 @@ namespace CPS_API.Helpers
             var resultSegment = containerClient.GetBlobsByHierarchyAsync(prefix: folder, delimiter: "/").AsPages(default, 500);
 
             // Enumerate the blobs returned for each page.
-            await foreach (Azure.Page<BlobHierarchyItem> blobPage in resultSegment)
+            await foreach (Page<BlobHierarchyItem> blobPage in resultSegment)
             {
                 // A hierarchical listing may return both virtual directories and blobs.
                 foreach (BlobHierarchyItem blobhierarchyItem in blobPage.Values)
@@ -124,8 +123,12 @@ namespace CPS_API.Helpers
             {
                 await blobClient.UploadAsync(BinaryData.FromString(contentStr), options);
             }
-            else
+            else if (contentStream != null)
             {
+                if (contentStream.Length > 0)
+                {
+                    contentStream.Position = 0;
+                }
                 await blobClient.UploadAsync(contentStream, options);
             }
         }
@@ -134,21 +137,21 @@ namespace CPS_API.Helpers
         {
             var containerClient = await GetBlobContainerClient(containerName);
             var taggedBlobItems = FindBlobsByTags(containerClient, objectId);
-            if (taggedBlobItems.IsNullOrEmpty())
+            if (taggedBlobItems == null || !taggedBlobItems.Any())
             {
                 if (deleteIfExists) return;
                 throw new FileNotFoundException($"Blob (objectid = {objectId}) does not exist!");
             }
 
-            foreach (var blobItem in taggedBlobItems)
+            var blobNames = taggedBlobItems!.Select(blobItem => blobItem.BlobName);
+            foreach (var blobName in blobNames)
             {
-                var blobName = blobItem.BlobName;
                 var blobClient = containerClient.GetBlobClient(blobName);
                 await blobClient.DeleteAsync();
             }
         }
 
-        private Pageable<TaggedBlobItem>? FindBlobsByTags(BlobContainerClient containerClient, string objectId)
+        private static Pageable<TaggedBlobItem>? FindBlobsByTags(BlobContainerClient containerClient, string objectId)
         {
             var query = $"objectid = '{objectId}'";
             return containerClient.FindBlobsByTags(query);

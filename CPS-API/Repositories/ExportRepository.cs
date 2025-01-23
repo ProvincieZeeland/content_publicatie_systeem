@@ -34,17 +34,7 @@ namespace CPS_API.Repositories
 
         private readonly TelemetryClient _telemetryClient;
 
-        public ExportRepository(
-            IDriveRepository driveRepository,
-            ISettingsRepository settingsRepository,
-            IMetadataRepository sharePointRepository,
-            IObjectIdRepository objectIdRepository,
-            IPublicationRepository publicationRepository,
-            ICallbackRepository callbackRepository,
-            FileStorageService fileStorageService,
-            XmlExportSerivce xmlExportSerivce,
-            IOptions<GlobalSettings> settings,
-            TelemetryClient telemetryClient)
+        public ExportRepository(IDriveRepository driveRepository, ISettingsRepository settingsRepository, IMetadataRepository sharePointRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient)//NOSONAR
         {
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
@@ -358,6 +348,7 @@ namespace CPS_API.Repositories
 
         private async Task CreateContentAsync(ObjectIdentifiersEntity objectIdentifiersEntity, FileInformation metadata, Stream stream)
         {
+            if (metadata.MimeType == null) throw new CpsException($"No {nameof(FileInformation.MimeType)} found for {nameof(metadata)}");
             try
             {
                 var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
@@ -530,7 +521,9 @@ namespace CPS_API.Repositories
                 succeeded = await UploadFileAndXmlToFileStorageAsync(objectIdentifiersEntity);
             }
 
-            var traceSynchronisationPart = synchronisationType == SynchronisationType.create ? "New" : synchronisationType == SynchronisationType.update ? "Updated" : "Deleted";
+            var traceSynchronisationPart = "Deleted";
+            if (synchronisationType == SynchronisationType.create) traceSynchronisationPart = "New";
+            if (synchronisationType == SynchronisationType.update) traceSynchronisationPart = "Updated";
             if (!succeeded)
             {
                 _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
@@ -573,7 +566,7 @@ namespace CPS_API.Repositories
         /// </summary>
         private static string GetNewNextToken(DeltaResponse deltaResponse)
         {
-            return string.Join(";", deltaResponse.NextTokens.Select(x => x.Key + "=" + x.Value).ToArray());
+            return string.Join(";", deltaResponse.DeltaLinks.Select(x => x.Key + "=" + x.Value).ToArray());
         }
 
         private void TrackCpsException(Exception exception, string? driveId = null, string? driveItemId = null, string? objectId = null, string? errorMessage = null)

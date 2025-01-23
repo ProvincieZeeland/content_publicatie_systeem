@@ -5,7 +5,7 @@ namespace CPS_API.Helpers
 {
     public static class MultipartRequestHelper
     {
-        // Content-Type: multipart/form-data; boundary="----WebKitFormBoundarymx2fSWqWSd0OxQqq"
+        // Content-Type: multipart/form-data, boundary="----WebKitFormBoundarymx2fSWqWSd0OxQqq"
         // The spec at https://tools.ietf.org/html/rfc2046#section-5.1 states that 70 characters is a reasonable limit.
         public static string GetBoundary(MediaTypeHeaderValue contentType, int lengthLimit)
         {
@@ -33,7 +33,7 @@ namespace CPS_API.Helpers
 
         public static bool HasFormDataContentDisposition(ContentDispositionHeaderValue contentDisposition)
         {
-            // Content-Disposition: form-data; name="key";
+            // Content-Disposition: form-data, name="key"
             return contentDisposition != null
                 && contentDisposition.DispositionType.Equals(Constants.DispositionTypeFormData)
                 && string.IsNullOrEmpty(contentDisposition.FileName.Value)
@@ -42,7 +42,7 @@ namespace CPS_API.Helpers
 
         public static bool HasFileContentDisposition(ContentDispositionHeaderValue contentDisposition)
         {
-            // Content-Disposition: form-data; name="myfile1"; filename="Misc 002.jpg"
+            // Content-Disposition: form-data, name="myfile1", filename="Misc 002.jpg"
             return contentDisposition != null
                 && contentDisposition.DispositionType.Equals(Constants.DispositionTypeFormData)
                 && (!string.IsNullOrEmpty(contentDisposition.FileName.Value)

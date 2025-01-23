@@ -8,15 +8,16 @@ using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
+using PnP.Framework.Entities;
 using Constants = CPS_API.Models.Constants;
-using GraphListItem = Microsoft.Graph.ListItem;
-using GraphSite = Microsoft.Graph.Site;
+using GraphListItem = Microsoft.Graph.Models.ListItem;
+using GraphSite = Microsoft.Graph.Models.Site;
 
 namespace CPS_API.Repositories
 {
     public interface IWebHookRepository
     {
-        Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType);
+        Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType);
 
         Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType);
 
@@ -45,19 +46,7 @@ namespace CPS_API.Repositories
 
         private readonly TelemetryClient _telemetryClient;
 
-        public WebHookRepository(
-            IDriveRepository driveRepository,
-            IListRepository listRepository,
-            IObjectIdRepository objectIdRepository,
-            IMetadataRepository metadataRepository,
-            IFilesRepository filesRepository,
-            ISettingsRepository settingsRepository,
-            ISharePointRepository sharePointRepository,
-            StorageTableService storageTableService,
-            EmailService emailService,
-            CertificateService certificateService,
-            IOptions<GlobalSettings> settings,
-            TelemetryClient telemetryClient)
+        public WebHookRepository(IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient)//NOSONAR
         {
             _driveRepository = driveRepository;
             _listRepository = listRepository;
@@ -75,7 +64,7 @@ namespace CPS_API.Repositories
 
         #region Create/Edit/Delete Webhook
 
-        public async Task<SubscriptionModel> CreateWebHookForDropOffAsync(DropOffType dropOffType)
+        public async Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType)
         {
             var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
@@ -109,7 +98,7 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
         /// <returns>subscription ID of the new web hook</returns>
-        private static async Task<SubscriptionModel> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        private static async Task<WebhookSubscription?> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
             string? responseString = null;
             using (var httpClient = new HttpClient())
@@ -120,7 +109,7 @@ namespace CPS_API.Repositories
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new SubscriptionModel()
+                    new WebhookSubscription()
                     {
                         Resource = String.Format("{0}/_api/web/lists('{1}')", siteUrl, listId.ToString()),
                         NotificationUrl = webHookEndPoint,
@@ -142,7 +131,7 @@ namespace CPS_API.Repositories
                 }
             }
 
-            return await Task.Run(() => JsonConvert.DeserializeObject<SubscriptionModel>(responseString));
+            return await Task.Run(() => JsonConvert.DeserializeObject<WebhookSubscription>(responseString));
         }
 
         public async Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType)
@@ -159,7 +148,10 @@ namespace CPS_API.Repositories
 
             var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
+
             var subscriptionId = await _settingsRepository.GetSetting<string>(dropOffType.GetDropOffSubscriptionId());
+            if (subscriptionId == null) throw new CpsException("Error while getting subscriptionId for webhook");
+
             var expirationDateTime = await UpdateListWebHookAsync(site.WebUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
             if (expirationDateTime == null) throw new CpsException("Error while adding webhook");
 
@@ -190,7 +182,7 @@ namespace CPS_API.Repositories
 
                 var expirationDateTime = DateTime.Now.AddMonths(validityInMonths).ToUniversalTime();
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new SubscriptionModel()
+                    new WebhookSubscription()
                     {
                         ExpirationDateTime = expirationDateTime,
                         NotificationUrl = webHookEndPoint,
@@ -203,7 +195,7 @@ namespace CPS_API.Repositories
                 if (response.StatusCode != System.Net.HttpStatusCode.NoContent)
                 {
                     // oops...something went wrong, maybe the web hook does not exist?
-                    throw new Exception(await response.Content.ReadAsStringAsync());
+                    throw new CpsException(await response.Content.ReadAsStringAsync());
                 }
                 else
                 {
@@ -247,7 +239,7 @@ namespace CPS_API.Repositories
                 if (response.StatusCode != System.Net.HttpStatusCode.NoContent)
                 {
                     // oops...something went wrong, maybe the web hook does not exist?
-                    throw new Exception(await response.Content.ReadAsStringAsync());
+                    throw new CpsException(await response.Content.ReadAsStringAsync());
                 }
                 else
                 {
@@ -363,17 +355,17 @@ namespace CPS_API.Repositories
         /// </summary>
         private async Task<ListItemsProcessModel> ProccessListItemsAsync(string siteId, string listId, List<SharePointListItemDelta> items)
         {
-            var response = new ListItemsProcessModel();
-            response.processedItemIds = new List<string>();
-            response.notProcessedItemIds = new List<string>();
+            ListItemsProcessModel response = new();
+            response.processedItemIds = [];
+            response.notProcessedItemIds = [];
 
-            foreach (var item in items)
+            var itemIds = items.Select(item => item.ListItemId);
+            foreach (var listItemId in itemIds)
             {
                 try
                 {
                     // Get ListItem and ids
-                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, item.ListItemId.ToString());
-                    var ids = await _objectIdRepository.GetObjectIdentifiersAsync(siteId, listId, item.ListItemId.ToString());
+                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, listItemId.ToString());
 
                     // Check if listitem must me processed
                     var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem);
@@ -395,8 +387,8 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {item.ListItemId}", ex));
-                    response.notProcessedItemIds.Add(item.ListItemId.ToString());
+                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {listItemId}", ex));
+                    response.notProcessedItemIds.Add(listItemId.ToString());
                 }
             }
             return response;
@@ -421,7 +413,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, ex, "Failed to get metadata for DropOff file.");
+                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to get metadata for DropOff file.", ex);
                 return false;
             }
 
@@ -434,23 +426,28 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, ex, "Failed to get new metadata for DropOff file.", metadata);
+                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to get new metadata for DropOff file.", ex, metadata);
+                return false;
+            }
+            if (metadata.Ids == null || string.IsNullOrEmpty(metadata.Ids.DriveId) || string.IsNullOrEmpty(metadata.Ids.DriveItemId))
+            {
+                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to process DropOff file.", metadata: metadata);
                 return false;
             }
 
             try
             {
-                var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId, metadata.Ids.DriveItemId);
+                var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
                 metadata.Ids.ObjectId = await CreateOrUpdateFileAsync(newMetadata, stream);
                 await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata);
             }
             catch (Exception ex)
             {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, ex, "Failed to process DropOff file.", metadata);
+                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to process DropOff file.", ex, metadata);
                 return false;
             }
 
-            await _emailService.GetAuthorEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
+            _emailService.GetAuthorEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
             return true;
         }
 
@@ -459,6 +456,9 @@ namespace CPS_API.Repositories
         /// </summary>
         private async Task<ObjectIdentifiers?> GetIdsForNewLocationAsync(FileInformation metadata)
         {
+            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+
             var locationMapping = _globalSettings.LocationMapping.Find(item =>
                 item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
                 && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
@@ -480,8 +480,10 @@ namespace CPS_API.Repositories
             return newLocationIds;
         }
 
-        private async Task<string> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
+        private async Task<string?> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
         {
+            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+
             var isNewFile = metadata.Ids.ObjectId == null;
             if (isNewFile)
             {
@@ -491,7 +493,7 @@ namespace CPS_API.Repositories
             else
             {
                 await _metadataRepository.UpdateAllMetadataAsync(metadata);
-                await _filesRepository.UpdateContentAsync(metadata.Ids.ObjectId, stream);
+                await _filesRepository.UpdateContentAsync(metadata.Ids.ObjectId!, stream);
                 return metadata.Ids.ObjectId;
             }
         }
@@ -500,7 +502,7 @@ namespace CPS_API.Repositories
 
         #region Error logging
 
-        private async Task LogErrorAndSendMailAsync(string siteId, string listId, GraphListItem listItem, Exception ex, string errorMessage, FileInformation? metadata = null)
+        private async Task LogErrorAndSendMailAsync(string siteId, string listId, GraphListItem listItem, string errorMessage, Exception? ex = null, FileInformation? metadata = null)
         {
             // Unsuccesfull -> change status
             if (metadata != null)
@@ -509,14 +511,14 @@ namespace CPS_API.Repositories
             }
 
             // Log error, we need the metadata to update the error in the DropOff.
-            LogError(siteId, listId, listItem.Id, ex, errorMessage);
+            LogError(siteId, listId, listItem.Id, errorMessage, ex);
 
             // Mail not proccessed file.
             var fileIdentifier = metadata == null ? listItem.Id : metadata.FileName;
-            await _emailService.GetAuthorEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
+            _emailService.GetAuthorEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
         }
 
-        private void LogError(string siteId, string listId, string listItemId, Exception ex, string errorMessage)
+        private void LogError(string siteId, string listId, string listItemId, string errorMessage, Exception? ex = null)
         {
             var properties = new Dictionary<string, string>
             {

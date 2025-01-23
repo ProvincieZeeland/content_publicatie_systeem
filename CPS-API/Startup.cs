@@ -5,7 +5,6 @@ using CPS_API.Repositories;
 using CPS_API.Services;
 using IExperts.SocialIntranet.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
@@ -16,6 +15,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
+using Constants = Microsoft.Identity.Web.Constants;
 
 namespace CPS_API
 {
@@ -81,7 +81,7 @@ namespace CPS_API
             string[]? initialScopes = Configuration.GetValue<string>("DownstreamApi:Scopes")?.Split(' ');
 
             services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-                .AddMicrosoftIdentityWebApp(Configuration)
+                .AddMicrosoftIdentityWebApp(Configuration.GetSection("AzureAd"))
                 .EnableTokenAcquisitionToCallDownstreamApi(initialScopes)
                 .AddMicrosoftGraph(Configuration.GetSection("DownstreamApi"))
                 .AddInMemoryTokenCaches(options => options.AbsoluteExpirationRelativeToNow = new TimeSpan(0, 30, 0)); // cache 30 min max
@@ -115,7 +115,11 @@ namespace CPS_API
 
             // For API calls
             services
-                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                 .AddAuthentication(sharedOptions =>
+                 {
+                     sharedOptions.DefaultScheme = Constants.Bearer;
+                     sharedOptions.DefaultChallengeScheme = Constants.Bearer;
+                 })
                  .AddMicrosoftIdentityWebApi(Configuration)
                  .EnableTokenAcquisitionToCallDownstreamApi()
                  .AddInMemoryTokenCaches();

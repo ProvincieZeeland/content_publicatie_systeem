@@ -94,10 +94,10 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var boolParsed = DateTimeOffset.TryParse(stringValue, out var boolValue);
-                if (boolParsed)
+                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateValue);
+                if (dateParsed)
                 {
-                    property.SetValue(parent, boolValue, null);
+                    property.SetValue(parent, dateValue, null);
                 }
                 else
                 {
@@ -142,7 +142,7 @@ namespace CPS_API.Helpers
                     return true;
                 }
             }
-            else if (propertyInfo.PropertyType == typeof(DateTimeOffset))
+            else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
             {
                 if (DateTimeOffsetPropertyContainsData(value, defaultValue))
                 {
@@ -165,8 +165,8 @@ namespace CPS_API.Helpers
 
         private static bool IntegerPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var stringDefaultValue = defaultValue.ToString();
+            var stringValue = value?.ToString();
+            var stringDefaultValue = defaultValue?.ToString();
             var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
             var decimalDefaultValue = Convert.ToDecimal(stringDefaultValue, new CultureInfo("en-US"));
             if (decimalValue != decimalDefaultValue)
@@ -178,15 +178,15 @@ namespace CPS_API.Helpers
 
         private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var dateParsed = DateTimeOffset.TryParse(stringValue, out DateTimeOffset dateTimeValue);
+            var stringValue = value?.ToString();
+            var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeValue);
             DateTimeOffset? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
-            var stringDefaultValue = defaultValue.ToString();
-            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, out DateTimeOffset dateTimeDefaultValue);
+            var stringDefaultValue = defaultValue?.ToString();
+            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeDefaultValue);
             DateTimeOffset? nullableDateDefaultValue = null;
             if (dateParsed)
             {
@@ -201,8 +201,8 @@ namespace CPS_API.Helpers
 
         private static bool StringPropertyContainsData(object? value, object? defaultValue)
         {
-            var stringValue = value.ToString();
-            var stringDefaultValue = defaultValue.ToString();
+            var stringValue = value?.ToString();
+            var stringDefaultValue = defaultValue?.ToString();
             if (stringValue != stringDefaultValue)
             {
                 return true;

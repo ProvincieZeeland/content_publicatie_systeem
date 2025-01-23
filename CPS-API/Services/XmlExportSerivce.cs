@@ -1,7 +1,9 @@
 ﻿using System.Reflection;
 using System.Xml;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Services
 {
@@ -14,6 +16,8 @@ namespace CPS_API.Services
     {
         public string GetMetadataAsXml(FileInformation metadata)
         {
+            if (metadata.Ids == null) throw new CpsException("No ID's found for metadata while getting xml.");
+
             using var sw = new StringWriter();
             var settings = new XmlWriterSettings
             {
@@ -27,32 +31,11 @@ namespace CPS_API.Services
 
                 foreach (var propertyInfo in metadata.GetType().GetProperties())
                 {
-                    if (
-                        propertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
-                        || propertyInfo.PropertyType == typeof(ObjectIdentifiers)
-                        || propertyInfo.PropertyType == typeof(List<ExternalReferences>)
-                        || propertyInfo.Name.Equals(nameof(FileInformation.CreatedBy), StringComparison.InvariantCultureIgnoreCase)
-                        || propertyInfo.Name.Equals(nameof(FileInformation.ModifiedBy), StringComparison.InvariantCultureIgnoreCase)
-                        || propertyInfo.Name.Equals(nameof(FileInformation.SourceCreatedBy), StringComparison.InvariantCultureIgnoreCase)
-                        || propertyInfo.Name.Equals(nameof(FileInformation.SourceModifiedBy), StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        continue;
-                    }
+                    if (MetadataHelper.SkipFieldForXml(propertyInfo)) continue;
+
                     if (propertyInfo.PropertyType == typeof(FileMetadata))
                     {
-                        var value = propertyInfo.GetValue(metadata);
-                        if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
-                        foreach (var secondPropertyInfo in value.GetType().GetProperties())
-                        {
-                            if (secondPropertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
-                                || secondPropertyInfo.Name.Equals(nameof(FileMetadata.Source), StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                continue;
-                            }
-                            writer.WriteStartElement(secondPropertyInfo.Name);
-                            writer.WriteString(GetPropertyValue(secondPropertyInfo, value));
-                            writer.WriteEndElement();
-                        }
+                        WriteFileMetadataToXml(propertyInfo, metadata, writer);
                     }
                     else
                     {
@@ -70,9 +53,26 @@ namespace CPS_API.Services
             return sw.ToString();
         }
 
+        private void WriteFileMetadataToXml(PropertyInfo propertyInfo, FileInformation metadata, XmlWriter writer)
+        {
+            var value = propertyInfo.GetValue(metadata);
+            if (value == null) throw new CpsException("Error while getting metadata XML: value is null");
+            foreach (var secondPropertyInfo in value.GetType().GetProperties())
+            {
+                if (secondPropertyInfo.Name.Equals(Constants.ItemPropertyInfoName, StringComparison.InvariantCultureIgnoreCase)
+                    || secondPropertyInfo.Name.Equals(nameof(FileMetadata.Source), StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+                writer.WriteStartElement(secondPropertyInfo.Name);
+                writer.WriteString(GetPropertyValue(secondPropertyInfo, value));
+                writer.WriteEndElement();
+            }
+        }
+
         private string? GetPropertyValue(PropertyInfo? propertyInfo, object obj)
         {
-            if (propertyInfo == null) throw new ArgumentNullException(nameof(propertyInfo));
+            ArgumentNullException.ThrowIfNull(propertyInfo);
             var value = propertyInfo.GetValue(obj);
             return value == null ? string.Empty : value.ToString();
         }

@@ -1,6 +1,6 @@
 ﻿namespace CPS_API.Models
 {
-    public class Constants
+    public static class Constants
     {
         public const string SettingsSequenceField = "SequenceNumber";
         public const string SettingsLastSynchronisationNewField = "LastSynchronisationNew";
@@ -39,5 +39,8 @@
         public const string DropOffMetadataStatusProcessed = "Verwerkt";
         public const string DispositionTypeFormData = "form-data";
         public const string ItemPropertyInfoName = "Item";
+        public const string SelectSharePointIds = "sharepointids";
+        public const string SelectFields = "Fields";
+        public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
     }
 }

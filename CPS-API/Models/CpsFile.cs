@@ -2,8 +2,8 @@
 {
     public class CpsFile
     {
-        public byte[] Content { get; set; }
+        public byte[] Content { get; set; } = [];
 
-        public FileInformation Metadata { get; set; }
+        public FileInformation Metadata { get; set; } = new();
     }
 }

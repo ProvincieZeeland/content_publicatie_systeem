@@ -1,31 +1,27 @@
 ﻿using CPS_API.Models;
 using CPS_API.Repositories;
-using CPS_API.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using PnP.Framework.Entities;
 
 namespace CPS_API.Controllers
 {
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize]
     [Route("[controller]")]
     [ApiController]
     public class WebHookController : Controller
     {
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
-        private readonly ISharePointRepository _sharePointRepository;
 
         public WebHookController(
             IOptions<GlobalSettings> settings,
-            IWebHookRepository webHookRepository,
-            ISharePointRepository sharePointRepository)
+            IWebHookRepository webHookRepository)
         {
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
-            _sharePointRepository = sharePointRepository;
         }
 
         [HttpPut]
@@ -37,7 +33,7 @@ namespace CPS_API.Controllers
                 return StatusCode(404);
             }
 
-            SubscriptionModel subscription;
+            WebhookSubscription subscription;
             try
             {
                 subscription = await _webHookRepository.CreateWebHookForDropOffAsync(dropOffType);

@@ -5,7 +5,7 @@ namespace CPS_API.Models
 {
     public class FileMetadata : CallbackFileMetadata
     {
-        public string Source { get; set; } = "";
+        public string Source { get; set; } = string.Empty;
 
         [JsonIgnore]
         public object? this[string fieldname]
