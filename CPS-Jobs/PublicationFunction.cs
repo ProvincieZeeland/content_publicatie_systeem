@@ -24,10 +24,10 @@ namespace CPS_Jobs
         [Function("PublicationFunction")]
         public async Task Run([TimerTrigger("0 0 0 * * *")] TimerInfo timer)
         {
-            _logger.LogInformation($"CPS Publication Timer trigger function started at: {DateTime.Now}");
+            _logger.LogInformation("CPS Publication Timer trigger function started at: {Now}", DateTime.Now);
 
-            string scope = _configuration.GetValue<string>("Settings:Scope");
-            string baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
+            var scope = _configuration.GetValue<string>("Settings:Scope");
+            var baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
 
             if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
             if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");

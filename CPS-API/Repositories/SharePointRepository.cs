@@ -7,25 +7,23 @@ using Microsoft.Graph;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.SharePoint.Client;
-using Microsoft.SharePoint.Client.Taxonomy;
 using PnP.Core.Model.SharePoint;
 using PnP.Framework;
 using Constants = CPS_API.Models.Constants;
 using CopyMigrationOptions = PnP.Core.Model.SharePoint.CopyMigrationOptions;
-using FieldTaxonomyValue = Microsoft.SharePoint.Client.Taxonomy.TaxonomyFieldValue;
 using GraphSite = Microsoft.Graph.Models.Site;
 
 namespace CPS_API.Services
 {
     public interface ISharePointRepository
     {
+        Task<string?> GetSiteWebUrlAsync(string siteId, bool getAsUser = false);
+
         Task<GraphSite> GetSiteAsync(string siteId, bool getAsUser = false);
 
-        Task UpdateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
-
-        Task UpdateTermsForExternalReferencesAsync(string siteId, string listId, List<ExternalReferenceItem> externalReferenceItems, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
-
         Task<string> MoveFileAsync(string siteId, string listId, string listItemId, string destinationSiteId, string destinationListId);
+
+        Task<string?> GetNewTermValue(string siteId, PropertyInfo propertyInfo, object? value, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields);
     }
 
     public class SharePointRepository : ISharePointRepository
@@ -58,6 +56,17 @@ namespace CPS_API.Services
 
         #region Site 
 
+        public async Task<string?> GetSiteWebUrlAsync(string siteId, bool getAsUser = false)
+        {
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var site = await graphServiceClient.Sites[siteId].GetAsync(x =>
+            {
+                x.QueryParameters.Select = [Constants.SelectWebUrl];
+            });
+            if (site == null) throw new CpsException($"Error while getting site (siteId:{siteId})");
+            return site.WebUrl;
+        }
+
         public async Task<GraphSite> GetSiteAsync(string siteId, bool getAsUser = false)
         {
             var graphServiceClient = GetGraphServiceClient(getAsUser);
@@ -70,103 +79,7 @@ namespace CPS_API.Services
 
         #region Terms
 
-        public async Task UpdateTermsForMetadataAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
-        {
-            if (string.IsNullOrEmpty(metadata.Ids!.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(metadata.Ids!.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(metadata.Ids!.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
-
-            var site = await GetSiteAsync(metadata.Ids.SiteId!, getAsUser);
-
-            // Graph does not support full Term management yet, using PnP for SPO API instead
-            var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
-
-            var termStore = GetAllTerms(context, metadata.Ids.SiteId!);
-            if (termStore == null) throw new CpsException("Term store not found!");
-
-            var newValues = GetNewMetadataTermValues(termStore, metadata, isForNewFile, ignoreRequiredFields);
-
-            // actually update fields
-            UpdateTermFields(metadata.Ids.ListId!, metadata.Ids.ListItemId!, context, newValues);
-        }
-
-        private Dictionary<string, FieldTaxonomyValue> GetNewMetadataTermValues(TermGroup termStore, FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
-        {
-            Dictionary<string, FieldTaxonomyValue> newValues = new Dictionary<string, FieldTaxonomyValue>();
-            foreach (var fieldMapping in _globalSettings.MetadataMapping)
-            {
-                if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile, isForTermEdit: true))
-                {
-                    continue;
-                }
-
-                var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping, metadata);
-                if (propertyInfo == null) throw new CpsException($"FieldMapping {fieldMapping.FieldName} not found!");
-                var value = MetadataHelper.GetMetadataValue(metadata, fieldMapping);
-
-                var newValue = GetNewTermValue(propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields, termStore);
-                if (newValue != null)
-                {
-                    newValues.Add(newValue.Value.Key, newValue.Value.Value);
-                }
-            }
-            return newValues;
-        }
-
-        public async Task UpdateTermsForExternalReferencesAsync(string siteId, string listId, List<ExternalReferenceItem> externalReferenceItems, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false)
-        {
-            ArgumentNullException.ThrowIfNull(nameof(listId));
-
-            var site = await GetSiteAsync(siteId, getAsUser);
-
-            // Graph does not support full Term management yet, using PnP for SPO API instead
-            var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
-
-            var termStore = GetAllTerms(context, siteId);
-            if (termStore == null) throw new CpsException("Term store not found!");
-
-            UpdateTermsForExternalReference(context, termStore, listId, externalReferenceItems, isForNewFile, ignoreRequiredFields);
-        }
-
-        private void UpdateTermsForExternalReference(ClientContext context, TermGroup termStore, string listId, List<ExternalReferenceItem> externalReferenceItems, bool isForNewFile = false, bool ignoreRequiredFields = false)
-        {
-            foreach (var externalReferenceItem in externalReferenceItems)
-            {
-                var newValues = GetNewExternalReferencesTermValues(termStore, externalReferenceItem.ExternalReference, isForNewFile, ignoreRequiredFields);
-
-                // actually update fields
-                UpdateTermFields(listId, externalReferenceItem.ListItem.Id, context, newValues);
-            }
-        }
-
-        private Dictionary<string, FieldTaxonomyValue> GetNewExternalReferencesTermValues(TermGroup termStore, ExternalReferences externalReference, bool isForNewFile = false, bool ignoreRequiredFields = false)
-        {
-            Dictionary<string, FieldTaxonomyValue> newValues = new Dictionary<string, FieldTaxonomyValue>();
-            foreach (var fieldMapping in _globalSettings.ExternalReferencesMapping)
-            {
-                if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile, isForTermEdit: true))
-                {
-                    continue;
-                }
-
-                var propertyInfo = externalReference.GetType().GetProperty(fieldMapping.FieldName);
-                if (propertyInfo == null) throw new CpsException($"FieldMapping {fieldMapping.FieldName} not found!");
-                var value = externalReference[fieldMapping.FieldName];
-
-                var newValue = GetNewTermValue(propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields, termStore);
-                if (newValue != null)
-                {
-                    newValues.Add(newValue.Value.Key, newValue.Value.Value);
-                }
-            }
-            return newValues;
-        }
-
-        private static KeyValuePair<string, FieldTaxonomyValue>? GetNewTermValue(PropertyInfo propertyInfo, object? value, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields, TermGroup termStore)
+        public async Task<string?> GetNewTermValue(string siteId, PropertyInfo propertyInfo, object? value, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields)
         {
             try
             {
@@ -185,7 +98,7 @@ namespace CPS_API.Services
                     return null;
                 }
 
-                return GetTerm(termStore, fieldMapping, value);
+                return await GetTermGuidAsync(siteId, fieldMapping.TermsetName, value as string ?? string.Empty);
             }
             catch (FieldRequiredException)
             {
@@ -201,104 +114,83 @@ namespace CPS_API.Services
             }
         }
 
-        private static void UpdateTermFields(string listId, string listItemId, ClientContext context, Dictionary<string, FieldTaxonomyValue> newValues)
+        private async Task<string?> GetTermGuidAsync(string siteId, string termsetName, string label)
         {
-            var list = context.Web.Lists.GetById(new Guid(listId));
-            var listItem = list.GetItemById(listItemId);
-
-            var fields = listItem.ParentList.Fields;
-            context.Load(fields);
-
-            foreach (var newTerm in newValues)
+            // Get term ID
+            label = label.ToLower();
+            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermId + siteId + termsetName + label, out string? termId))
             {
-                var field = context.CastTo<TaxonomyField>(fields.GetByInternalNameOrTitle(newTerm.Key));
-                context.Load(field);
-                field.SetFieldValueByValue(listItem, newTerm.Value);
+                var groupId = await GetGroupId(siteId);
+                if (string.IsNullOrEmpty(groupId)) throw new CpsException($"Error while getting group ID for site ({siteId})");
+
+                var setId = await GetSetId(siteId, groupId, termsetName);
+                if (string.IsNullOrEmpty(setId)) throw new CpsException($"Error while getting set ID for group (siteId = {siteId}, groupId = {groupId}, termsetName = {termsetName})");
+
+                var termsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets[setId].Terms.GetAsync(x =>
+                {
+                    x.QueryParameters.Filter = $"labels/any(s:tolower(s/name) eq '{label}')";
+                    x.QueryParameters.Select = ["labels", "id"];
+                });
+                if (termsResponse == null || termsResponse.Value == null || termsResponse.Value.Count != 1) throw new CpsException($"Error while getting terms (siteId={siteId}, setId={setId}, label={label})");
+                termId = termsResponse.Value[0].Id;
+
+                _memoryCache.Set(Constants.CacheKeyTermId + siteId + termsetName + label, termId);
             }
-            listItem.Update();
-            context.ExecuteQuery();
+            return termId;
         }
 
-        private static KeyValuePair<string, FieldTaxonomyValue> GetTerm(TermGroup termStore, FieldMapping fieldMapping, object? value)
+        private async Task<string?> GetGroupId(string siteId)
         {
-            if (value == null)
+            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermsGroupId + siteId, out string? groupId))
             {
-                throw new CpsException("Term not found for empty value, fieldName = " + fieldMapping.FieldName);
-            }
+                var groupsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups.GetAsync(x =>
+                {
+                    x.QueryParameters.Filter = $"DisplayName eq '{_globalSettings.TermStoreName}'";
+                    x.QueryParameters.Select = ["displayName", "id"];
+                });
+                if (groupsResponse == null || groupsResponse.Value == null || groupsResponse.Value.Count != 1) throw new CpsException($"Error while getting group (siteId={siteId})");
+                groupId = groupsResponse.Value[0].Id;
 
-            var mappedTermSet = termStore.TermSets.Where(s => s.Name.Equals(fieldMapping.TermsetName, StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
-            if (mappedTermSet == null)
-            {
-                throw new CpsException("Termset not found by name " + fieldMapping.TermsetName);
+                _memoryCache.Set(Constants.CacheKeyTermsGroupId + siteId, groupId);
             }
-
-            var mappedTerm = mappedTermSet.Terms.Where(t => t.Name.Equals(value.ToString(), StringComparison.InvariantCultureIgnoreCase)).FirstOrDefault();
-            if (mappedTerm == null)
-            {
-                throw new CpsException("Term not found by value " + value.ToString());
-            }
-
-            var termValue = new FieldTaxonomyValue
-            {
-                TermGuid = mappedTerm.Id.ToString(),
-                Label = mappedTerm.Name,
-                WssId = -1
-            };
-            return new KeyValuePair<string, FieldTaxonomyValue>(fieldMapping.SpoColumnName, termValue);
+            return groupId;
         }
 
-        private TermGroup? GetAllTerms(ClientContext context, string siteId)
+        private async Task<string?> GetSetId(string siteId, string groupId, string termsetName)
         {
-            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermGroup + siteId, out TermGroup? cacheValue))
+            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermsSetId + siteId + termsetName, out string? setId))
             {
-                var taxonomySession = TaxonomySession.GetTaxonomySession(context);
-                var termStore = taxonomySession.GetDefaultSiteCollectionTermStore();
-                if (termStore == null) return null;
+                var setsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets.GetAsync(x =>
+                {
+                    x.QueryParameters.Filter = $"localizedNames/any(s:s/name eq '{termsetName}')";
+                    x.QueryParameters.Select = ["localizedNames", "id"];
+                });
+                if (setsResponse == null || setsResponse.Value == null || setsResponse.Value.Count != 1) throw new CpsException($"Error while getting set (siteId={siteId}, groupId={groupId}, termsetName={termsetName})");
+                setId = setsResponse.Value[0].Id;
 
-                var name = _globalSettings.TermStoreName;
-                context.Load(termStore,
-                                store => store.Name,
-                                store => store.Groups.Where(g => g.Name == name && !g.IsSystemGroup && !g.IsSiteCollectionGroup)
-                                    .Include(
-                                    group => group.Id,
-                                    group => group.Name,
-                                    group => group.TermSets.Include(
-                                        termSet => termSet.Id,
-                                        termSet => termSet.Name,
-                                        termSet => termSet.Terms.Include(
-                                            t => t.Id,
-                                            t => t.Name,
-                                            t => t.IsDeprecated,
-                                            t => t.Labels))));
-                context.ExecuteQuery();
-                cacheValue = termStore.Groups.FirstOrDefault();
-
-                var cacheEntryOptions = new MemoryCacheEntryOptions()
-                                        .SetSlidingExpiration(TimeSpan.FromSeconds(5))
-                                        .SetAbsoluteExpiration(TimeSpan.FromHours(1));
-
-                _memoryCache.Set(Constants.CacheKeyTermGroup + siteId, cacheValue, cacheEntryOptions);
+                _memoryCache.Set(Constants.CacheKeyTermsSetId + siteId + termsetName, setId);
             }
-            return cacheValue;
+            return setId;
         }
 
         #endregion Terms
 
         public async Task<string> MoveFileAsync(string siteId, string listId, string listItemId, string destinationSiteId, string destinationListId)
         {
-            var site = await GetSiteAsync(siteId);
-            var destinationSite = await GetSiteAsync(destinationSiteId);
+            var webUrl = await GetSiteWebUrlAsync(siteId);
+            var destinationWebUrl = await GetSiteWebUrlAsync(destinationSiteId);
+            if (string.IsNullOrWhiteSpace(destinationWebUrl)) throw new CpsException("Error while getting destination site web url");
 
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
 
-            using ClientContext context = await authenticationManager.GetContextAsync(site.WebUrl);
-            using ClientContext destinationContext = await authenticationManager.GetContextAsync(destinationSite.WebUrl);
+            using ClientContext context = await authenticationManager.GetContextAsync(webUrl);
+            using ClientContext destinationContext = await authenticationManager.GetContextAsync(destinationWebUrl);
 
             using var pnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(context);
             using var destinationPnpCoreContext = PnPCoreSdk.Instance.GetPnPContext(destinationContext);
 
-            var rootSiteHostName = new Uri(destinationSite.WebUrl).GetLeftPart(UriPartial.Authority);
+            var rootSiteHostName = new Uri(destinationWebUrl).GetLeftPart(UriPartial.Authority);
 
             var destinationList = await destinationPnpCoreContext.Web.Lists.GetByIdAsync(new Guid(destinationListId));
             await destinationList.RootFolder.LoadAsync();

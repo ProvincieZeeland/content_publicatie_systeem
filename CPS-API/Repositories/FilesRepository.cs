@@ -183,14 +183,14 @@ namespace CPS_API.Repositories
             var locationMapping = MetadataHelper.GetLocationMapping(_globalSettings.LocationMapping, metadata);
             if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(metadata.AdditionalMetadata.Classification)}: \"{metadata.AdditionalMetadata.Classification}\", {nameof(metadata.AdditionalMetadata.Source)}: \"{metadata.AdditionalMetadata.Source}\")");
 
-            var drive = await _driveRepository.GetDriveAsync(locationMapping.SiteId, locationMapping.ListId);
-            if (drive == null) throw new CpsException("Drive not found for new file.");
+            var driveId = await _driveRepository.GetDriveIdAsync(locationMapping.SiteId, locationMapping.ListId);
+            if (driveId == null) throw new CpsException("Drive not found for new file.");
 
             // Add new file to SharePoint
             DriveItem? driveItem;
             try
             {
-                driveItem = await HandleStreamAndCreateFileAsync(drive, metadata, content, formFile, fileStream);
+                driveItem = await HandleStreamAndCreateFileAsync(driveId, metadata, content, formFile, fileStream);
                 if (driveItem == null)
                 {
                     throw new CpsException("Error while adding new file");
@@ -210,7 +210,7 @@ namespace CPS_API.Repositories
             }
 
             // Get new identifiers.
-            metadata.Ids = await GetNewObjectIdentifiersAsync(drive, driveItem, locationMapping);
+            metadata.Ids = await GetNewObjectIdentifiersAsync(driveId, driveItem, locationMapping);
 
             // Handle the new file.
             return await HandleCreatedFile(metadata, formFile != null);
@@ -228,7 +228,7 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task<DriveItem> HandleStreamAndCreateFileAsync(Drive drive, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
+        private async Task<DriveItem> HandleStreamAndCreateFileAsync(string driveId, FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
             if (string.IsNullOrEmpty(metadata.FileName)) throw new CpsException("No filename found for creating file");
 
@@ -255,14 +255,14 @@ namespace CPS_API.Repositories
             }
             using (stream)
             {
-                return await CreateFileAsync(drive.Id, metadata.FileName!, stream);
+                return await CreateFileAsync(driveId, metadata.FileName!, stream);
             }
         }
 
-        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(Drive drive, DriveItem driveItem, LocationMapping locationMapping)
+        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(string driveId, DriveItem driveItem, LocationMapping locationMapping)
         {
             var ids = new ObjectIdentifiers();
-            ids.DriveId = drive.Id;
+            ids.DriveId = driveId;
             ids.DriveItemId = driveItem.Id;
             ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
             return await _objectIdRepository.FindMissingIds(ids);
