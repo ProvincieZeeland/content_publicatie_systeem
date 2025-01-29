@@ -11,7 +11,7 @@
         public const string SettingsIsNewSynchronisationRunningField = "IsNewSynchronisationRunning";
         public const string SettingsIsChangedSynchronisationRunningField = "IsChangedSynchronisationRunning";
         public const string SettingsIsDeletedSynchronisationRunningField = "IsDeletedSynchronisationRunning";
-        public const string CacheKeyTermGroup = "CacheKeyTermGroup";
+        public const string CacheKeyTermsId = "CacheKeyTermsId";
         public const string DropOffSubscriptionExpirationDateTime = "DropOffSubscriptionExpirationDateTime";
         public const string DropOffSubscriptionId = "DropOffSubscriptionId";
         public const string DropOffLastChangeToken = "DropOffLastChangeToken";
@@ -41,6 +41,8 @@
         public const string ItemPropertyInfoName = "Item";
         public const string SelectSharePointIds = "sharepointids";
         public const string SelectFields = "Fields";
+        public const string SelectId = "id";
+        public const string SelectWebUrl = "webUrl";
         public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
     }
 }

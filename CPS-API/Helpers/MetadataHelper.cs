@@ -53,6 +53,7 @@ namespace CPS_API.Helpers
         public static object? GetMetadataValue(ListItem? listItem, FieldMapping fieldMapping)
         {
             if (listItem == null) return null;
+            if (listItem.Fields == null) return null;
 
             listItem.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
             if (value == null)
@@ -190,12 +191,6 @@ namespace CPS_API.Helpers
             }
             // When updating fields, update must be allowed.
             if (!fieldMapping.AllowUpdate && !isForNewFile)
-            {
-                return false;
-            }
-            // When editing terms, only edit term fields.
-            // Terms are edited separately.
-            if (isForTermEdit == string.IsNullOrEmpty(fieldMapping.TermsetName))
             {
                 return false;
             }

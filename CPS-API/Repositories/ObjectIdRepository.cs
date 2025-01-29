@@ -156,8 +156,9 @@ namespace CPS_API.Repositories
 
             try
             {
-                var drive = await _driveRepository.GetDriveAsync(ids.SiteId!, ids.ListId!, getAsUser);
-                return drive.Id;
+                var driveId = await _driveRepository.GetDriveIdAsync(ids.SiteId!, ids.ListId!, getAsUser);
+                if (string.IsNullOrWhiteSpace(driveId)) throw new CpsException($"Error while getting driveId (SiteId = {ids.SiteId}, ListId = {ids.ListId})");
+                return driveId;
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
             {
@@ -182,6 +183,7 @@ namespace CPS_API.Repositories
             try
             {
                 var driveItem = await _driveRepository.GetDriveItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser: getAsUser);
+                if (string.IsNullOrWhiteSpace(driveItem.Id)) throw new CpsException($"Error while getting driveItem: driveItem ID unknown");
                 return driveItem.Id;
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)

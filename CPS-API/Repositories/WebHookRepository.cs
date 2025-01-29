@@ -68,17 +68,17 @@ namespace CPS_API.Repositories
         {
             var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
-            var site = await _sharePointRepository.GetSiteAsync(siteId);
-            if (site == null) throw new CpsException("Error while getting webhook site");
+            var webUrl = await _sharePointRepository.GetSiteWebUrlAsync(siteId);
+            if (string.IsNullOrWhiteSpace(webUrl)) throw new CpsException("Error while getting webhook site");
 
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
+            var accessToken = await authenticationManager.GetAccessTokenAsync(webUrl);
             if (accessToken == null) throw new CpsException("Error while getting accessToken");
 
             var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
-            var subscription = await AddListWebHookAsync(site.WebUrl, listId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
+            var subscription = await AddListWebHookAsync(webUrl, listId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
             if (subscription == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date and subscriptionId for extending webhook.
@@ -138,12 +138,12 @@ namespace CPS_API.Repositories
         {
             var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
-            var site = await _sharePointRepository.GetSiteAsync(siteId);
-            if (site == null) throw new CpsException("Error while getting webhook site");
+            var webUrl = await _sharePointRepository.GetSiteWebUrlAsync(siteId);
+            if (string.IsNullOrWhiteSpace(webUrl)) throw new CpsException("Error while getting webhook site");
 
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
+            var accessToken = await authenticationManager.GetAccessTokenAsync(webUrl);
             if (accessToken == null) throw new CpsException("Error while getting accessToken");
 
             var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
@@ -152,7 +152,7 @@ namespace CPS_API.Repositories
             var subscriptionId = await _settingsRepository.GetSetting<string>(dropOffType.GetDropOffSubscriptionId());
             if (subscriptionId == null) throw new CpsException("Error while getting subscriptionId for webhook");
 
-            var expirationDateTime = await UpdateListWebHookAsync(site.WebUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
+            var expirationDateTime = await UpdateListWebHookAsync(webUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
             if (expirationDateTime == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date for renewing webhook.
@@ -206,6 +206,8 @@ namespace CPS_API.Repositories
 
         public async Task<bool> DeleteWebHookAsync(GraphSite site, string listId, string subscriptionId)
         {
+            if (string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while deleting webhook: site webUrl unknown");
+
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
             var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
@@ -319,7 +321,9 @@ namespace CPS_API.Repositories
         /// </summary>
         public async Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification)
         {
-            var site = await _sharePointRepository.GetSiteAsync(_globalSettings.HostName + ":" + notification.SiteUrl + ":/");
+            var siteId = _globalSettings.HostName + ":" + notification.SiteUrl + ":/";
+            var site = await _sharePointRepository.GetSiteAsync(siteId);
+            if (string.IsNullOrWhiteSpace(site.Id) || string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while getting site (ID = {siteId})");
 
             var dropOffList = _globalSettings.WebHookSettings.WebHookLists.Find(item => site.Id.Contains(item.SiteId) && item.ListId == notification.Resource);
             if (dropOffList == null) throw new CpsException($"Error while getting list for DropOff (siteId = {site.Id}, listId = {notification.Resource})");
@@ -403,6 +407,8 @@ namespace CPS_API.Repositories
         /// </summary>
         private async Task<bool> ProcessListItemAndSendMailAsync(string siteId, string listId, GraphListItem listItem)
         {
+            if (string.IsNullOrWhiteSpace(listItem.Id)) throw new CpsException($"Error while processing listItem: listItem ID unknown");
+
             // DropOff document metadata
             // DropOff does not have external references
             FileInformation metadata;
@@ -511,6 +517,7 @@ namespace CPS_API.Repositories
             }
 
             // Log error, we need the metadata to update the error in the DropOff.
+            if (string.IsNullOrWhiteSpace(listItem.Id)) throw new CpsException($"Error while logging error: listItem ID unknown");
             LogError(siteId, listId, listItem.Id, errorMessage, ex);
 
             // Mail not proccessed file.

@@ -5,7 +5,7 @@
     <RootNamespace>CPS_Jobs</RootNamespace>
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enabled</ImplicitUsings>
-    <Nullable>enable</Nullable>
+	<Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.22.0" />

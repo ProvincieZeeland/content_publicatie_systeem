@@ -24,7 +24,7 @@ namespace CPS_Jobs
         public async Task Run(
             [QueueTrigger("sharepointlistwebhooknotifications")] string myQueueItem)
         {
-            _logger.LogInformation($"Queue trigger function triggered. Message content: {myQueueItem}");
+            _logger.LogInformation("Queue trigger function triggered. Message content: {MyQueueItem}", myQueueItem);
 
             var scope = _configuration.GetValue<string>("Settings:Scope");
             var baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
@@ -35,7 +35,7 @@ namespace CPS_Jobs
             var response = await _appService.PutAsync(baseUrl, scope, "/WebHook/HandleDropOffNotification", myQueueItem);
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation($"Queue message processed");
+                _logger.LogInformation("Queue message processed");
             }
             else
             {
@@ -48,10 +48,10 @@ namespace CPS_Jobs
                     }
                     catch
                     {
-                        _logger.LogError($"Queue message not processed.");
+                        _logger.LogError("Queue message not processed.");
                     }
                 }
-                _logger.LogError($"Queue message not processed. Content: {responseContent}");
+                _logger.LogError("Queue message not processed. Content: {responseContent}", responseContent);
             }
         }
     }
