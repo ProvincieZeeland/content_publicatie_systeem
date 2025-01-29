@@ -11,9 +11,7 @@
         public const string SettingsIsNewSynchronisationRunningField = "IsNewSynchronisationRunning";
         public const string SettingsIsChangedSynchronisationRunningField = "IsChangedSynchronisationRunning";
         public const string SettingsIsDeletedSynchronisationRunningField = "IsDeletedSynchronisationRunning";
-        public const string CacheKeyTermsGroupId = "CacheKeyTermGroupId";
-        public const string CacheKeyTermsSetId = "CacheKeyTermsSetId";
-        public const string CacheKeyTermId = "CacheKeyTermId";
+        public const string CacheKeyTermsId = "CacheKeyTermsId";
         public const string DropOffSubscriptionExpirationDateTime = "DropOffSubscriptionExpirationDateTime";
         public const string DropOffSubscriptionId = "DropOffSubscriptionId";
         public const string DropOffLastChangeToken = "DropOffLastChangeToken";

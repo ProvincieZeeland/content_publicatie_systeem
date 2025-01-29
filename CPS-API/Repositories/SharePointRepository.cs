@@ -4,6 +4,7 @@ using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Graph;
+using Microsoft.Graph.Models.TermStore;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.SharePoint.Client;
@@ -12,6 +13,7 @@ using PnP.Framework;
 using Constants = CPS_API.Models.Constants;
 using CopyMigrationOptions = PnP.Core.Model.SharePoint.CopyMigrationOptions;
 using GraphSite = Microsoft.Graph.Models.Site;
+using Term = CPS_API.Models.Term;
 
 namespace CPS_API.Services
 {
@@ -118,59 +120,64 @@ namespace CPS_API.Services
         {
             // Get term ID
             label = label.ToLower();
-            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermId + siteId + termsetName + label, out string? termId))
+            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermsId + termsetName, out List<Term>? cachedTerms))
             {
-                var groupId = await GetGroupId(siteId);
+                var groupId = await GetGroupIdAsync(siteId);
                 if (string.IsNullOrEmpty(groupId)) throw new CpsException($"Error while getting group ID for site ({siteId})");
 
-                var setId = await GetSetId(siteId, groupId, termsetName);
-                if (string.IsNullOrEmpty(setId)) throw new CpsException($"Error while getting set ID for group (siteId = {siteId}, groupId = {groupId}, termsetName = {termsetName})");
+                var sets = await GetSetsAsync(siteId, groupId);
+                if (sets.Count == 0) throw new CpsException($"Error while getting sets for group (siteId = {siteId}, groupId = {groupId}, termsetName = {termsetName})");
 
-                var termsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets[setId].Terms.GetAsync(x =>
+                foreach (var set in sets)
                 {
-                    x.QueryParameters.Filter = $"labels/any(s:tolower(s/name) eq '{label}')";
-                    x.QueryParameters.Select = ["labels", "id"];
-                });
-                if (termsResponse == null || termsResponse.Value == null || termsResponse.Value.Count != 1) throw new CpsException($"Error while getting terms (siteId={siteId}, setId={setId}, label={label})");
-                termId = termsResponse.Value[0].Id;
-
-                _memoryCache.Set(Constants.CacheKeyTermId + siteId + termsetName + label, termId);
+                    (var setName, var terms) = await GetTermsAsync(siteId, groupId, set);
+                    if (setName.ToLower().Equals(termsetName.ToLower())) cachedTerms = terms;
+                }
             }
-            return termId;
+            var term = cachedTerms?.Find(item => string.Equals(item.Label, label.ToLower()));
+            return term?.Id;
         }
 
-        private async Task<string?> GetGroupId(string siteId)
+        private async Task<string?> GetGroupIdAsync(string siteId)
         {
-            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermsGroupId + siteId, out string? groupId))
+            var groupsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups.GetAsync(x =>
             {
-                var groupsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups.GetAsync(x =>
-                {
-                    x.QueryParameters.Filter = $"DisplayName eq '{_globalSettings.TermStoreName}'";
-                    x.QueryParameters.Select = ["displayName", "id"];
-                });
-                if (groupsResponse == null || groupsResponse.Value == null || groupsResponse.Value.Count != 1) throw new CpsException($"Error while getting group (siteId={siteId})");
-                groupId = groupsResponse.Value[0].Id;
-
-                _memoryCache.Set(Constants.CacheKeyTermsGroupId + siteId, groupId);
-            }
-            return groupId;
+                x.QueryParameters.Filter = $"DisplayName eq '{_globalSettings.TermStoreName}'";
+                x.QueryParameters.Select = ["displayName", "id"];
+            });
+            if (groupsResponse == null || groupsResponse.Value == null || groupsResponse.Value.Count != 1) throw new CpsException($"Error while getting group (siteId={siteId})");
+            return groupsResponse.Value[0].Id;
         }
 
-        private async Task<string?> GetSetId(string siteId, string groupId, string termsetName)
+        private async Task<List<Set>> GetSetsAsync(string siteId, string groupId)
         {
-            if (!_memoryCache.TryGetValue(Constants.CacheKeyTermsSetId + siteId + termsetName, out string? setId))
+            var setsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets.GetAsync(x =>
             {
-                var setsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets.GetAsync(x =>
-                {
-                    x.QueryParameters.Filter = $"localizedNames/any(s:s/name eq '{termsetName}')";
-                    x.QueryParameters.Select = ["localizedNames", "id"];
-                });
-                if (setsResponse == null || setsResponse.Value == null || setsResponse.Value.Count != 1) throw new CpsException($"Error while getting set (siteId={siteId}, groupId={groupId}, termsetName={termsetName})");
-                setId = setsResponse.Value[0].Id;
+                x.QueryParameters.Select = ["localizedNames", "id"];
+            });
+            if (setsResponse == null || setsResponse.Value == null) throw new CpsException($"Error while getting set (siteId={siteId}, groupId={groupId})");
+            return setsResponse.Value;
+        }
 
-                _memoryCache.Set(Constants.CacheKeyTermsSetId + siteId + termsetName, setId);
-            }
-            return setId;
+        private async Task<(string setName, List<Term> terms)> GetTermsAsync(string siteId, string groupId, Set set)
+        {
+            if (string.IsNullOrWhiteSpace(set.Id)) throw new CpsException($"Error while getting set ID for group (siteId = {siteId}, groupId = {groupId}");
+
+            var setName = set.LocalizedNames?.FirstOrDefault()?.Name;
+            if (string.IsNullOrWhiteSpace(setName)) throw new CpsException($"Error while getting set name for group (siteId = {siteId}, groupId = {groupId}");
+
+            var termsResponse = await _graphAppServiceClient.Sites[siteId].TermStore.Groups[groupId].Sets[set.Id].Terms.GetAsync(x =>
+            {
+                x.QueryParameters.Select = ["labels", "id"];
+            });
+            if (termsResponse == null || termsResponse.Value == null) throw new CpsException($"Error while getting terms (siteId={siteId}, setId={set.Id})");
+            var terms = termsResponse.Value.Select(item => new Term { Id = item.Id, Label = item.Labels?.Select(l => l.Name).FirstOrDefault()?.ToLower() }).ToList();
+
+            var cacheEntryOptions = new MemoryCacheEntryOptions()
+                                    .SetSlidingExpiration(TimeSpan.FromHours(8))
+                                    .SetAbsoluteExpiration(TimeSpan.FromHours(8));
+            _memoryCache.Set(Constants.CacheKeyTermsId + setName, terms, cacheEntryOptions);
+            return (setName, terms);
         }
 
         #endregion Terms

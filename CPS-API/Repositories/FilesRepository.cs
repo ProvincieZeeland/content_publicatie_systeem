@@ -184,7 +184,7 @@ namespace CPS_API.Repositories
             if (locationMapping == null) throw new CpsException($"{nameof(locationMapping)} does not exist ({nameof(metadata.AdditionalMetadata.Classification)}: \"{metadata.AdditionalMetadata.Classification}\", {nameof(metadata.AdditionalMetadata.Source)}: \"{metadata.AdditionalMetadata.Source}\")");
 
             var driveId = await _driveRepository.GetDriveIdAsync(locationMapping.SiteId, locationMapping.ListId);
-            if (driveId == null) throw new CpsException("Drive not found for new file.");
+            if (string.IsNullOrWhiteSpace(driveId)) throw new CpsException("Drive not found for new file.");
 
             // Add new file to SharePoint
             DriveItem? driveItem;
