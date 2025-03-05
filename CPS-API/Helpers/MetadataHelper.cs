@@ -133,9 +133,9 @@ namespace CPS_API.Helpers
             if (isForNewFile && fieldMapping.DefaultValue != null && !string.IsNullOrEmpty(fieldMapping.DefaultValue.ToString()))
             {
                 var defaultValue = fieldMapping.DefaultValue.ToString();
-                if (defaultValue != null && defaultValue.Equals(Constants.DateTimeOffsetNow, StringComparison.InvariantCultureIgnoreCase))
+                if (defaultValue != null && defaultValue.Equals(Constants.DateTimeNow, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return DateTimeOffset.Now;
+                    return DateTime.Now;
                 }
                 return fieldMapping.DefaultValue;
             }
@@ -152,15 +152,15 @@ namespace CPS_API.Helpers
             {
                 return true;
             }
-            else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
+            else if (propertyInfo.PropertyType == typeof(DateTime?))
             {
                 var stringValue = value.ToString();
-                if (!DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue))
+                if (!DateTime.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue))
                 {
                     return true;
                 }
                 // Nullable DateTime is set tot MinValue in metadata.
-                if (dateTimeValue.Equals(DateTimeOffset.MinValue))
+                if (dateTimeValue.Equals(DateTime.MinValue))
                 {
                     return true;
                 }

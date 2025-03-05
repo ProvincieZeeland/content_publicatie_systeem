@@ -2,21 +2,21 @@
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CPS_Jobs
 {
     public class HandleWebHookQueue
     {
         private readonly ILogger<HandleWebHookQueue> _logger;
-        private readonly IConfiguration _configuration;
+        private readonly GlobalSettings _globalSettings;
         private readonly AppService _appService;
 
-        public HandleWebHookQueue(ILogger<HandleWebHookQueue> logger, IConfiguration config, AppService appService)
+        public HandleWebHookQueue(ILogger<HandleWebHookQueue> logger, IOptions<GlobalSettings> config, AppService appService)
         {
             _logger = logger;
-            _configuration = config;
+            _globalSettings = config.Value;
             _appService = appService;
         }
 
@@ -26,13 +26,10 @@ namespace CPS_Jobs
         {
             _logger.LogInformation("Queue trigger function triggered. Message content: {MyQueueItem}", myQueueItem);
 
-            var scope = _configuration.GetValue<string>("Settings:Scope");
-            var baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
+            if (string.IsNullOrEmpty(_globalSettings.Scope)) throw new CpsException("Scope cannot be empty");
+            if (string.IsNullOrEmpty(_globalSettings.BaseUrl)) throw new CpsException("BaseUrl cannot be empty");
 
-            if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
-            if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");
-
-            var response = await _appService.PutAsync(baseUrl, scope, "/WebHook/HandleDropOffNotification", myQueueItem);
+            var response = await _appService.PutAsync(_globalSettings.BaseUrl, _globalSettings.Scope, "/WebHook/HandleDropOffNotification", myQueueItem);
             if (response.IsSuccessStatusCode)
             {
                 _logger.LogInformation("Queue message processed");

@@ -1,0 +1,24 @@
+﻿{
+	"IsEncrypted": false,
+	"AzureAd": {
+		"Instance": "https://login.microsoftonline.com/",
+		"TenantId": "76850799-28ea-4f56-b80d-c1640687052d",
+		"ClientId": "", // ClientId Service
+		"ClientCredentials": [
+			{
+				"SourceType": "KeyVault",
+				"KeyVaultUrl": "",
+				"KeyVaultCertificateName": "" // Azure Function Certificate
+			}
+		]
+	},
+	"GlobalSettings": {
+		"Scope": "", //api:/{ClientId SharePoint}/.default
+		"BaseUrl": "https://content.acc.zeeland.nl",
+		"KeyVaultName": ""
+	},
+	"Values": {
+		"AzureWebJobsStorage": "UseDevelopmentStorage=true",
+		"FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+	}
+}

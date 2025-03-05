@@ -60,10 +60,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTimeOffset? lastSynchronisation;
+            DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationNewField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationNewField);
             }
             catch (Exception ex)
             {
@@ -71,7 +71,7 @@ namespace CPS_API.Controllers
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
                 return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTime.UtcNow.Date;
 
             ExportResponse result;
             try
@@ -86,7 +86,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully added then we update the last synchronisation date and token.
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTimeOffset.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow);
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, result.NewNextTokens);
 
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
@@ -136,10 +136,10 @@ namespace CPS_API.Controllers
             }
 
             // Get last synchronisation date.
-            DateTimeOffset? lastSynchronisation;
+            DateTime? lastSynchronisation;
             try
             {
-                lastSynchronisation = await _settingsRepository.GetSetting<DateTimeOffset?>(Constants.SettingsLastSynchronisationChangedField);
+                lastSynchronisation = await _settingsRepository.GetSetting<DateTime?>(Constants.SettingsLastSynchronisationChangedField);
             }
             catch (Exception ex)
             {
@@ -147,7 +147,7 @@ namespace CPS_API.Controllers
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
                 return StatusCode(500, "Error while getting LastSynchronisation");
             }
-            if (lastSynchronisation == null) lastSynchronisation = DateTimeOffset.UtcNow.Date;
+            if (lastSynchronisation == null) lastSynchronisation = DateTime.UtcNow.Date;
 
 
             ExportResponse result;
@@ -163,7 +163,7 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully updated then we update the last synchronisation date and token. 
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTimeOffset.UtcNow);
+            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow);
             await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, result.NewNextTokens);
 
             await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);

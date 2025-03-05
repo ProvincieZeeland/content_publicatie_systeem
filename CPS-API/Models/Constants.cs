@@ -30,7 +30,7 @@
         public const string InvalidChangeTokenTimeErrorMessageEnglish = "The changeToken refers to a time before the start of the current change log.";
         public const string InvalidChangeTokenWrondObjectErrorMessageDutch = "U kunt het changeToken van het ene object niet voor het andere object gebruiken.";
         public const string InvalidChangeTokenWrongObjectErrorMessageEnglish = "Cannot use the changeToken from one object against a different object";
-        public const string DateTimeOffsetNow = "DateTimeOffset.Now";
+        public const string DateTimeNow = "DateTime.Now";
         public const string NameAlreadyExistsErrorCode = "nameAlreadyExists";
         public const string ObjectIdSpoColumnName = "ObjectID";
         public const string InvalidHostnameForThisTenancyErrorMessage = "Invalid hostname for this tenancy";

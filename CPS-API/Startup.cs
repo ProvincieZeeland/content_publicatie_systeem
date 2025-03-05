@@ -1,4 +1,5 @@
-﻿using Azure.Identity;
+﻿using Azure.Core;
+using Azure.Identity;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
@@ -92,10 +93,15 @@ namespace CPS_API
                 var keyVaultName = globalSettings["KeyVaultName"];
                 var keyvaultUri = "https://" + keyVaultName + ".vault.azure.net";
                 builder.AddSecretClient(new Uri(keyvaultUri));
+                builder.ConfigureDefaults(options => options.Retry.Mode = RetryMode.Exponential);
 
-                var azureAdSettings = Configuration.GetSection("AzureAd");
-                var clientCredential = new ClientSecretCredential(azureAdSettings["TenantId"], azureAdSettings["ClientId"], azureAdSettings["ClientSecret"]);
-                builder.UseCredential(clientCredential);
+#if DEBUG
+                // For debugging, allow us to login via browser and use a local account to access keyvault
+                var credential = new VisualStudioCredential();
+#else
+                var credential = new DefaultAzureCredential();
+#endif
+                builder.UseCredential(credential);
             });
 
             services.AddControllersWithViews(options =>

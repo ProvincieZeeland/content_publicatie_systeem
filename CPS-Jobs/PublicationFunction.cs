@@ -3,22 +3,22 @@ using System.Threading.Tasks;
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CPS_Jobs
 {
     public class PublicationFunction
     {
         private readonly ILogger<PublicationFunction> _logger;
-        private readonly IConfiguration _configuration;
+        private readonly GlobalSettings _globalSettings;
         private readonly AppService _appService;
 
-        public PublicationFunction(ILogger<PublicationFunction> logger, IConfiguration config, AppService appService)
+        public PublicationFunction(ILogger<PublicationFunction> logger, IOptions<GlobalSettings> config, AppService appService)
         {
             _logger = logger;
-            _configuration = config;
             _appService = appService;
+            _globalSettings = config.Value;
         }
 
         [Function("PublicationFunction")]
@@ -26,13 +26,10 @@ namespace CPS_Jobs
         {
             _logger.LogInformation("CPS Publication Timer trigger function started at: {Now}", DateTime.Now);
 
-            var scope = _configuration.GetValue<string>("Settings:Scope");
-            var baseUrl = _configuration.GetValue<string>("Settings:BaseUrl");
+            if (string.IsNullOrEmpty(_globalSettings.Scope)) throw new CpsException("Scope cannot be empty");
+            if (string.IsNullOrEmpty(_globalSettings.BaseUrl)) throw new CpsException("BaseUrl cannot be empty");
 
-            if (string.IsNullOrEmpty(scope)) throw new CpsException("Scope cannot be empty");
-            if (string.IsNullOrEmpty(baseUrl)) throw new CpsException("BaseUrl cannot be empty");
-
-            await _appService.GetAsync(baseUrl, scope, "/Export/publish");
+            await _appService.GetAsync(_globalSettings.BaseUrl, _globalSettings.Scope, "/Export/publish");
         }
     }
 }

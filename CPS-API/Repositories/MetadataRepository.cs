@@ -50,7 +50,8 @@ namespace CPS_API.Repositories
         private readonly TelemetryClient _telemetryClient;
         private readonly ISharePointRepository _sharePointRepository;
 
-        private List<ColumnDefinition>? _columns = null;
+        private List<ColumnDefinition>? _metadataColumns = null;
+        private List<ColumnDefinition>? _externalReferencesColumns = null;
 
         public MetadataRepository(
             IObjectIdRepository objectIdRepository,
@@ -102,9 +103,9 @@ namespace CPS_API.Repositories
             var metadata = new FileInformation();
             metadata.Ids = ids;
             metadata.FileName = await GetFileNameAsync(listItem, ids, getAsUser);
-            metadata.CreatedOn = listItem.CreatedDateTime;
+            metadata.CreatedOn = listItem.CreatedDateTime?.DateTime;
             metadata.CreatedBy = listItem.CreatedBy == null ? null : MetadataHelper.GetUserName(listItem.CreatedBy);
-            metadata.ModifiedOn = listItem.LastModifiedDateTime;
+            metadata.ModifiedOn = listItem.LastModifiedDateTime?.DateTime;
             metadata.ModifiedBy = listItem.LastModifiedBy == null ? null : MetadataHelper.GetUserName(listItem.LastModifiedBy);
 
             metadata.AdditionalMetadata = new FileMetadata();
@@ -631,17 +632,20 @@ namespace CPS_API.Repositories
             return (termValue.Value.name, termValue.Value.value);
         }
 
-        private async Task<(string name, string value)?> GetTermValue(FileInformation metadata, FieldMapping fieldMapping, PropertyInfo propertyInfo, object? value, bool isForNewFile, bool ignoreRequiredFields)
+        private async Task<(string name, string value)?> GetTermValue(FileInformation metadata, FieldMapping fieldMapping, PropertyInfo propertyInfo, object? value, bool isForNewFile, bool ignoreRequiredFields, bool isForExternalReference = false)
         {
             // Only get termstore and columns if we need to update a taxonomy value.
-            if (_columns == null)
+            List<ColumnDefinition>? columns = isForExternalReference ? _externalReferencesColumns : _metadataColumns;
+            if (columns == null)
             {
                 if (metadata.Ids == null) throw new CpsException($"Error while getting columns: SiteId amd ListId unknown");
-                _columns = await _listRepository.GetColumnsAsync(metadata.Ids.SiteId!, metadata.Ids.ListId!);
+                columns = await _listRepository.GetColumnsAsync(metadata.Ids.SiteId!, isForExternalReference ? metadata.Ids.ExternalReferenceListId! : metadata.Ids.ListId!);
+                if (isForExternalReference) { _externalReferencesColumns = columns; }
+                else { _metadataColumns = columns; }
             }
 
             var spoColumnName = fieldMapping.SpoColumnName.Replace("_x0020_", " ").Replace("_x002d_", "-");
-            var column = _columns!.Find(item => item.DisplayName != null && item.DisplayName.Equals(spoColumnName + "_0"));
+            var column = columns!.Find(item => item.DisplayName != null && item.DisplayName.Equals(spoColumnName + "_0"));
             if (column == null || string.IsNullOrWhiteSpace(column.Name)) return null;
 
             var termGuid = await _sharePointRepository.GetNewTermValue(metadata.Ids!.SiteId!, propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields);
@@ -694,21 +698,21 @@ namespace CPS_API.Repositories
                 value = defaultValue;
             }
 
-            // Default format for DateTimeOffset for 
-            if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
+            // Default format for DateTime for 
+            if (propertyInfo.PropertyType == typeof(DateTime?))
             {
                 var stringValue = value?.ToString();
-                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateValue);
+                var dateParsed = DateTime.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue);
                 if (!dateParsed && !ignoreRequiredFields && fieldMapping.Required)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                 }
 
-                if (dateValue == DateTimeOffset.MinValue)
+                if (dateTimeValue == DateTime.MinValue)
                 {
                     return null;
                 }
-                return dateValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
+                return dateTimeValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
             }
             return value;
         }
@@ -775,7 +779,7 @@ namespace CPS_API.Repositories
 
             if (string.IsNullOrEmpty(fieldMapping.TermsetName)) return (fieldMapping.SpoColumnName, value);
 
-            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields);
+            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, isForExternalReference: true);
             if (termValue == null) return null;
 
             return (termValue.Value.name, termValue.Value.value);
