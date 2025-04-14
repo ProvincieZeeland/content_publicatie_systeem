@@ -9,9 +9,9 @@ namespace CPS_API.Repositories
 {
     public interface IExportRepository
     {
-        Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens);
+        Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens);
 
-        Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens);
+        Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens);
 
         Task<ExportResponse> SynchroniseDeletedDocumentsAsync(Dictionary<string, string> tokens);
 
@@ -50,7 +50,7 @@ namespace CPS_API.Repositories
 
         #region New Documents
 
-        public async Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens)
+        public async Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens)
         {
             // Get all new files from known locations
             DeltaResponse deltaResponse;
@@ -90,7 +90,7 @@ namespace CPS_API.Repositories
         {
             // Check for to be published documents and synchronise.
             var entities = await _publicationRepository.GetEntitiesFromQueueAsync();
-            entities = entities.Where(entity => entity.PublicationDate.Date <= DateTimeOffset.UtcNow.Date).ToList();
+            entities = entities.Where(entity => entity.PublicationDate.Date <= DateTime.UtcNow.Date).ToList();
 
             var itemsAdded = 0;
             var failedToBePublishedEntities = new List<ToBePublishedEntity>();
@@ -187,7 +187,7 @@ namespace CPS_API.Repositories
 
         #region Updated Documents
 
-        public async Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens)
+        public async Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens)
         {
             // Get all updated files from known locations
             DeltaResponse deltaResponse;

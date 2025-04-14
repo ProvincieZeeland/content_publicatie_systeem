@@ -33,9 +33,9 @@ namespace CPS_API.Helpers
             {
                 SetDecimalValue(property, parent, value);
             }
-            else if (property.PropertyType == typeof(DateTimeOffset?))
+            else if (property.PropertyType == typeof(DateTime?))
             {
-                SetDateTimeOffsetValue(property, parent, value);
+                SetDateTimeValue(property, parent, value);
             }
             else if (property.PropertyType == typeof(bool))
             {
@@ -60,7 +60,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                var decimalValue = Convert.ToDecimal(stringValue, CultureInfo.CurrentCulture);
                 if (decimalValue % 1 == 0)
                 {
                     property.SetValue(parent, (int)decimalValue, null);
@@ -77,7 +77,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var decimalValue = Convert.ToDecimal(stringValue, new CultureInfo("en-US"));
+                var decimalValue = Convert.ToDecimal(stringValue, CultureInfo.CurrentCulture);
                 if (decimalValue % 1 == 0)
                 {
                     property.SetValue(parent, decimalValue, null);
@@ -85,7 +85,7 @@ namespace CPS_API.Helpers
             }
         }
 
-        public static void SetDateTimeOffsetValue(PropertyInfo property, object parent, object? value)
+        public static void SetDateTimeValue(PropertyInfo property, object parent, object? value)
         {
             var stringValue = value?.ToString();
             if (stringValue == null)
@@ -94,7 +94,7 @@ namespace CPS_API.Helpers
             }
             else
             {
-                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateValue);
+                var dateParsed = DateTime.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateValue);
                 if (dateParsed)
                 {
                     property.SetValue(parent, dateValue, null);
@@ -142,9 +142,9 @@ namespace CPS_API.Helpers
                     return true;
                 }
             }
-            else if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
+            else if (propertyInfo.PropertyType == typeof(DateTime?))
             {
-                if (DateTimeOffsetPropertyContainsData(value, defaultValue))
+                if (DateTimePropertyContainsData(value, defaultValue))
                 {
                     return true;
                 }
@@ -176,18 +176,18 @@ namespace CPS_API.Helpers
             return false;
         }
 
-        private static bool DateTimeOffsetPropertyContainsData(object? value, object? defaultValue)
+        private static bool DateTimePropertyContainsData(object? value, object? defaultValue)
         {
             var stringValue = value?.ToString();
-            var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeValue);
-            DateTimeOffset? nullableDateValue = null;
+            var dateParsed = DateTime.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTime dateTimeValue);
+            DateTime? nullableDateValue = null;
             if (dateParsed)
             {
                 nullableDateValue = dateTimeValue;
             }
             var stringDefaultValue = defaultValue?.ToString();
-            dateParsed = DateTimeOffset.TryParse(stringDefaultValue, CultureInfo.CurrentCulture, out DateTimeOffset dateTimeDefaultValue);
-            DateTimeOffset? nullableDateDefaultValue = null;
+            dateParsed = DateTime.TryParse(stringDefaultValue, CultureInfo.CurrentCulture, out DateTime dateTimeDefaultValue);
+            DateTime? nullableDateDefaultValue = null;
             if (dateParsed)
             {
                 nullableDateDefaultValue = dateTimeDefaultValue;

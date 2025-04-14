@@ -27,15 +27,15 @@ namespace CPS_Jobs.Helpers
 
         public async Task<HttpResponseMessage> GetAsync(string baseUrl, string scope, string url)
         {
-            return await callAsync(HttpMethod.Get, baseUrl, scope, url);
+            return await CallAsync(HttpMethod.Get, baseUrl, scope, url);
         }
 
         public async Task<HttpResponseMessage> PutAsync(string baseUrl, string scope, string url, string body)
         {
-            return await callAsync(HttpMethod.Put, baseUrl, scope, url, body);
+            return await CallAsync(HttpMethod.Put, baseUrl, scope, url, body);
         }
 
-        public async Task<HttpResponseMessage> callAsync(HttpMethod method, string baseUrl, string scope, string url, string body = null)
+        private async Task<HttpResponseMessage> CallAsync(HttpMethod method, string baseUrl, string scope, string url, string? body = null)
         {
             try
             {
@@ -55,7 +55,7 @@ namespace CPS_Jobs.Helpers
             }
             catch
             {
-                _logger.LogError("Could not start sync for url " + url);
+                _logger.LogError("Could not start sync for url {Url}", url);
                 throw;
             }
         }

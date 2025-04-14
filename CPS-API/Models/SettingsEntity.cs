@@ -6,9 +6,9 @@ namespace CPS_API.Models
     {
         public long? SequenceNumber { get; set; }
 
-        public DateTimeOffset? LastSynchronisationNew { get; set; }
+        public DateTime? LastSynchronisationNew { get; set; }
 
-        public DateTimeOffset? LastSynchronisationChanged { get; set; }
+        public DateTime? LastSynchronisationChanged { get; set; }
 
         public string LastTokenForNew { get; set; } = string.Empty;
 

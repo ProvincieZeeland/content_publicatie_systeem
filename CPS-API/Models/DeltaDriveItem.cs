@@ -14,8 +14,8 @@ namespace CPS_API.Models
 
         public Deleted Deleted { get; set; } = new();
 
-        public DateTimeOffset? CreatedDateTime { get; set; }
+        public DateTime? CreatedDateTime { get; set; }
 
-        public DateTimeOffset? LastModifiedDateTime { get; set; }
+        public DateTime? LastModifiedDateTime { get; set; }
     }
 }

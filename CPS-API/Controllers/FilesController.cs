@@ -6,6 +6,7 @@ using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph.Models.ODataErrors;
+using Newtonsoft.Json;
 
 namespace CPS_API.Controllers
 {
@@ -107,7 +108,13 @@ namespace CPS_API.Controllers
             }
             if (metadata == null) return StatusCode(500, "Error while getting metadata");
 
-            return Ok(metadata);
+            var settings = new JsonSerializerSettings
+            {
+                DateFormatString = "yyyy-MM-ddTHH:mm:sszzz",
+                DateTimeZoneHandling = DateTimeZoneHandling.Utc
+            };
+            var json = JsonConvert.SerializeObject(metadata, settings);
+            return Ok(json);
         }
 
         // PUT

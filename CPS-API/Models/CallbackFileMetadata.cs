@@ -1,4 +1,5 @@
-﻿namespace CPS_API.Models
+﻿
+namespace CPS_API.Models
 {
     public class CallbackFileMetadata
     {
@@ -16,15 +17,15 @@
 
         public string? Classification { get; set; } = "";
 
-        public DateTimeOffset? PublicationDate { get; set; } = DateTimeOffset.MinValue;
+        public DateTime? PublicationDate { get; set; } = DateTime.MinValue;
 
-        public DateTimeOffset? ArchiveDate { get; set; } = DateTimeOffset.MinValue;
+        public DateTime? ArchiveDate { get; set; } = DateTime.MinValue;
 
         public string? WOOInformationCategoryPrimary { get; set; } = "";
 
         public string? WOOInformationCategorySecondary { get; set; } = "";
 
-        public DateTimeOffset? DocumentDate { get; set; } = DateTimeOffset.MinValue;
+        public DateTime? DocumentDate { get; set; } = DateTime.MinValue;
 
         public CallbackFileMetadata()
         {
@@ -40,11 +41,11 @@
             ZeesterReference = metadata.ZeesterReference ?? string.Empty;
             RetentionPeriod = metadata.RetentionPeriod ?? 0;
             Classification = metadata.Classification ?? string.Empty;
-            PublicationDate = metadata.PublicationDate ?? DateTimeOffset.MinValue;
-            ArchiveDate = metadata.ArchiveDate ?? DateTimeOffset.MinValue;
+            PublicationDate = metadata.PublicationDate ?? DateTime.MinValue;
+            ArchiveDate = metadata.ArchiveDate ?? DateTime.MinValue;
             WOOInformationCategoryPrimary = metadata.WOOInformationCategoryPrimary ?? string.Empty;
             WOOInformationCategorySecondary = metadata.WOOInformationCategorySecondary ?? string.Empty;
-            DocumentDate = metadata.DocumentDate ?? DateTimeOffset.MinValue;
+            DocumentDate = metadata.DocumentDate ?? DateTime.MinValue;
         }
     }
 }

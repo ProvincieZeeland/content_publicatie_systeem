@@ -12,7 +12,7 @@ namespace CPS_API.Repositories
     {
         Task<List<ToBePublishedEntity>> GetEntitiesFromQueueAsync();
 
-        Task AddToQueueAsync(string objectId, DateTimeOffset publicationDate);
+        Task AddToQueueAsync(string objectId, DateTime publicationDate);
 
         Task RemoveFromQueueAsync(ToBePublishedEntity entity);
 
@@ -65,7 +65,7 @@ namespace CPS_API.Repositories
 
         #region Save and Delete
 
-        public async Task AddToQueueAsync(string objectId, DateTimeOffset publicationDate)
+        public async Task AddToQueueAsync(string objectId, DateTime publicationDate)
         {
             var table = GetTable();
             var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId, publicationDate);

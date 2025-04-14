@@ -11,7 +11,7 @@
         public const string SettingsIsNewSynchronisationRunningField = "IsNewSynchronisationRunning";
         public const string SettingsIsChangedSynchronisationRunningField = "IsChangedSynchronisationRunning";
         public const string SettingsIsDeletedSynchronisationRunningField = "IsDeletedSynchronisationRunning";
-        public const string CacheKeyTermGroup = "CacheKeyTermGroup";
+        public const string CacheKeyTermsId = "CacheKeyTermsId";
         public const string DropOffSubscriptionExpirationDateTime = "DropOffSubscriptionExpirationDateTime";
         public const string DropOffSubscriptionId = "DropOffSubscriptionId";
         public const string DropOffLastChangeToken = "DropOffLastChangeToken";
@@ -30,7 +30,7 @@
         public const string InvalidChangeTokenTimeErrorMessageEnglish = "The changeToken refers to a time before the start of the current change log.";
         public const string InvalidChangeTokenWrondObjectErrorMessageDutch = "U kunt het changeToken van het ene object niet voor het andere object gebruiken.";
         public const string InvalidChangeTokenWrongObjectErrorMessageEnglish = "Cannot use the changeToken from one object against a different object";
-        public const string DateTimeOffsetNow = "DateTimeOffset.Now";
+        public const string DateTimeNow = "DateTime.Now";
         public const string NameAlreadyExistsErrorCode = "nameAlreadyExists";
         public const string ObjectIdSpoColumnName = "ObjectID";
         public const string InvalidHostnameForThisTenancyErrorMessage = "Invalid hostname for this tenancy";
@@ -41,6 +41,8 @@
         public const string ItemPropertyInfoName = "Item";
         public const string SelectSharePointIds = "sharepointids";
         public const string SelectFields = "Fields";
+        public const string SelectId = "id";
+        public const string SelectWebUrl = "webUrl";
         public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
     }
 }

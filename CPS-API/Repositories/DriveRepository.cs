@@ -11,14 +11,13 @@ using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Constants = CPS_API.Models.Constants;
-using Drive = Microsoft.Graph.Models.Drive;
 using GraphDeltaResponse = Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse;
 
 namespace CPS_API.Repositories
 {
     public interface IDriveRepository
     {
-        Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false);
+        Task<string?> GetDriveIdAsync(string siteId, string listId, bool getAsUser = false);
 
         Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false);
 
@@ -32,9 +31,9 @@ namespace CPS_API.Repositories
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
+        Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
-        Task<DeltaResponse> GetUpdatedItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
+        Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
 
         Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false);
 
@@ -63,12 +62,15 @@ namespace CPS_API.Repositories
             return _graphAppServiceClient;
         }
 
-        public async Task<Drive> GetDriveAsync(string siteId, string listId, bool getAsUser = false)
+        public async Task<string?> GetDriveIdAsync(string siteId, string listId, bool getAsUser = false)
         {
             var graphServiceClient = GetGraphServiceClient(getAsUser);
-            var drive = await graphServiceClient.Sites[siteId].Lists[listId].Drive.GetAsync();
+            var drive = await graphServiceClient.Sites[siteId].Lists[listId].Drive.GetAsync(x =>
+            {
+                x.QueryParameters.Select = [Constants.SelectId];
+            });
             if (drive == null) throw new CpsException($"Error while getting drive (siteId={siteId}, listId={listId})");
-            return drive;
+            return drive.Id;
         }
 
         public async Task<DriveItem> GetDriveItemAsync(string siteId, string listId, string listItemId, bool getAsUser = false)
@@ -213,7 +215,7 @@ namespace CPS_API.Repositories
             await graphServiceClient.Drives[driveId].Items[driveItemId].DeleteAsync();
         }
 
-        public async Task<DeltaResponse> GetNewItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
+        public async Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
             var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
             response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime >= lastSynchronisation).ToList();
@@ -222,7 +224,7 @@ namespace CPS_API.Repositories
             return response;
         }
 
-        public async Task<DeltaResponse> GetUpdatedItems(DateTimeOffset lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
+        public async Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
         {
             var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
             response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation && item.LastModifiedDateTime >= lastSynchronisation).ToList();
@@ -368,8 +370,8 @@ namespace CPS_API.Repositories
                 DriveId = driveId,
                 Name = item.Name,
                 Folder = item.Folder,
-                CreatedDateTime = item.CreatedDateTime,
-                LastModifiedDateTime = item.LastModifiedDateTime,
+                CreatedDateTime = item.CreatedDateTime?.DateTime,
+                LastModifiedDateTime = item.LastModifiedDateTime?.DateTime,
                 Deleted = item.Deleted
             };
         }

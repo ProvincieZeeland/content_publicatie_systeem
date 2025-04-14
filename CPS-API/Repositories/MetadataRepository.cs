@@ -50,6 +50,9 @@ namespace CPS_API.Repositories
         private readonly TelemetryClient _telemetryClient;
         private readonly ISharePointRepository _sharePointRepository;
 
+        private List<ColumnDefinition>? _metadataColumns = null;
+        private List<ColumnDefinition>? _externalReferencesColumns = null;
+
         public MetadataRepository(
             IObjectIdRepository objectIdRepository,
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
@@ -100,10 +103,10 @@ namespace CPS_API.Repositories
             var metadata = new FileInformation();
             metadata.Ids = ids;
             metadata.FileName = await GetFileNameAsync(listItem, ids, getAsUser);
-            metadata.CreatedOn = listItem.CreatedDateTime;
-            metadata.CreatedBy = MetadataHelper.GetUserName(listItem.CreatedBy);
-            metadata.ModifiedOn = listItem.LastModifiedDateTime;
-            metadata.ModifiedBy = MetadataHelper.GetUserName(listItem.LastModifiedBy);
+            metadata.CreatedOn = listItem.CreatedDateTime?.DateTime;
+            metadata.CreatedBy = listItem.CreatedBy == null ? null : MetadataHelper.GetUserName(listItem.CreatedBy);
+            metadata.ModifiedOn = listItem.LastModifiedDateTime?.DateTime;
+            metadata.ModifiedBy = listItem.LastModifiedBy == null ? null : MetadataHelper.GetUserName(listItem.LastModifiedBy);
 
             metadata.AdditionalMetadata = new FileMetadata();
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
@@ -127,11 +130,12 @@ namespace CPS_API.Repositories
             return metadata;
         }
 
-        private async Task<string> GetFileNameAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false)
+        private async Task<string?> GetFileNameAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false)
         {
             if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (listItem.Fields == null) throw new CpsException($"No {nameof(ListItem.Fields)} found for {nameof(ListItem)}");
 
             try
             {
@@ -176,6 +180,8 @@ namespace CPS_API.Repositories
             var metadata = new DropOffFileMetadata();
             foreach (var fieldMapping in _globalSettings.DropOffMetadataMapping)
             {
+                if (listItem.Fields == null) throw new CpsException($"No {nameof(ListItem.Fields)} found for {nameof(ListItem)}");
+
                 // Create object with sharepoint fields metadata + url to item
                 listItem.Fields.AdditionalData.TryGetValue(fieldMapping.SpoColumnName, out var value);
                 metadata[fieldMapping.FieldName] = value;
@@ -304,7 +310,7 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             // map received metadata to SPO object
-            var fields = MapMetadata(metadata, isForNewFile, ignoreRequiredFields);
+            var fields = await MapMetadata(metadata, isForNewFile, ignoreRequiredFields);
             if (fields == null) throw new CpsException("Failed to map fields for metadata");
 
             // update sharepoint fields with metadata
@@ -313,9 +319,6 @@ namespace CPS_API.Repositories
                 var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
                 await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, fields, getAsUser);
             }
-
-            // update terms
-            await _sharePointRepository.UpdateTermsForMetadataAsync(metadata, isForNewFile, ignoreRequiredFields, getAsUser);
         }
 
         /// <summary>
@@ -338,7 +341,7 @@ namespace CPS_API.Repositories
             }
 
             // map received metadata to SPO object
-            var externalReferenceItems = MapExternalReferences(metadata);
+            var externalReferenceItems = await MapExternalReferences(metadata);
             if (externalReferenceItems == null) throw new CpsException("Failed to map external references");
 
             // Get existing sharepoint fields with metadata
@@ -346,10 +349,7 @@ namespace CPS_API.Repositories
             var existingListItems = await GetExternalReferenceListItems(metadata.Ids, getAsUser);
 
             // Check if we need to update the external references.
-            externalReferenceItems = await AddOrUpdateListItems(externalReferenceItems, existingListItems, ids, getAsUser);
-
-            // update terms
-            await _sharePointRepository.UpdateTermsForExternalReferencesAsync(metadata.Ids.SiteId!, metadata.Ids.ExternalReferenceListId!, externalReferenceItems, isForNewFile, ignoreRequiredFields, getAsUser);
+            await AddOrUpdateListItems(externalReferenceItems, existingListItems, ids, getAsUser);
         }
 
         /// <summary>
@@ -392,7 +392,9 @@ namespace CPS_API.Repositories
             // Update existing external reference
             try
             {
-                await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, existingListItem.Id, listItem.Fields, getAsUser);
+                if (existingListItem.Id == null) throw new CpsException("Error while getting ID for existing external reference");
+
+                await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, existingListItem.Id, listItem.Fields!, getAsUser);
                 return existingListItem;
             }
             catch (Exception)
@@ -408,6 +410,8 @@ namespace CPS_API.Repositories
 
             foreach (var item in existingListItems)
             {
+                if (item.Fields == null) throw new CpsException("Error while getting fields for existing external reference");
+
                 if (!item.Fields.AdditionalData.TryGetValue(externalApplicationSpoColumnName, out var value)) continue;
                 if (value == null) continue;
                 var untypedObject = value as UntypedObject;
@@ -510,7 +514,7 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             // map received metadata to SPO object
-            var fields = MapMetadata(metadata, true, true);
+            var fields = await MapMetadata(metadata, true, true);
             if (fields == null) throw new CpsException("Failed to map fields for metadata");
             var dropOffMetadata = new DropOffFileMetadata(isComplete, status);
             var dropOffFields = MapDropOffMetadata(dropOffMetadata);
@@ -543,7 +547,7 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
             var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!);
-            if (listItem == null) throw new CpsException($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
+            if (listItem == null || listItem.Fields == null) throw new CpsException($"Error while getting listItem (SiteId = \"{ids.SiteId}\", ListId = \"{ids.ListId}\", ListItemId = \"{ids.ListItemId}\")");
 
             // When metadata is unknown, we skip the synchronisation.
             // The file is a new incomplete file or something went wrong while adding the file.
@@ -576,7 +580,7 @@ namespace CPS_API.Repositories
 
         #region Map data
 
-        private FieldValueSet MapMetadata(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
+        private async Task<FieldValueSet> MapMetadata(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
             var fields = new FieldValueSet
             {
@@ -586,20 +590,11 @@ namespace CPS_API.Repositories
             {
                 try
                 {
-                    if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile))
+                    var mappedField = await MapMetadataField(metadata, fieldMapping, isForNewFile, ignoreRequiredFields);
+                    if (mappedField != null)
                     {
-                        continue;
+                        fields.AdditionalData[mappedField.Value.name] = mappedField.Value.value;
                     }
-
-                    var value = MetadataHelper.GetMetadataValue(metadata, fieldMapping);
-                    var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping, metadata);
-                    if (propertyInfo == null) throw new CpsException($"FieldMapping {fieldMapping.FieldName} not found!");
-                    if (MetadataHelper.KeepExistingValue(value, propertyInfo, isForNewFile, ignoreRequiredFields))
-                    {
-                        continue;
-                    }
-
-                    fields.AdditionalData[fieldMapping.SpoColumnName] = GetValue(fieldMapping, value, propertyInfo, isForNewFile, ignoreRequiredFields);
                 }
                 catch (FieldRequiredException)
                 {
@@ -611,6 +606,54 @@ namespace CPS_API.Repositories
                 }
             }
             return fields;
+        }
+
+        private async Task<(string name, object? value)?> MapMetadataField(FileInformation metadata, FieldMapping fieldMapping, bool isForNewFile, bool ignoreRequiredFields)
+        {
+            if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile)) return null;
+
+            var value = MetadataHelper.GetMetadataValue(metadata, fieldMapping);
+            var propertyInfo = MetadataHelper.GetMetadataPropertyInfo(fieldMapping, metadata);
+            if (propertyInfo == null) throw new CpsException($"FieldMapping {fieldMapping.FieldName} not found!");
+            if (MetadataHelper.KeepExistingValue(value, propertyInfo, isForNewFile, ignoreRequiredFields))
+            {
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(fieldMapping.TermsetName))
+            {
+                var derivedValue = GetValue(fieldMapping, value, propertyInfo, isForNewFile, ignoreRequiredFields);
+                return (fieldMapping.SpoColumnName, derivedValue);
+            }
+
+            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields);
+            if (termValue == null) return null;
+
+            return (termValue.Value.name, termValue.Value.value);
+        }
+
+        private async Task<(string name, string value)?> GetTermValue(FileInformation metadata, FieldMapping fieldMapping, PropertyInfo propertyInfo, object? value, bool isForNewFile, bool ignoreRequiredFields, bool isForExternalReference = false)
+        {
+            // Only get termstore and columns if we need to update a taxonomy value.
+            List<ColumnDefinition>? columns = isForExternalReference ? _externalReferencesColumns : _metadataColumns;
+            if (columns == null)
+            {
+                if (metadata.Ids == null) throw new CpsException($"Error while getting columns: SiteId amd ListId unknown");
+                columns = await _listRepository.GetColumnsAsync(metadata.Ids.SiteId!, isForExternalReference ? metadata.Ids.ExternalReferenceListId! : metadata.Ids.ListId!);
+                if (isForExternalReference) { _externalReferencesColumns = columns; }
+                else { _metadataColumns = columns; }
+            }
+
+            var spoColumnName = fieldMapping.SpoColumnName.Replace("_x0020_", " ").Replace("_x002d_", "-");
+            var column = columns!.Find(item => item.DisplayName != null && item.DisplayName.Equals(spoColumnName + "_0"));
+            if (column == null || string.IsNullOrWhiteSpace(column.Name)) return null;
+
+            var termGuid = await _sharePointRepository.GetNewTermValue(metadata.Ids!.SiteId!, propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields);
+            if (!string.IsNullOrWhiteSpace(termGuid))
+            {
+                return (column.Name, $"-1;#{value}|{termGuid}");
+            }
+            return null;
         }
 
         private FieldValueSet MapDropOffMetadata(DropOffFileMetadata dropOffMetadata)
@@ -655,26 +698,26 @@ namespace CPS_API.Repositories
                 value = defaultValue;
             }
 
-            // Default format for DateTimeOffset for 
-            if (propertyInfo.PropertyType == typeof(DateTimeOffset?))
+            // Default format for DateTime for 
+            if (propertyInfo.PropertyType == typeof(DateTime?))
             {
                 var stringValue = value?.ToString();
-                var dateParsed = DateTimeOffset.TryParse(stringValue, CultureInfo.CurrentCulture, out DateTimeOffset dateValue);
+                var dateParsed = DateTime.TryParse(stringValue, CultureInfo.CurrentCulture, out var dateTimeValue);
                 if (!dateParsed && !ignoreRequiredFields && fieldMapping.Required)
                 {
                     throw new FieldRequiredException($"The {fieldMapping.FieldName} field is required");
                 }
 
-                if (dateValue == DateTimeOffset.MinValue)
+                if (dateTimeValue == DateTime.MinValue)
                 {
                     return null;
                 }
-                return dateValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
+                return dateTimeValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
             }
             return value;
         }
 
-        private List<ExternalReferenceItem> MapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
+        private async Task<List<ExternalReferenceItem>> MapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
             ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
@@ -691,12 +734,11 @@ namespace CPS_API.Repositories
                 {
                     try
                     {
-                        if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile)) continue;
-
-                        (bool getNextValue, object? value) = GetExternalReferenceValue(fieldMapping, metadata.Ids, externalReference, isForNewFile, ignoreRequiredFields);
-
-                        if (getNextValue) continue;
-                        fields.AdditionalData[fieldMapping.SpoColumnName] = value;
+                        var mappedField = await MapExternalReferenceField(metadata, fieldMapping, externalReference, isForNewFile, ignoreRequiredFields);
+                        if (mappedField != null)
+                        {
+                            fields.AdditionalData[mappedField.Value.name] = mappedField.Value.value;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -708,14 +750,16 @@ namespace CPS_API.Repositories
             return externalReferenceItems;
         }
 
-        private static (bool, object?) GetExternalReferenceValue(FieldMapping fieldMapping, ObjectIdentifiers ids, ExternalReferences externalReference, bool isForNewFile, bool ignoreRequiredFields)
+        private async Task<(string name, object? value)?> MapExternalReferenceField(FileInformation metadata, FieldMapping fieldMapping, ExternalReferences externalReference, bool isForNewFile, bool ignoreRequiredFields)
         {
+            if (!MetadataHelper.IsEditFieldAllowed(fieldMapping, isForNewFile)) return null;
+
             object? value;
             PropertyInfo? propertyInfo;
-            if (fieldMapping.FieldName == nameof(ids.ObjectId))
+            if (fieldMapping.FieldName == nameof(metadata.Ids.ObjectId))
             {
-                value = ids.ObjectId;
-                propertyInfo = ids.GetType().GetProperty(fieldMapping.FieldName);
+                value = metadata.Ids!.ObjectId;
+                propertyInfo = metadata.Ids.GetType().GetProperty(fieldMapping.FieldName);
             }
             else
             {
@@ -726,14 +770,19 @@ namespace CPS_API.Repositories
 
             if (MetadataHelper.KeepExistingValue(value, propertyInfo, isForNewFile, ignoreRequiredFields))
             {
-                return (true, null);
+                return null;
             }
 
             var defaultValue = MetadataHelper.GetMetadataDefaultValue(value, propertyInfo, fieldMapping, isForNewFile, ignoreRequiredFields);
             if (defaultValue != null) value = defaultValue;
-            if (MetadataHelper.IsMetadataFieldEmpty(value, propertyInfo)) return (true, null);
+            if (MetadataHelper.IsMetadataFieldEmpty(value, propertyInfo)) return null;
 
-            return (false, value);
+            if (string.IsNullOrEmpty(fieldMapping.TermsetName)) return (fieldMapping.SpoColumnName, value);
+
+            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, isForExternalReference: true);
+            if (termValue == null) return null;
+
+            return (termValue.Value.name, termValue.Value.value);
         }
 
         public string MapAdditionalIds(FileInformation metadata)

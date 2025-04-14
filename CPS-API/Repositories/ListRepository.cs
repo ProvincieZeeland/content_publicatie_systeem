@@ -28,6 +28,8 @@ namespace CPS_API.Repositories
         Task<List<ListItem>?> GetListItemsAsync(string siteId, string listId, string fieldName, string fieldValue, bool getAsUser = false);
 
         Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken);
+
+        Task<List<ColumnDefinition>?> GetColumnsAsync(string siteId, string listId, bool getAsUser = false);
     }
 
     public class ListRepository : IListRepository
@@ -68,7 +70,7 @@ namespace CPS_API.Repositories
                 var graphServiceClient = GetGraphServiceClient(getAsUser);
                 var listItem = await graphServiceClient.Sites[siteId].Lists[listId].Items[listItemId].GetAsync(x =>
                 {
-                    x.QueryParameters.Expand = new[] { "fields" };
+                    x.QueryParameters.Expand = ["fields"];
                 });
                 if (listItem == null) throw new FileNotFoundException($"ListItem (siteId = {siteId}, listId = {listId}, listItemId = {listItemId}) does not exist!");
                 return listItem;
@@ -125,6 +127,26 @@ namespace CPS_API.Repositories
             });
             await pageIterator.IterateAsync();
             return listItems;
+        }
+
+        public async Task<List<ColumnDefinition>?> GetColumnsAsync(string siteId, string listId, bool getAsUser = false)
+        {
+            var graphServiceClient = GetGraphServiceClient(getAsUser);
+            var response = await graphServiceClient.Sites[siteId].Lists[listId].Columns.GetAsync(x =>
+            {
+                x.QueryParameters.Select = ["hidden", "DisplayName", "Name"];
+            });
+            if (response == null) throw new CpsException($"Error while getting columns (siteId={siteId}, listId={listId})");
+
+            // list which contains all items
+            var columnDefinitions = new List<ColumnDefinition>();
+            var pageIterator = PageIterator<ColumnDefinition, ColumnDefinitionCollectionResponse>.CreatePageIterator(graphServiceClient, response, item =>
+            {
+                columnDefinitions.Add(item);
+                return true;
+            });
+            await pageIterator.IterateAsync();
+            return columnDefinitions;
         }
 
         #endregion
