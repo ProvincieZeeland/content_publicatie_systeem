@@ -9,15 +9,18 @@ namespace CPS_API.Models
 
         public string Status { get; set; } = "";
 
+        public string? ObjectId { get; set; }
+
         public DropOffFileMetadata()
         {
 
         }
 
-        public DropOffFileMetadata(bool isComplete, string status)
+        public DropOffFileMetadata(bool isComplete, string status, string? objectId)
         {
             IsComplete = isComplete;
             Status = status ?? string.Empty;
+            ObjectId = objectId;
         }
 
         [JsonIgnore]

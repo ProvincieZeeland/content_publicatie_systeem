@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions.Serialization;
-using PnP.Framework.Extensions;
 using Constants = CPS_API.Models.Constants;
 using FileInformation = CPS_API.Models.FileInformation;
 using ListItem = Microsoft.Graph.Models.ListItem;
@@ -36,7 +35,7 @@ namespace CPS_API.Repositories
 
         Task UpdateExternalReferencesAsync(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false, bool getAsUser = false);
 
-        Task UpdateDropOffMetadataAsync(bool isComplete, string status, FileInformation metadata, bool getAsUser = false);
+        Task UpdateDropOffMetadataAsync(bool isComplete, string status, ObjectIdentifiers objectIdentifiers, bool getAsUser = false);
 
         string MapAdditionalIds(FileInformation metadata);
     }
@@ -505,26 +504,26 @@ namespace CPS_API.Repositories
             return fields;
         }
 
-        public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, FileInformation metadata, bool getAsUser = false)
+        public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, ObjectIdentifiers objectIdentifiers, bool getAsUser = false)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
-            if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
-            if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(metadata.Ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(metadata.Ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            ArgumentNullException.ThrowIfNull(nameof(objectIdentifiers));
+            if (string.IsNullOrEmpty(objectIdentifiers.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
-            // map received metadata to SPO object
-            var fields = await MapMetadata(metadata, true, true);
-            if (fields == null) throw new CpsException("Failed to map fields for metadata");
-            var dropOffMetadata = new DropOffFileMetadata(isComplete, status);
+            // map received metadata to SPO object           
+            var dropOffMetadata = new DropOffFileMetadata(isComplete, status, objectIdentifiers.ObjectId);
             var dropOffFields = MapDropOffMetadata(dropOffMetadata);
             if (dropOffFields == null) throw new CpsException("Failed to map fields for metadata");
-            fields.AdditionalData.AddRange(dropOffFields.AdditionalData);
+            var fields = new FieldValueSet
+            {
+                AdditionalData = dropOffFields.AdditionalData
+            };
 
             // update sharepoint fields with metadata
             if (fields.AdditionalData.Count > 0)
             {
-                var ids = await _objectIdRepository.FindMissingIds(metadata.Ids, getAsUser);
+                var ids = await _objectIdRepository.FindMissingIds(objectIdentifiers, getAsUser);
                 await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, fields, getAsUser);
             }
         }
@@ -712,7 +711,11 @@ namespace CPS_API.Repositories
                 {
                     return null;
                 }
-                return dateTimeValue.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
+
+                // Metadata from and to SharePoint is always UTC!
+                // DateTime kind is default unknown which results in the local DateTimeKind that might not be UTC.
+                var specified = DateTime.SpecifyKind(dateTimeValue, DateTimeKind.Utc);
+                return specified.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz");
             }
             return value;
         }
