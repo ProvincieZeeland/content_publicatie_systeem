@@ -507,9 +507,9 @@ namespace CPS_API.Repositories
         public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, ObjectIdentifiers objectIdentifiers, bool getAsUser = false)
         {
             ArgumentNullException.ThrowIfNull(nameof(objectIdentifiers));
-            if (string.IsNullOrEmpty(objectIdentifiers.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(objectIdentifiers.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(objectIdentifiers.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(objectIdentifiers)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(objectIdentifiers)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(objectIdentifiers)}");
 
             // map received metadata to SPO object           
             var dropOffMetadata = new DropOffFileMetadata(isComplete, status, objectIdentifiers.ObjectId);
