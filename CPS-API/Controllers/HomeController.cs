@@ -13,6 +13,7 @@ using Microsoft.Graph;
 using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
+using Newtonsoft.Json;
 
 namespace CPS_API.Controllers
 {
@@ -189,7 +190,13 @@ namespace CPS_API.Controllers
                 return View("Error", viewmodel);
             }
 
-            return Ok(metadata);
+            var settings = new JsonSerializerSettings
+            {
+                DateFormatString = "yyyy-MM-ddTHH:mm:sszzz",
+                DateTimeZoneHandling = DateTimeZoneHandling.Utc
+            };
+            var json = JsonConvert.SerializeObject(metadata, settings);
+            return Ok(json);
         }
 
         [AllowAnonymous]

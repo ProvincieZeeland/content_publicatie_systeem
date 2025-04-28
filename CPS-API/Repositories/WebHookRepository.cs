@@ -445,7 +445,7 @@ namespace CPS_API.Repositories
             {
                 var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
                 metadata.Ids.ObjectId = await CreateOrUpdateFileAsync(newMetadata, stream);
-                await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata);
+                await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata.Ids);
             }
             catch (Exception ex)
             {
@@ -513,7 +513,8 @@ namespace CPS_API.Repositories
             // Unsuccesfull -> change status
             if (metadata != null)
             {
-                await _metadataRepository.UpdateDropOffMetadataAsync(false, "Er gaat iets mis", metadata);
+                if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
+                await _metadataRepository.UpdateDropOffMetadataAsync(false, "Er gaat iets mis", metadata.Ids);
             }
 
             // Log error, we need the metadata to update the error in the DropOff.

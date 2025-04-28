@@ -1,10 +1,10 @@
 ﻿using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 
 namespace CPS_API.Repositories
 {
@@ -41,7 +41,13 @@ namespace CPS_API.Repositories
             {
                 var fileInfo = await _filesRepository.GetFileAsync(objectId);
                 var callbackFileInfo = new CallbackCpsFile(fileInfo);
-                body = JsonSerializer.Serialize(callbackFileInfo);
+
+                var settings = new JsonSerializerSettings
+                {
+                    DateFormatString = "yyyy-MM-ddTHH:mm:sszzz",
+                    DateTimeZoneHandling = DateTimeZoneHandling.Utc
+                };
+                body = JsonConvert.SerializeObject(callbackFileInfo, settings);
             }
             var callbackUrl = _globalSettings.CallbackUrl + $"/{synchronisationType.GetLabel()}/{objectId}";
 

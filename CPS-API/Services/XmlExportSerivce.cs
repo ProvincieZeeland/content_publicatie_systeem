@@ -70,10 +70,22 @@ namespace CPS_API.Services
             }
         }
 
+        /// <summary>
+        /// Dates are always assumed to be UTC! 
+        /// Because we get metadata in UTC from SharePoint.
+        /// </summary>
         private string? GetPropertyValue(PropertyInfo? propertyInfo, object obj)
         {
             ArgumentNullException.ThrowIfNull(propertyInfo);
             var value = propertyInfo.GetValue(obj);
+
+            // Add timezone part for DateTime
+            if (value is DateTime date)
+            {
+                var specified = DateTime.SpecifyKind(date, DateTimeKind.Utc);
+                return specified.ToString("yyyy-MM-ddTHH:mm:sszzz");
+            }
+
             return value == null ? string.Empty : value.ToString();
         }
     }
