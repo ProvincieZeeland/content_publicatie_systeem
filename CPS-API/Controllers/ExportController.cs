@@ -175,12 +175,21 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully updated then we update the last synchronisation date and token. 
-            var newSettings = new Dictionary<string, object?> {
+            try
+            {
+                var newSettings = new Dictionary<string, object?> {
                 { Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow },
                 { Constants.SettingsLastTokenForChangedField, result.NewNextTokens },
                 { Constants.SettingsIsChangedSynchronisationRunningField, false }
             };
-            await _settingsRepository.SaveSettingsAsync(newSettings);
+                await _settingsRepository.SaveSettingsAsync(newSettings);
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
 
             return Ok(GetUpdatedResponse(result));
         }
@@ -241,12 +250,21 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully deleted then we update the token.
-            var newSettings = new Dictionary<string, object?> {
+            try
+            {
+                var newSettings = new Dictionary<string, object?> {
                 { Constants.SettingsLastSynchronisationDeletedField, DateTime.UtcNow },
                 { Constants.SettingsLastTokenForDeletedField, result.NewNextTokens },
                 { Constants.SettingsIsDeletedSynchronisationRunningField, false }
             };
-            await _settingsRepository.SaveSettingsAsync(newSettings);
+                await _settingsRepository.SaveSettingsAsync(newSettings);
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
 
             return Ok(GetDeletedResponse(result));
         }
