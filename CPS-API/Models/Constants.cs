@@ -5,6 +5,7 @@
         public const string SettingsSequenceField = "SequenceNumber";
         public const string SettingsLastSynchronisationNewField = "LastSynchronisationNew";
         public const string SettingsLastSynchronisationChangedField = "LastSynchronisationChanged";
+        public const string SettingsLastSynchronisationDeletedField = "LastSynchronisationDeleted";
         public const string SettingsLastTokenForNewField = "LastTokenForNew";
         public const string SettingsLastTokenForChangedField = "LastTokenForChanged";
         public const string SettingsLastTokenForDeletedField = "LastTokenForDeleted";
@@ -44,5 +45,6 @@
         public const string SelectId = "id";
         public const string SelectWebUrl = "webUrl";
         public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
+        public const string ResyncRequiredCode = "resyncRequired";
     }
 }

@@ -14,7 +14,9 @@ namespace CPS_API.Repositories
 
         Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName);
 
-        Task<bool> SaveSettingAsync(string fieldName, object? value);
+        Task SaveSettingAsync(string fieldName, object? value);
+
+        Task SaveSettingsAsync(Dictionary<string, object?> settings);
 
         Task<long?> IncreaseSequenceNumberAsync();
     }
@@ -60,15 +62,37 @@ namespace CPS_API.Repositories
                .ToDictionary(split => split[0], split => split.Length == 2 ? split[1] : split[1] + "=" + split[2]);
         }
 
-        public async Task<bool> SaveSettingAsync(string fieldName, object? value)
+        public async Task SaveSettingAsync(string fieldName, object? value)
+        {
+            await SaveSettingsAsync(new Dictionary<string, object?> { { fieldName, value } });
+        }
+
+        /// <summary>
+        /// Try to save settings.
+        /// Keeps checking if the lease is active in 30 seconds.
+        /// Retries once after 5 minutes.
+        /// </summary>
+        public async Task SaveSettingsAsync(Dictionary<string, object?> settings)
         {
             // Set up lease container
-            var leaseContainer = await _storageTableService.GetLeaseContainer();
-            if (leaseContainer == null)
-            {
-                throw new CpsException("Error while getting leaseContainer");
-            }
+            CloudBlobContainer? leaseContainer = await _storageTableService.GetLeaseContainer();
+            if (leaseContainer == null) throw new CpsException("Error while getting leaseContainer");
 
+            (bool succeeded, _) = await AcquireLeaseAndSaveSettingsAsync(leaseContainer, settings);
+
+            if (!succeeded)
+            {
+                // Sleep for 5 minutes before retry.
+                await Task.Delay(TimeSpan.FromMinutes(5));
+
+                (bool succeeded, string lastErrorMessage) result = await AcquireLeaseAndSaveSettingsAsync(leaseContainer, settings);
+                if (!result.succeeded) throw new CpsException($"Error while saving setting: {result.lastErrorMessage}");
+            }
+        }
+
+        public async Task<(bool succeeded, string lastErrorMessage)> AcquireLeaseAndSaveSettingsAsync(CloudBlobContainer leaseContainer, Dictionary<string, object?> settings)
+        {
+            var lastErrorMessage = "";
             var s = new Stopwatch();
             s.Start();
             while (s.Elapsed < TimeSpan.FromSeconds(30))
@@ -89,24 +113,31 @@ namespace CPS_API.Repositories
                     // Actually update settings
                     try
                     {
-                        var settings = await GetCurrentSettings();
-                        FieldPropertyHelper.SetFieldValue(settings, fieldName, value);
-                        await SaveSettingsAsync(settings);
+                        var currentSettings = await GetCurrentSettings();
+                        if (currentSettings == null) throw new CpsException($"Error while getting current settings");
+
+                        foreach (var setting in settings)
+                        {
+                            FieldPropertyHelper.SetFieldValue(currentSettings, setting.Key, setting.Value);
+                        }
+                        await SaveSettingsAsync(currentSettings);
+                        return (true, "");
                     }
                     finally
                     {
                         await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                     }
-                    return true;
                 }
                 catch (AcquiringLeaseException)
                 {
                     // Lease is still active, continue loop.
+                    lastErrorMessage = "Lease is still active.";
                 }
                 catch (StorageException ex)
                 {
                     // Lease still active? (status 409 or 412)
                     // Then try again for 30 seconds.
+                    lastErrorMessage = ex.Message;
                     if (ex.RequestInformation.HttpStatusCode != 409 && ex.RequestInformation.HttpStatusCode != 412)
                     {
                         throw;
@@ -114,7 +145,8 @@ namespace CPS_API.Repositories
                 }
             }
             s.Stop();
-            return false;
+
+            return (false, lastErrorMessage);
         }
 
         private async Task<bool> SaveSettingsAsync(SettingsEntity setting)

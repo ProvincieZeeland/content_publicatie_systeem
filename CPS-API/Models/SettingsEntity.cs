@@ -10,6 +10,8 @@ namespace CPS_API.Models
 
         public DateTime? LastSynchronisationChanged { get; set; }
 
+        public DateTime? LastSynchronisationDeleted { get; set; }
+
         public string LastTokenForNew { get; set; } = string.Empty;
 
         public string LastTokenForChanged { get; set; } = string.Empty;
