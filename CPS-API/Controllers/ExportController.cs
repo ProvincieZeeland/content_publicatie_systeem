@@ -86,10 +86,22 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully added then we update the last synchronisation date and token.
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow);
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForNewField, result.NewNextTokens);
+            try
+            {
+                var newSettings = new Dictionary<string, object?> {
+                { Constants.SettingsLastSynchronisationNewField, DateTime.UtcNow },
+                { Constants.SettingsLastTokenForNewField, result.NewNextTokens },
+                { Constants.SettingsIsNewSynchronisationRunningField, false }
+            };
+                await _settingsRepository.SaveSettingsAsync(newSettings);
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
 
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
             return Ok(GetNewResponse(result));
         }
 
@@ -163,10 +175,22 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully updated then we update the last synchronisation date and token. 
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow);
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForChangedField, result.NewNextTokens);
+            try
+            {
+                var newSettings = new Dictionary<string, object?> {
+                { Constants.SettingsLastSynchronisationChangedField, DateTime.UtcNow },
+                { Constants.SettingsLastTokenForChangedField, result.NewNextTokens },
+                { Constants.SettingsIsChangedSynchronisationRunningField, false }
+            };
+                await _settingsRepository.SaveSettingsAsync(newSettings);
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
 
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
             return Ok(GetUpdatedResponse(result));
         }
 
@@ -226,9 +250,22 @@ namespace CPS_API.Controllers
             }
 
             // If all files are succesfully deleted then we update the token.
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsLastTokenForDeletedField, result.NewNextTokens);
+            try
+            {
+                var newSettings = new Dictionary<string, object?> {
+                { Constants.SettingsLastSynchronisationDeletedField, DateTime.UtcNow },
+                { Constants.SettingsLastTokenForDeletedField, result.NewNextTokens },
+                { Constants.SettingsIsDeletedSynchronisationRunningField, false }
+            };
+                await _settingsRepository.SaveSettingsAsync(newSettings);
+            }
+            catch (Exception ex)
+            {
+                _telemetryClient.TrackException(ex);
+                await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
+                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+            }
 
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
             return Ok(GetDeletedResponse(result));
         }
 

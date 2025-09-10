@@ -276,7 +276,23 @@ namespace CPS_API.Repositories
             {
                 var deltaLink = await GetDeltaLinkForDelta(tokens, driveId, getAsUser);
                 if (deltaLink == null) throw new CpsException("Error while getting query token");
-                delta = await GetDeltaAsync(driveId, deltaLink, getAsUser);
+
+                try
+                {
+                    delta = await GetDeltaAsync(driveId, deltaLink, getAsUser);
+                }
+                catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Gone && ex.Error != null && ex.Error.Code == Constants.ResyncRequiredCode)
+                {
+                    // Http 410 error occurs when requested resource is no longer available at the server.
+                    // There may be cases when the service can't provide a list of changes for a given token
+                    // (for example, if a client tries to reuse an old token after being disconnected for a long time,
+                    // or if server state has changed and a new token is required).
+                    // This is an indication that the application must restart with a full synchronization of the target tenant.
+                    // This usually happens to prevent data inconsistency due to internal maintenance or migration of the target tenant.
+                    // Delta tokens are only valid for a specific period before the client application needs to run a full synchronization again.
+                    // https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0&tabs=http#response-2
+                    delta = await GetDeltaAsync(driveId, getAsUser: getAsUser);
+                }
                 if (delta.Value == null) throw new CpsException($"Error while getting delta (driveId:{driveId})");
                 driveItems.AddRange(delta.Value.Select(i => MapDriveItemToDeltaItem(driveId, i)));
 

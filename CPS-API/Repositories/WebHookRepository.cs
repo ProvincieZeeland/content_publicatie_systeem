@@ -82,8 +82,11 @@ namespace CPS_API.Repositories
             if (subscription == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date and subscriptionId for extending webhook.
-            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionId(), subscription.Id);
-            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionExpirationDateTime(), subscription.ExpirationDateTime);
+            var newSettings = new Dictionary<string, object?> {
+                {dropOffType.GetDropOffSubscriptionId(), subscription.Id },
+                { dropOffType.GetDropOffSubscriptionExpirationDateTime(), subscription.ExpirationDateTime }
+            };
+            await _settingsRepository.SaveSettingsAsync(newSettings);
 
             return subscription;
         }
