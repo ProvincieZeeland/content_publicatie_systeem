@@ -289,10 +289,14 @@ namespace CPS_API.Repositories
 
             var filterDrive = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveId), QueryComparisons.Equal, driveId);
             var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveItemId), QueryComparisons.Equal, driveItemId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter);
+            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter).Take(1);
 
-            var result = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, null);
-            return result.Results?.FirstOrDefault();
+            var results = await _storageTableService.ExecuteQuerySegmentedAsync(objectIdentifiersTable, query);
+            if (results == null)
+            {
+                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ObjectIdentifiersTableName}\"");
+            }
+            return results.FirstOrDefault();
         }
 
         public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
@@ -339,17 +343,11 @@ namespace CPS_API.Repositories
             var filter = TableQuery.GenerateFilterCondition(filterPropertyName, QueryComparisons.Equal, filterGivenValue);
             var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter).Take(1);
 
-            // Querying the table not bases on partitionKey or rowKey sometimes gives strange behaviour.
-            // Results are empty in this situation and the item must be found by using the continuationtoken.
-            List<ObjectIdentifiersEntity> results = new List<ObjectIdentifiersEntity>();
-            TableContinuationToken? token = null;
-            do
+            var results = await _storageTableService.ExecuteQuerySegmentedAsync(objectIdentifiersTable, query);
+            if (results == null)
             {
-                var seg = await objectIdentifiersTable.ExecuteQuerySegmentedAsync(query, token);
-                token = seg.ContinuationToken;
-                results.AddRange(seg.Results);
+                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ObjectIdentifiersTableName}\"");
             }
-            while (token != null && results.Count < 1);
             return results.FirstOrDefault();
         }
 
