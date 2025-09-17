@@ -39,26 +39,24 @@ namespace CPS_API.Repositories
         {
             var table = GetTable();
             var query = new TableQuery<ToBePublishedEntity>();
-            var result = await table.ExecuteQuerySegmentedAsync(query, null);
-            if (result == null)
+            var results = await _storageTableService.ExecuteQuerySegmentedAsync(table, query);
+            if (results == null)
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
             }
-            var entities = result.Results?.ToList();
-            if (entities == null) throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
-            return entities;
+            return results;
         }
 
         private async Task<ToBePublishedEntity?> GetToBePublishedEntityAsync(CloudTable table, string objectId)
         {
             var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, objectId);
             var query = new TableQuery<ToBePublishedEntity>().Where(filter);
-            var result = await table.ExecuteQuerySegmentedAsync(query, null);
-            if (result == null)
+            var results = await _storageTableService.ExecuteQuerySegmentedAsync(table, query);
+            if (results == null)
             {
                 throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\" by \"{objectId}\"");
             }
-            return result.Results?.FirstOrDefault();
+            return results.FirstOrDefault();
         }
 
         #endregion

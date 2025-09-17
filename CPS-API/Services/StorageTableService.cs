@@ -23,6 +23,8 @@ namespace CPS_API.Helpers
         Task<CloudBlobContainer> GetLeaseContainer();
 
         Task<CloudQueue> GetQueue(string queueName);
+
+        Task<List<T>> ExecuteQuerySegmentedAsync<T>(CloudTable table, TableQuery<T> query) where T : ITableEntity, new();
     }
 
     public class StorageTableService : IStorageTableService
@@ -127,6 +129,23 @@ namespace CPS_API.Helpers
         private static CloudStorageAccount GetStorageAccount(string connectionString)
         {
             return CloudStorageAccount.Parse(connectionString);
+        }
+
+        public async Task<List<T>> ExecuteQuerySegmentedAsync<T>(CloudTable table, TableQuery<T> query) where T : ITableEntity, new()
+        {
+            // Querying the table not based on partitionKey or rowKey sometimes gives other behaviour when accessing large tables.
+            // Results are empty in this situation and the item must be found by using the continuationtoken.
+            // https://stackoverflow.com/questions/36454984/querying-azure-table-without-partitionkey-and-rowkey
+            List<T> results = new List<T>();
+            TableContinuationToken? token = null;
+            do
+            {
+                var seg = await table.ExecuteQuerySegmentedAsync(query, token);
+                token = seg.ContinuationToken;
+                results.AddRange(seg.Results);
+            }
+            while (token != null && results.Count < 1);
+            return results;
         }
     }
 }
