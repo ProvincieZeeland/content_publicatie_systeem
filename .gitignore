@@ -12,3 +12,10 @@
 /CPS-API/appsettings.Acc.json
 /CPS-API/appsettings.Prod.json
 /CPS-API/Properties/PublishProfiles/FolderProfile.pubxml.user
+/CPS-API/packages
+/CPS-ManagementTool/bin
+/CPS-ManagementTool/obj
+/CPS-ManagementTool/publish/Application Files/CPS-ManagementTool_1_0_0_0
+/CPS-ManagementTool/publish
+/CPS-ManagementTool/CPS-ManagementTool.csproj.user
+/CPS-ManagementTool/CPS-ManagementTool_TemporaryKey.pfx
