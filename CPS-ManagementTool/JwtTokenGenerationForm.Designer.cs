@@ -153,11 +153,11 @@ namespace CPS_ManagementTool
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256);
             var handler = new JwtSecurityTokenHandler();
             JwtSecurityToken token = handler.CreateJwtSecurityToken(
-                subject: new ClaimsIdentity(new[] { 
-                    new Claim(JwtTokenGenerationFormConstants.AudTitle, JwtTokenGenerationFormConstants.AudValue), 
-                    new Claim(JwtTokenGenerationFormConstants.ExpTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32), 
-                    new Claim(JwtTokenGenerationFormConstants.NbfTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32), 
-                    new Claim(JwtTokenGenerationFormConstants.IssTitle, clientId), 
+                subject: new ClaimsIdentity(new[] {
+                    new Claim(JwtTokenGenerationFormConstants.AudTitle, JwtTokenGenerationFormConstants.AudValue),
+                    new Claim(JwtTokenGenerationFormConstants.ExpTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32),
+                    new Claim(JwtTokenGenerationFormConstants.NbfTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32),
+                    new Claim(JwtTokenGenerationFormConstants.IssTitle, clientId),
                     new Claim(JwtTokenGenerationFormConstants.SubTitle, clientId),
                     new Claim(JwtTokenGenerationFormConstants.JtiTitle, new Guid().ToString())
                 }),
@@ -203,7 +203,7 @@ namespace CPS_ManagementTool
             prompt.CancelButton = cancel;
 
             var dialogResult = prompt.ShowDialog();
-            if (dialogResult == DialogResult.OK)  return (passwordBox.Text, clientIdBox.Text);
+            if (dialogResult == DialogResult.OK) return (passwordBox.Text, clientIdBox.Text);
             else return (null, null);
         }
     }
