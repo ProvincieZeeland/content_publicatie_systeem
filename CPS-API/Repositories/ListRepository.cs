@@ -2,7 +2,6 @@
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
-using Microsoft.ApplicationInsights;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
@@ -37,20 +36,20 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly GraphServiceClient _graphServiceClient;
         private readonly GraphServiceClient _graphAppServiceClient;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
         private readonly CertificateService _certificateService;
 
         public ListRepository(
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             GraphServiceClient graphServiceClient,
-            TelemetryClient telemetryClient,
+            ILogger<ListRepository> logger,
             CertificateService certificateService,
             ITokenAcquisition tokenAcquisition)
         {
             _globalSettings = settings.Value;
             _graphServiceClient = graphServiceClient;
             _graphAppServiceClient = new GraphServiceClient(new BaseBearerTokenAuthenticationProvider(new AppOnlyAuthenticationProvider(tokenAcquisition, settings)));
-            _telemetryClient = telemetryClient;
+            _logger = logger;
             _certificateService = certificateService;
         }
 
@@ -182,8 +181,9 @@ namespace CPS_API.Repositories
                     throw new CpsException("Invalid ChangeToken");
                 }
 
-                _telemetryClient.TrackException(new CpsException($"Error while getting list changes {siteUrl}", ex));
-                throw new CpsException($"Error while getting list changes {siteUrl}");
+                var errorMessage = $"Error while getting list changes {siteUrl}";
+                _logger.LogError(ex, errorMessage);
+                throw new CpsException(errorMessage);
             }
 
             // Get correct and unique changes

@@ -6,7 +6,6 @@ using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
@@ -46,7 +45,7 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
         private readonly IListRepository _listRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
         private readonly ISharePointRepository _sharePointRepository;
 
         private List<ColumnDefinition>? _metadataColumns = null;
@@ -57,14 +56,14 @@ namespace CPS_API.Repositories
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
             IListRepository listRepository,
-            TelemetryClient telemetryClient,
+            ILogger<MetadataRepository> logger,
             ISharePointRepository sharePointRepository)
         {
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
             _listRepository = listRepository;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
             _sharePointRepository = sharePointRepository;
         }
 
@@ -383,7 +382,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception)
                 {
-                    _telemetryClient.TrackEvent($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
+                    _logger.LogTrace($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
                     throw;
                 }
             }
@@ -398,7 +397,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception)
             {
-                _telemetryClient.TrackEvent($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
+                _logger.LogTrace($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
                 throw;
             }
         }
@@ -782,7 +781,7 @@ namespace CPS_API.Repositories
 
             if (string.IsNullOrEmpty(fieldMapping.TermsetName)) return (fieldMapping.SpoColumnName, value);
 
-            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, isForExternalReference: true);
+            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, true);
             if (termValue == null) return null;
 
             return (termValue.Value.name, termValue.Value.value);

@@ -1,15 +1,17 @@
 using System;
 using Azure.Core;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
-using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
+using OpenTelemetry.Trace;
 
 
 IHost host = new HostBuilder()
@@ -27,10 +29,6 @@ IHost host = new HostBuilder()
     })
     .ConfigureServices((context, services) =>
     {
-        // Analytics
-        services.AddApplicationInsightsTelemetryWorkerService();
-        services.ConfigureFunctionsApplicationInsights();
-
         // Load Configuration
         IConfigurationSection globalSettings = context.Configuration.GetSection("GlobalSettings");
         services.Configure<GlobalSettings>(globalSettings);
@@ -58,22 +56,31 @@ IHost host = new HostBuilder()
             // For debugging, allow us to login via browser and use a local account to access keyvault
             var credential = new VisualStudioCredential();
 #else
-            var credential = new DefaultAzureCredential();
+                var credential = new DefaultAzureCredential();
 #endif
             builder.UseCredential(credential);
         });
-    })
-    .ConfigureLogging((context, logging) =>
-    {
-        string? appInsightsConnectionString = context.Configuration.GetValue<string>("APPLICATIONINSIGHTS_CONNECTION_STRING");
-        if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
-        {
-            logging.AddApplicationInsights(
-                configureTelemetryConfiguration: (config) =>
-                    config.ConnectionString = appInsightsConnectionString,
-                    configureApplicationInsightsLoggerOptions: (options) => { }
-                );
-        }
+
+        // Analytics
+        services.AddOpenTelemetry()
+                 .UseAzureMonitor(options =>
+                 {
+                     options.Credential = new DefaultAzureCredential();
+                     options.EnableLiveMetrics = true;
+                 })
+                 .WithTracing(traceBuilder =>
+                    traceBuilder
+                    .AddAspNetCoreInstrumentation()
+                    .AddProcessor(
+                        new AppInsightsTelemetryProcessor(
+                            services.BuildServiceProvider().GetRequiredService<ILogger<AppInsightsTelemetryProcessor>>()
+                        )
+                    )
+                )
+                 .UseFunctionsWorkerDefaults();
+
+
+
     })
     .Build();
 

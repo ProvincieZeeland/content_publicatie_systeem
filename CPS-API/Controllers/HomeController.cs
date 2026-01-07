@@ -3,7 +3,6 @@ using System.Net;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
@@ -23,16 +22,17 @@ namespace CPS_API.Controllers
         private readonly GraphServiceClient _graphServiceClient;
         private readonly IFilesRepository _filesRepository;
         private readonly IMetadataRepository _metadataRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
-        public HomeController(GraphServiceClient graphServiceClient,
-                              IFilesRepository filesRepository,
-                              TelemetryClient telemetryClient,
-                              IMetadataRepository metadataRepository)
+        public HomeController(
+            GraphServiceClient graphServiceClient,
+            IFilesRepository filesRepository,
+            ILogger<HomeController> logger,
+            IMetadataRepository metadataRepository)
         {
             _graphServiceClient = graphServiceClient;
             _filesRepository = filesRepository;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
             _metadataRepository = metadataRepository;
         }
 
@@ -67,47 +67,51 @@ namespace CPS_API.Controllers
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Forbidden";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Forbidden"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (FileNotFoundException ex)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = $"File not found by objectId ({objectId})";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? $"File not found by objectId ({objectId})"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Unauthorized";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Unauthorized"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Error while getting url";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Error while getting url"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             if (string.IsNullOrEmpty(fileUrl))
             {
-                _telemetryClient.TrackException(new CpsException("File URL is null"), properties);
+                _logger.LogError("File URL is null | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
@@ -141,47 +145,51 @@ namespace CPS_API.Controllers
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Forbidden";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Forbidden"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (FileNotFoundException ex)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = $"File not found by objectId ({objectId})";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? $"File not found by objectId ({objectId})"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Unauthorized";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Unauthorized"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex, properties);
+                var errorMessage = "Error while getting metadata";
+                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? "Error while getting metadata"
+                    ErrorMessage = ex.Message ?? errorMessage
                 };
                 return View("Error", viewmodel);
             }
             if (metadata == null)
             {
-                _telemetryClient.TrackException(new CpsException("Metadata is null"), properties);
+                _logger.LogError("Metadata is null | {Properties}", properties);
                 var viewmodel = new ErrorViewModel
                 {
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,

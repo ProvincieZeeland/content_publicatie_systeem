@@ -2,7 +2,6 @@
 using System.Text;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
@@ -17,16 +16,16 @@ namespace CPS_API.Repositories
     {
         private readonly IFilesRepository _filesRepository;
         private readonly GlobalSettings _globalSettings;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
         public CallbackRepository(
             IFilesRepository filesRepository,
             IOptions<GlobalSettings> settings,
-            TelemetryClient telemetryClient)
+            ILogger<CallbackRepository> logger)
         {
             _filesRepository = filesRepository;
             _globalSettings = settings.Value;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
         }
 
         public async Task CallCallbackAsync(string objectId, SynchronisationType synchronisationType)
@@ -106,7 +105,7 @@ namespace CPS_API.Repositories
                 properties.Add("Response", response.ToString());
                 properties.Add("ResponseBody", responseContent);
             }
-            _telemetryClient.TrackException(exception, properties);
+            _logger.LogError(exception, exception.Message + " | {Properties}", properties);
         }
 
         private static async Task<string> GetCallbackResponseContentAsync(HttpResponseMessage response)

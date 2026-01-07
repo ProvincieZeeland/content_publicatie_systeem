@@ -1,9 +1,11 @@
-﻿using System.Net.Http;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Identity.Web;
+using System;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.Identity.Web;
 
 namespace CPS_Jobs.Helpers
 {
@@ -51,11 +53,16 @@ namespace CPS_Jobs.Helpers
                     request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 }
 
-                return await client.SendAsync(request);
+                // Make sure long calls don't timeout easily
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+                HttpResponseMessage response = await client.SendAsync(request, cts.Token);
+                cts.Dispose();
+                return response;
             }
-            catch
+            catch (Exception ex)
             {
-                _logger.LogError("Could not start sync for url {Url}", url);
+                _logger.LogError(ex, "Could not start sync for url {Url}", url);
                 throw;
             }
         }

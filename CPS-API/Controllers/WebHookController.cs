@@ -1,4 +1,5 @@
-﻿using CPS_API.Models;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
 using CPS_API.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,22 +12,25 @@ namespace CPS_API.Controllers
     [Authorize]
     [Route("[controller]")]
     [ApiController]
-    public class WebHookController : Controller
+    public class WebHookController : ControllerBase
     {
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
+        private readonly ILogger _logger;
 
         public WebHookController(
             IOptions<GlobalSettings> settings,
-            IWebHookRepository webHookRepository)
+            IWebHookRepository webHookRepository,
+            ILogger<WebHookController> logger)
         {
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
+            _logger = logger;
         }
 
         [HttpPut]
         [Route("Create")]
-        public async Task<ActionResult> Create(DropOffType dropOffType)
+        public async Task<IActionResult> Create(DropOffType dropOffType)
         {
             if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
@@ -40,7 +44,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while creating webhook");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while creating webhook");
             }
             return Ok(subscription);
         }
@@ -72,7 +76,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while handling notification");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while handling notification");
             }
             if (message == null)
             {
@@ -92,7 +96,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message ?? "Error while handling notification");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while handling notification");
             }
 
             var message = "Notification proccesed.";

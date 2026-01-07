@@ -380,6 +380,8 @@ namespace CPS_API.Repositories
 
         private static DeltaDriveItem MapDriveItemToDeltaItem(string driveId, DriveItem item)
         {
+            if (item == null) return new DeltaDriveItem();
+
             return new DeltaDriveItem
             {
                 Id = item.Id,

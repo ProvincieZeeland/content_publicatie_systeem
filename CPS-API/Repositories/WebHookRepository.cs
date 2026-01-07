@@ -4,7 +4,6 @@ using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
-using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
@@ -44,9 +43,9 @@ namespace CPS_API.Repositories
 
         private readonly GlobalSettings _globalSettings;
 
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
-        public WebHookRepository(IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient)//NOSONAR
+        public WebHookRepository(IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, ILogger<WebHookRepository> logger)//NOSONAR
         {
             _driveRepository = driveRepository;
             _listRepository = listRepository;
@@ -59,7 +58,7 @@ namespace CPS_API.Repositories
             _certificateService = certificateService;
             _emailService = emailService;
             _globalSettings = settings.Value;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
         }
 
         #region Create/Edit/Delete Webhook
@@ -265,31 +264,31 @@ namespace CPS_API.Repositories
         /// </summary>
         public async Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse)
         {
-            _telemetryClient.TrackTrace($"Webhook endpoint triggered!");
+            _logger.LogTrace($"Webhook endpoint triggered!");
 
             // If a validation token is present, we need to respond within 5 seconds by
             // returning the given validation token. This only happens when a new
             // webhook is being added
             if (validationToken != null)
             {
-                _telemetryClient.TrackTrace($"Validation token {validationToken} received");
+                _logger.LogTrace($"Validation token {validationToken} received");
                 return validationToken;
             }
 
-            _telemetryClient.TrackTrace($"SharePoint triggered our webhook");
+            _logger.LogTrace($"SharePoint triggered our webhook");
 
             if (notificationsResponse == null)
             {
-                _telemetryClient.TrackTrace($"NotificationsResponse is null");
+                _logger.LogTrace($"NotificationsResponse is null");
                 return null;
             }
 
             var notifications = notificationsResponse.Value;
-            _telemetryClient.TrackTrace($"Found {notifications.Count} notifications");
+            _logger.LogTrace($"Found {notifications.Count} notifications");
 
             if (notifications.Count > 0)
             {
-                _telemetryClient.TrackTrace($"Processing notifications...");
+                _logger.LogTrace($"Processing notifications...");
                 foreach (var notification in notifications)
                 {
                     await AddNotificationToQueueAsync(notification);
@@ -304,9 +303,9 @@ namespace CPS_API.Repositories
         {
             var queue = await _storageTableService.GetQueue("sharepointlistwebhooknotifications");
             var message = JsonConvert.SerializeObject(notification);
-            _telemetryClient.TrackTrace($"Before adding a message to the queue. Message content: {message}");
+            _logger.LogTrace($"Before adding a message to the queue. Message content: {message}");
             await queue.AddMessageAsync(new CloudQueueMessage(message));
-            _telemetryClient.TrackTrace($"Message added");
+            _logger.LogTrace($"Message added");
         }
 
         #endregion Handle Notification
@@ -335,7 +334,7 @@ namespace CPS_API.Repositories
             var changeToken = await _settingsRepository.GetSetting<string>(dropOffList.DropOffType.GetDropOffLastChangeToken());
             if (string.IsNullOrWhiteSpace(changeToken))
             {
-                _telemetryClient.TrackTrace("Change token is empty, attempting to retrieve whole change history.");
+                _logger.LogTrace("Change token is empty, attempting to retrieve whole change history.");
             }
             var changes = await _listRepository.GetListAndFilteredChangesAsync(site.WebUrl, notification.Resource, changeToken);
 
@@ -394,7 +393,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {listItemId}", ex));
+                    _logger.LogError(ex, $"Error while processing listItem {listItemId}");
                     response.notProcessedItemIds.Add(listItemId.ToString());
                 }
             }
@@ -537,7 +536,7 @@ namespace CPS_API.Repositories
                 ["listId"] = listId,
                 ["listItemId"] = listItemId
             };
-            _telemetryClient.TrackException(new CpsException(errorMessage, ex), properties);
+            _logger.LogError(ex, errorMessage + " | {Properties}", properties);
         }
 
         #endregion Error logging

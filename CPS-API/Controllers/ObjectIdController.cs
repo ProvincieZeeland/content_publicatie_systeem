@@ -1,7 +1,7 @@
 ﻿using System.Net;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph.Models.ODataErrors;
@@ -11,15 +11,17 @@ namespace CPS_API.Controllers
     [Authorize]
     [Route("/files/[controller]")]
     [ApiController]
-    public class ObjectIdController : Controller
+    public class ObjectIdController : ControllerBase
     {
         private readonly IObjectIdRepository _objectIdRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
-        public ObjectIdController(IObjectIdRepository objectIdRepository, TelemetryClient telemetryClient)
+        public ObjectIdController(
+            IObjectIdRepository objectIdRepository,
+            ILogger<ObjectIdController> logger)
         {
             _objectIdRepository = objectIdRepository;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
         }
 
         [HttpPut]
@@ -44,23 +46,19 @@ namespace CPS_API.Controllers
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
+                return this.LogAndThrowForbidden(_logger, ex, args: properties);
             }
             catch (FileNotFoundException ex)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found with objectIdentifiers");
+                return this.LogAndThrowNotFound(_logger, ex, "File not found with objectIdentifiers", properties);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while creating objectId");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while creating objectId", properties);
             }
         }
     }

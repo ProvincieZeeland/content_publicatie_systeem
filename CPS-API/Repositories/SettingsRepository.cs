@@ -34,7 +34,7 @@ namespace CPS_API.Repositories
             _globalSettings = settings.Value;
         }
 
-        private async Task<SettingsEntity?> GetCurrentSettings()
+        private async Task<SettingsEntity> GetCurrentSettings()
         {
             var table = _storageTableService.GetTable(_globalSettings.SettingsTableName);
             if (table == null)

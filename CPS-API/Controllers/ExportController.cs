@@ -1,6 +1,6 @@
-﻿using CPS_API.Models;
+﻿using CPS_API.Helpers;
+using CPS_API.Models;
 using CPS_API.Repositories;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,21 +9,20 @@ namespace CPS_API.Controllers
     [Authorize]
     [Route("[controller]")]
     [ApiController]
-    public class ExportController : Controller
+    public class ExportController : ControllerBase
     {
         private readonly ISettingsRepository _settingsRepository;
         private readonly IExportRepository _exportRepository;
-
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
         public ExportController(
             ISettingsRepository settingsRepository,
-            TelemetryClient telemetryClient,
-            IExportRepository exportRepository)
+            IExportRepository exportRepository,
+            ILogger<ExportController> logger)
         {
             _settingsRepository = settingsRepository;
-            _telemetryClient = telemetryClient;
             _exportRepository = exportRepository;
+            _logger = logger;
         }
 
         // GET
@@ -39,8 +38,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
-                return StatusCode(500, "Error while getting IsNewSynchronisationRunning");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting IsNewSynchronisationRunning");
             }
 
             // Set running synchronisation.
@@ -54,9 +52,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, "Error while getting LastTokenForNew");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting LastTokenForNew");
             }
 
             // Get last synchronisation date.
@@ -67,9 +64,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while getting LastSynchronisation");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.UtcNow.Date;
 
@@ -80,9 +76,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
             }
 
             // If all files are succesfully added then we update the last synchronisation date and token.
@@ -97,9 +92,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
             }
 
             return Ok(GetNewResponse(result));
@@ -127,8 +121,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
-                return StatusCode(500, "Error while getting IsChangedSynchronisationRunning");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting IsChangedSynchronisationRunning");
             }
 
             // Set running synchronisation.
@@ -142,9 +135,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-                return StatusCode(500, "Error while getting LastTokenForChanged");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting LastTokenForChanged");
             }
 
             // Get last synchronisation date.
@@ -155,9 +147,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-                return StatusCode(500, "Error while getting LastSynchronisation");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting LastSynchronisation");
             }
             if (lastSynchronisation == null) lastSynchronisation = DateTime.UtcNow.Date;
 
@@ -169,9 +160,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising updated documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising updated documents");
             }
 
             // If all files are succesfully updated then we update the last synchronisation date and token. 
@@ -186,9 +176,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
             }
 
             return Ok(GetUpdatedResponse(result));
@@ -216,8 +205,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
-                return StatusCode(500, "Error while getting IsDeleteddSynchronisationRunning");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting IsDeleteddSynchronisationRunning");
             }
 
             // Set running synchronisation.
@@ -231,9 +219,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
-                return StatusCode(500, "Error while getting LastTokenForDeleted");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting LastTokenForDeleted");
             }
 
 
@@ -244,9 +231,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising deleted documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising deleted documents");
             }
 
             // If all files are succesfully deleted then we update the token.
@@ -261,9 +247,8 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
             }
 
             return Ok(GetDeletedResponse(result));
@@ -288,8 +273,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
-                return StatusCode(500, ex.Message ?? "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
             }
 
             return Ok(GetPublicationResponse(result));

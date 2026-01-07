@@ -1,8 +1,9 @@
 ﻿{
+	"APPLICATIONINSIGHTS_AUTHENTICATION_STRING": "Authorization=AAD",
 	"IsEncrypted": false,
 	"AzureAd": {
 		"Instance": "https://login.microsoftonline.com/",
-		"TenantId": "76850799-28ea-4f56-b80d-c1640687052d",
+		"TenantId": "",
 		"ClientId": "", // ClientId Service
 		"ClientCredentials": [
 			{
@@ -14,7 +15,7 @@
 	},
 	"GlobalSettings": {
 		"Scope": "", //api:/{ClientId SharePoint}/.default
-		"BaseUrl": "https://content.acc.zeeland.nl",
+		"BaseUrl": "", // cps-api URL
 		"KeyVaultName": ""
 	},
 	"Values": {
