@@ -59,6 +59,7 @@ namespace CPS_API
             services.AddSingleton<EmailService, EmailService>();
             services.AddSingleton<CertificateService, CertificateService>();
             services.AddSingleton<IRestClient, RestClient>();
+            services.AddSingleton<AppInsightsTelemetryProcessor>();
 
             services
                 .AddHttpClient("restClient")
@@ -132,15 +133,13 @@ namespace CPS_API
                 .WithTracing(traceBuilder =>
                     traceBuilder
                     .AddAspNetCoreInstrumentation()
-                    .AddProcessor(
-                        new AppInsightsTelemetryProcessor(
-                            services.BuildServiceProvider().GetRequiredService<ILogger<AppInsightsTelemetryProcessor>>()
-                        )
+                    .AddProcessor(provider =>
+                        provider.GetRequiredService<AppInsightsTelemetryProcessor>()
                     )
                 );
         }
 
-        private static TokenCredential GetDefaultAzureCredential()
+        private static DefaultAzureCredential GetDefaultAzureCredential()
         {
 #if DEBUG
             return new DefaultAzureCredential();

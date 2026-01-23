@@ -271,7 +271,7 @@ namespace CPS_API.Repositories
             // webhook is being added
             if (validationToken != null)
             {
-                _logger.LogTrace($"Validation token {validationToken} received");
+                _logger.LogTrace("Validation token {ValidationToken} received", validationToken);
                 return validationToken;
             }
 
@@ -284,7 +284,7 @@ namespace CPS_API.Repositories
             }
 
             var notifications = notificationsResponse.Value;
-            _logger.LogTrace($"Found {notifications.Count} notifications");
+            _logger.LogTrace("Found {NotificationsCount} notifications", notifications.Count);
 
             if (notifications.Count > 0)
             {
@@ -303,7 +303,7 @@ namespace CPS_API.Repositories
         {
             var queue = await _storageTableService.GetQueue("sharepointlistwebhooknotifications");
             var message = JsonConvert.SerializeObject(notification);
-            _logger.LogTrace($"Before adding a message to the queue. Message content: {message}");
+            _logger.LogTrace("Before adding a message to the queue. Message content: {Message}", message);
             await queue.AddMessageAsync(new CloudQueueMessage(message));
             _logger.LogTrace($"Message added");
         }
@@ -393,7 +393,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Error while processing listItem {listItemId}");
+                    _logger.LogError(ex, "Error while processing listItem {ListItemId}", listItemId);
                     response.notProcessedItemIds.Add(listItemId.ToString());
                 }
             }
@@ -536,7 +536,7 @@ namespace CPS_API.Repositories
                 ["listId"] = listId,
                 ["listItemId"] = listItemId
             };
-            _logger.LogError(ex, errorMessage + " | {Properties}", properties);
+            _logger.LogError(ex, Constants.ErrorMessagePropertiesFormatString, errorMessage, properties);
         }
 
         #endregion Error logging

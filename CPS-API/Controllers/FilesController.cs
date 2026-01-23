@@ -39,30 +39,18 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            string? fileUrl;
-            try
-            {
-                fileUrl = await _filesRepository.GetUrlAsync(objectId);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, "Access denied", properties);
-            }
-            catch (FileNotFoundException ex)
-            {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting url", properties);
-            }
+            string? fileUrl = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => fileUrl = await _filesRepository.GetUrlAsync(objectId),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while getting url"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(fileUrl))
             {
-                return this.LogAndThrowInternalServerError(_logger, errorMessage: "Error while getting url", args: properties);
+                return this.LogAndThrowInternalServerError(_logger, errorMessage: "Error while getting url", properties: properties);
             }
 
             return Ok(fileUrl);
@@ -77,27 +65,15 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            FileInformation metadata;
-            try
-            {
-                metadata = await _metadataRepository.GetMetadataAsync(objectId);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, "Access denied", properties);
-            }
-            catch (FileNotFoundException ex)
-            {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while getting metadata", properties);
-            }
+            FileInformation? metadata = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => metadata = await _metadataRepository.GetMetadataAsync(objectId),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while getting metadata"
+            );
+            if (errorResult != null) return errorResult;
+
             if (metadata == null) return StatusCode(500, "Error while getting metadata");
 
             var settings = new JsonSerializerSettings
@@ -128,32 +104,20 @@ namespace CPS_API.Controllers
                 ["Classification"] = file.Metadata.AdditionalMetadata!.Classification!
             };
 
-            string? objectId;
-            try
-            {
-                var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
-                objectId = spoIds.ObjectId;
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex) when (ex is NameAlreadyExistsException)
-            {
-                return this.LogAndThrowConflict(_logger, ex, "Filename already exists", properties);
-            }
-            catch (ObjectIdAlreadyExistsException ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "ObjectId already exists", properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while creating file", properties);
-            }
+            string? objectId = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
+                    objectId = spoIds.ObjectId;
+                },
+                properties,
+                conflictMessage: "Filename already exists",
+                internalErrorMessage: "Error while creating file",
+                objectIdExistsMessage: "ObjectId already exists"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating file");
 
             return Ok(objectId);
@@ -204,7 +168,7 @@ namespace CPS_API.Controllers
             if (string.IsNullOrEmpty(source)) return StatusCode(400, "Source is required");
             if (string.IsNullOrEmpty(classification)) return StatusCode(400, "Classification is required");
 
-            string? objectId;
+            string? objectId = null;
             var formFile = Request.Form.Files[0];
 
             var properties = new Dictionary<string, string>
@@ -215,27 +179,18 @@ namespace CPS_API.Controllers
                 ["Classification"] = classification
             };
 
-            try
-            {
-                var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
-                objectId = spoIds.ObjectId;
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex) when (ex is NameAlreadyExistsException)
-            {
-                return this.LogAndThrowConflict(_logger, ex, "Filename already exists", properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while creating large file", properties);
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
+                    objectId = spoIds.ObjectId;
+                },
+                properties,
+                conflictMessage: "Filename already exists",
+                internalErrorMessage: "Error while creating large file"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating large file");
 
             return Ok(objectId);
@@ -252,26 +207,13 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            try
-            {
-                await _filesRepository.UpdateContentAsync(objectId, content);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
-            }
-            catch (FileNotFoundException ex)
-            {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while updating content", properties);
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _filesRepository.UpdateContentAsync(objectId, content),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating content"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -287,27 +229,17 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            try
-            {
-                var formFile = Request.Form.Files[0];
-                await _filesRepository.UpdateContentAsync(objectId, formFile);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
-            }
-            catch (FileNotFoundException ex)
-            {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while updating content", properties);
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var formFile = Request.Form.Files[0];
+                    await _filesRepository.UpdateContentAsync(objectId, formFile);
+                },
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating content"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -327,30 +259,14 @@ namespace CPS_API.Controllers
             }
             fileInfo.Ids.ObjectId = objectId;
 
-            try
-            {
-                await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
-            }
-            catch (FileNotFoundException ex)
-            {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
-            }
-            catch (ObjectIdAlreadyExistsException ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "ObjectId already exists", properties);
-            }
-            catch (Exception ex)
-            {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while updating metadata", properties);
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating metadata",
+                objectIdExistsMessage: "ObjectId already exists"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -364,28 +280,57 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _metadataRepository.UpdateFileName(objectId, data.FileName),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating fileName"
+            );
+            if (errorResult != null) return errorResult;
+
+            return Ok();
+        }
+
+        /// <summary>
+        /// Handles common API exception logic and returns an appropriate IActionResult if an error occurs, otherwise null.
+        /// </summary>
+        private async Task<IActionResult?> HandleApiExceptionsAsync(
+            Func<Task> action,
+            Dictionary<string, string> properties,
+            string? notFoundMessage = null,
+            string? conflictMessage = null,
+            string? internalErrorMessage = null,
+            string? objectIdExistsMessage = null)
+        {
             try
             {
-                await _metadataRepository.UpdateFileName(objectId, data.FileName);
+                await action();
+                return null;
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
+                return this.LogAndThrowForbidden(_logger, ex, "Access denied", properties);
             }
             catch (FileNotFoundException ex)
             {
-                return this.LogAndThrowNotFound(_logger, ex, $"File not found by objectId ({objectId})", properties);
+                return this.LogAndThrowNotFound(_logger, ex, notFoundMessage ?? "File not found", properties);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
+                return this.LogAndThrowUnauthorized(_logger, ex, properties: properties);
+            }
+            catch (Exception ex) when (ex is NameAlreadyExistsException)
+            {
+                return this.LogAndThrowConflict(_logger, ex, conflictMessage ?? "Conflict", properties);
+            }
+            catch (ObjectIdAlreadyExistsException ex)
+            {
+                return this.LogAndThrowInternalServerError(_logger, ex, objectIdExistsMessage ?? "ObjectId already exists", properties);
             }
             catch (Exception ex)
             {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while updating fileName", properties);
+                return this.LogAndThrowInternalServerError(_logger, ex, internalErrorMessage ?? "Internal Server Error", properties);
             }
-
-            return Ok();
         }
     }
 }

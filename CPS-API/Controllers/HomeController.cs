@@ -13,6 +13,7 @@ using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Newtonsoft.Json;
+using Constants = CPS_API.Models.Constants;
 
 namespace CPS_API.Controllers
 {
@@ -55,60 +56,14 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            string? fileUrl;
-            try
-            {
-                fileUrl = await _filesRepository.GetUrlAsync(objectId, true);
-            }
-            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
-            {
-                HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
-                return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                var errorMessage = "Forbidden";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (FileNotFoundException ex)
-            {
-                var errorMessage = $"File not found by objectId ({objectId})";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                var errorMessage = "Unauthorized";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = "Error while getting url";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
+            string? fileUrl = null;
+            IActionResult? errorResult = await HandleWithErrorViewAsync(
+                async () => fileUrl = await _filesRepository.GetUrlAsync(objectId, true),
+                properties,
+                "Error while getting url"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(fileUrl))
             {
                 _logger.LogError("File URL is null | {Properties}", properties);
@@ -117,7 +72,7 @@ namespace CPS_API.Controllers
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
                     ErrorMessage = "Error while getting url"
                 };
-                return View("Error", viewmodel);
+                return View(Constants.ErrorView, viewmodel);
             }
 
             return Redirect(fileUrl);
@@ -133,60 +88,15 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            FileInformation metadata;
-            try
-            {
-                metadata = await _metadataRepository.GetMetadataAsync(objectId, true);
-            }
-            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
-            {
-                HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
-                return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                var errorMessage = "Forbidden";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (FileNotFoundException ex)
-            {
-                var errorMessage = $"File not found by objectId ({objectId})";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                var errorMessage = "Unauthorized";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = "Error while getting metadata";
-                _logger.LogError(ex, errorMessage + " | {Properties}", properties);
-                var viewmodel = new ErrorViewModel
-                {
-                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
-                    ErrorMessage = ex.Message ?? errorMessage
-                };
-                return View("Error", viewmodel);
-            }
+            FileInformation? metadata = null;
+            IActionResult? errorResult = await HandleWithErrorViewAsync(
+                async () => metadata = await _metadataRepository.GetMetadataAsync(objectId, true),
+                properties,
+                "Error while getting metadata"
+            );
+            if (errorResult != null)
+                return errorResult;
+
             if (metadata == null)
             {
                 _logger.LogError("Metadata is null | {Properties}", properties);
@@ -195,7 +105,7 @@ namespace CPS_API.Controllers
                     RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
                     ErrorMessage = "Error while getting metadata"
                 };
-                return View("Error", viewmodel);
+                return View(Constants.ErrorView, viewmodel);
             }
 
             var settings = new JsonSerializerSettings
@@ -212,6 +122,66 @@ namespace CPS_API.Controllers
         public IActionResult Error()
         {
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+        }
+
+        /// <summary>
+        /// Handles exceptions and returns an error view if needed, otherwise null.
+        /// </summary>
+        private async Task<IActionResult?> HandleWithErrorViewAsync(
+            Func<Task> action,
+            Dictionary<string, string> properties,
+            string defaultErrorMessage)
+        {
+            try
+            {
+                await action();
+                return null;
+            }
+            catch (Exception ex) when (ex is MsalUiRequiredException || ex.InnerException is MsalUiRequiredException || ex.InnerException?.InnerException is MsalUiRequiredException)
+            {
+                HttpContext.Response.Cookies.Delete($"{CookieAuthenticationDefaults.CookiePrefix}{CookieAuthenticationDefaults.AuthenticationScheme}");
+                return Redirect(HttpContext.Request.GetEncodedPathAndQuery());
+            }
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
+            {
+                var errorMessage = "Forbidden";
+                _logger.LogError(ex, Constants.ErrorMessagePropertiesFormatString, errorMessage, properties);
+                return View(Constants.ErrorView, new ErrorViewModel
+                {
+                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+                    ErrorMessage = ex.Message ?? errorMessage
+                });
+            }
+            catch (FileNotFoundException ex)
+            {
+                var errorMessage = $"File not found by objectId ({properties.GetValueOrDefault("ObjectId")})";
+                _logger.LogError(ex, Constants.ErrorMessagePropertiesFormatString, errorMessage, properties);
+                return View(Constants.ErrorView, new ErrorViewModel
+                {
+                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+                    ErrorMessage = ex.Message ?? errorMessage
+                });
+            }
+            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
+            {
+                var errorMessage = "Unauthorized";
+                _logger.LogError(ex, Constants.ErrorMessagePropertiesFormatString, errorMessage, properties);
+                return View(Constants.ErrorView, new ErrorViewModel
+                {
+                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+                    ErrorMessage = ex.Message ?? errorMessage
+                });
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = defaultErrorMessage;
+                _logger.LogError(ex, Constants.ErrorMessagePropertiesFormatString, errorMessage, properties);
+                return View(Constants.ErrorView, new ErrorViewModel
+                {
+                    RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+                    ErrorMessage = ex.Message ?? errorMessage
+                });
+            }
         }
     }
 

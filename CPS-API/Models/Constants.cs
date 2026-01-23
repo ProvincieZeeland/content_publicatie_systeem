@@ -46,5 +46,8 @@
         public const string SelectWebUrl = "webUrl";
         public static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(2);
         public const string ResyncRequiredCode = "resyncRequired";
+        public const string ErrorMessagePropertiesFormatString = "{ErrorMessage} | {Properties}";
+        public const string NewDocumentsSynchronisationError = "Error while synchronising new documents";
+        public const string ErrorView = "Error";
     }
 }

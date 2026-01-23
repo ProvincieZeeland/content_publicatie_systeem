@@ -104,7 +104,7 @@ namespace CPS_API.Repositories
                 {
                     failedToBePublishedEntities.Add(entity);
                     TrackCpsException(ex, objectId: entity.ObjectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace($"New document synchronisation failed (objectId = {entity})");
+                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {Entity})", entity);
                     continue;
                 }
 
@@ -120,8 +120,8 @@ namespace CPS_API.Repositories
                 catch (Exception ex)
                 {
                     failedToBePublishedEntities.Add(entity);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising new documents");
-                    _logger.LogTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
+                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
                 }
             }
 
@@ -158,7 +158,7 @@ namespace CPS_API.Repositories
                 {
                     notAddedItems.Add(newItem);
                     TrackCpsException(ex, newItem.DriveId, newItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace($"New document synchronisation failed (driveId = {newItem.DriveId}, driveItemId = {newItem.Id}, name = {newItem.Name})");
+                    _logger.LogTrace(ex, "New document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", newItem.DriveId, newItem.Id, newItem.Name);
                     continue;
                 }
 
@@ -173,8 +173,8 @@ namespace CPS_API.Repositories
                 catch (Exception ex)
                 {
                     notAddedItems.Add(newItem);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising new documents");
-                    _logger.LogTrace($"New document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
+                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
                 }
             }
 
@@ -239,7 +239,7 @@ namespace CPS_API.Repositories
                 {
                     notUpdatedItems.Add(updatedItem);
                     TrackCpsException(ex, updatedItem.DriveId, updatedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace($"Updated document synchronisation failed (driveId = {updatedItem.DriveId}, driveItemId = {updatedItem.Id}, name = {updatedItem.Name})");
+                    _logger.LogTrace(ex, "Updated document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", updatedItem.DriveId, updatedItem.Id, updatedItem.Name);
                     continue;
                 }
 
@@ -255,8 +255,8 @@ namespace CPS_API.Repositories
                 {
                     notUpdatedItems.Add(updatedItem);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising updated documents");
-                    _logger.LogTrace($"Error while updating file (DriveId: {objectIdentifiersEntity.DriveId}, DriveItemId: {objectIdentifiersEntity.DriveItemId}) in FileStorage: {ex.Message}");
-                    _logger.LogTrace($"Updated document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+                    _logger.LogTrace(ex, "Error while updating file (DriveId: {DriveId}, DriveItemId: {DriveItemId}) in FileStorage: {ErrorMessage}", objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, ex.Message);
+                    _logger.LogTrace(ex, "Updated document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
                 }
             }
 
@@ -450,7 +450,7 @@ namespace CPS_API.Repositories
                 {
                     notDeletedItems.Add(deletedItem);
                     TrackCpsException(ex, deletedItem.DriveId, deletedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace($"Deleted document synchronisation failed (driveId = {deletedItem.DriveId}, driveItemId = {deletedItem.Id}, name = {deletedItem.Name})");
+                    _logger.LogTrace(ex, "Deleted document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", deletedItem.DriveId, deletedItem.Id, deletedItem.Name);
                     continue;
                 }
 
@@ -466,8 +466,8 @@ namespace CPS_API.Repositories
                 {
                     notDeletedItems.Add(deletedItem);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising deleted documents");
-                    _logger.LogTrace($"Error while deleting file (DriveId: {objectIdentifiersEntity.DriveId}, DriveItemId: {objectIdentifiersEntity.DriveItemId}) from FileStorage: {ex.Message}");
-                    _logger.LogTrace($"Deleted document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+                    _logger.LogTrace(ex, "Error while deleting file (DriveId: {DriveId}, DriveItemId: {DriveItemId}) from FileStorage: {ErrorMessage}", objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, ex.Message);
+                    _logger.LogTrace(ex, "Deleted document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
                 }
             }
 
@@ -525,14 +525,14 @@ namespace CPS_API.Repositories
             if (synchronisationType == SynchronisationType.update) traceSynchronisationPart = "Updated";
             if (!succeeded)
             {
-                _logger.LogTrace($"{traceSynchronisationPart} document synchronisation failed (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+                _logger.LogTrace("{TraceSynchronisationPart} document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", traceSynchronisationPart, objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
                 return false;
             }
 
             // Callback for changed file.
             await _callbackRepository.CallCallbackAsync(objectIdentifiersEntity.ObjectId, synchronisationType);
 
-            _logger.LogTrace($"{traceSynchronisationPart} document synchronisation succeeded (objectId = {objectIdentifiersEntity.ObjectId}, driveItemId = {objectIdentifiersEntity.DriveItemId})");
+            _logger.LogTrace("{TraceSynchronisationPart} document synchronisation succeeded (objectId = {ObjectId}, driveItemId = {DriveItemId})", traceSynchronisationPart, objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
             return true;
         }
 
@@ -587,7 +587,7 @@ namespace CPS_API.Repositories
             {
                 properties.Add(nameof(errorMessage), errorMessage);
             }
-            _logger.LogError(exception, exception.Message + " | {Properties}", properties);
+            _logger.LogError(exception, Constants.ErrorMessagePropertiesFormatString, exception.Message, properties);
         }
 
         #endregion

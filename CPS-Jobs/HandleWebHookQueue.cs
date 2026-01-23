@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
 using Microsoft.Azure.Functions.Worker;
@@ -43,9 +44,9 @@ namespace CPS_Jobs
                     {
                         responseContent = await response.Content.ReadAsStringAsync();
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        _logger.LogError("Queue message not processed.");
+                        _logger.LogError(ex, "Queue message not processed.");
                     }
                 }
                 _logger.LogError("Queue message not processed. Content: {responseContent}", responseContent);

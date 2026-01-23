@@ -1,11 +1,12 @@
-﻿using Microsoft.Extensions.Logging;
-using Microsoft.Identity.Web;
-using System;
+﻿using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CPS_Jobs.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Identity.Web;
 
 namespace CPS_Jobs.Helpers
 {
@@ -18,10 +19,10 @@ namespace CPS_Jobs.Helpers
 
     public class AppService : IAppService
     {
-        private readonly ILogger<HandleWebHookQueue> _logger;
+        private readonly ILogger<AppService> _logger;
         private readonly ITokenAcquisition _tokenAcquisition;
 
-        public AppService(ILogger<HandleWebHookQueue> logger, ITokenAcquisition tokenAcquisition)
+        public AppService(ILogger<AppService> logger, ITokenAcquisition tokenAcquisition)
         {
             _logger = logger;
             _tokenAcquisition = tokenAcquisition;
@@ -63,7 +64,7 @@ namespace CPS_Jobs.Helpers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Could not start sync for url {Url}", url);
-                throw;
+                throw new CpsException($"An error occurred while calling {method} {baseUrl}{url}", ex);
             }
         }
     }

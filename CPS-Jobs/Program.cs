@@ -2,6 +2,7 @@ using System;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using CPS_API.Helpers;
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;

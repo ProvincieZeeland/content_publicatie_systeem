@@ -380,10 +380,10 @@ namespace CPS_API.Repositories
                     var newListItem = await _listRepository.AddListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, listItem, getAsUser);
                     return newListItem;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    _logger.LogTrace($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
-                    throw;
+                    _logger.LogTrace(ex, "Error while adding externalReference (Fields = {ListItemFields})", JsonSerializer.Serialize(listItem.Fields));
+                    throw new CpsException("An error occurred while adding external reference", ex);
                 }
             }
 
@@ -395,10 +395,10 @@ namespace CPS_API.Repositories
                 await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, existingListItem.Id, listItem.Fields!, getAsUser);
                 return existingListItem;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                _logger.LogTrace($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
-                throw;
+                _logger.LogTrace(ex, "Error while updating externalReference (Id = {ListItemId}, Fields = {ListItemFields})", existingListItem.Id, JsonSerializer.Serialize(listItem.Fields));
+                throw new CpsException("An error occurred while updating external reference", ex);
             }
         }
 
@@ -441,7 +441,7 @@ namespace CPS_API.Repositories
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
-                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
+                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!", ex);
             }
             catch (Exception ex)
             {

@@ -77,7 +77,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, Constants.NewDocumentsSynchronisationError);
             }
 
             // If all files are succesfully added then we update the last synchronisation date and token.
@@ -93,7 +93,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, Constants.NewDocumentsSynchronisationError);
             }
 
             return Ok(GetNewResponse(result));
@@ -177,7 +177,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, Constants.NewDocumentsSynchronisationError);
             }
 
             return Ok(GetUpdatedResponse(result));
@@ -248,7 +248,7 @@ namespace CPS_API.Controllers
             catch (Exception ex)
             {
                 await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, Constants.NewDocumentsSynchronisationError);
             }
 
             return Ok(GetDeletedResponse(result));
@@ -273,7 +273,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex)
             {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while synchronising new documents");
+                return this.LogAndThrowInternalServerError(_logger, ex, Constants.NewDocumentsSynchronisationError);
             }
 
             return Ok(GetPublicationResponse(result));

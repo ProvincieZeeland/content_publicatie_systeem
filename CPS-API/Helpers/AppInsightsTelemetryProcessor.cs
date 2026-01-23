@@ -1,5 +1,5 @@
-﻿using OpenTelemetry;
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using OpenTelemetry;
 
 namespace CPS_API.Helpers
 {
@@ -11,7 +11,6 @@ namespace CPS_API.Helpers
         {
             _logger = logger;
         }
-
 
         public override void OnStart(Activity activity)
         {

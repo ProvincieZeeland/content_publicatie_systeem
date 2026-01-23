@@ -105,7 +105,7 @@ namespace CPS_API.Repositories
                 properties.Add("Response", response.ToString());
                 properties.Add("ResponseBody", responseContent);
             }
-            _logger.LogError(exception, exception.Message + " | {Properties}", properties);
+            _logger.LogError(exception, Constants.ErrorMessagePropertiesFormatString, exception.Message, properties);
         }
 
         private static async Task<string> GetCallbackResponseContentAsync(HttpResponseMessage response)

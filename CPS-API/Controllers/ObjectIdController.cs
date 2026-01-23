@@ -29,14 +29,14 @@ namespace CPS_API.Controllers
         {
             if (ids == null) return StatusCode(400, "ObjectIdentifiers are required");
 
-            var properties = new Dictionary<string, string?>
+            var properties = new Dictionary<string, string>
             {
-                ["SiteId"] = ids.SiteId,
-                ["ListItemId"] = ids.ListItemId,
-                ["ListId"] = ids.ListId,
-                ["DriveId"] = ids.DriveId,
-                ["DriveItemId"] = ids.DriveItemId,
-                ["AdditionalObjectId"] = ids.AdditionalObjectId
+                ["SiteId"] = ids.SiteId ?? string.Empty,
+                ["ListItemId"] = ids.ListItemId ?? string.Empty,
+                ["ListId"] = ids.ListId ?? string.Empty,
+                ["DriveId"] = ids.DriveId ?? string.Empty,
+                ["DriveItemId"] = ids.DriveItemId ?? string.Empty,
+                ["AdditionalObjectId"] = ids.AdditionalObjectId ?? string.Empty
             };
 
             try
@@ -46,7 +46,7 @@ namespace CPS_API.Controllers
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                return this.LogAndThrowForbidden(_logger, ex, args: properties);
+                return this.LogAndThrowForbidden(_logger, ex, properties: properties);
             }
             catch (FileNotFoundException ex)
             {
@@ -54,7 +54,7 @@ namespace CPS_API.Controllers
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                return this.LogAndThrowUnauthorized(_logger, ex, args: properties);
+                return this.LogAndThrowUnauthorized(_logger, ex, properties: properties);
             }
             catch (Exception ex)
             {

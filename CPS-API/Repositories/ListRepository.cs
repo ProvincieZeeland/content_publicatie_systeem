@@ -182,7 +182,7 @@ namespace CPS_API.Repositories
                 }
 
                 var errorMessage = $"Error while getting list changes {siteUrl}";
-                _logger.LogError(ex, errorMessage);
+                _logger.LogError(ex, "{ErrorMessage}", errorMessage);
                 throw new CpsException(errorMessage);
             }
 
