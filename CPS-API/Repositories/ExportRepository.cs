@@ -2,6 +2,7 @@
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
+using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
 
 namespace CPS_API.Repositories
@@ -19,6 +20,8 @@ namespace CPS_API.Repositories
 
     public class ExportRepository : IExportRepository
     {
+        private readonly TelemetryClient _telemetryClient;
+
         private readonly IDriveRepository _driveRepository;
         private readonly ISettingsRepository _settingsRepository;
         private readonly IMetadataRepository _sharePointRepository;
@@ -33,8 +36,9 @@ namespace CPS_API.Repositories
 
         private readonly ILogger _logger;
 
-        public ExportRepository(IDriveRepository driveRepository, ISettingsRepository settingsRepository, IMetadataRepository sharePointRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, ILogger<ExportRepository> logger)//NOSONAR
+        public ExportRepository(TelemetryClient telemetryClient, IDriveRepository driveRepository, ISettingsRepository settingsRepository, IMetadataRepository sharePointRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, ILogger<ExportRepository> logger)//NOSONAR
         {
+            _telemetryClient = telemetryClient;
             _driveRepository = driveRepository;
             _settingsRepository = settingsRepository;
             _sharePointRepository = sharePointRepository;
@@ -89,7 +93,7 @@ namespace CPS_API.Repositories
         {
             // Check for to be published documents and synchronise.
             var entities = await _publicationRepository.GetEntitiesFromQueueAsync();
-            entities = entities.Where(entity => entity.PublicationDate.Date <= DateTime.UtcNow.Date).ToList();
+            entities = [.. entities.Where(entity => !entity.PublicationDate.IsDateInFuture())];
 
             var itemsAdded = 0;
             var failedToBePublishedEntities = new List<ToBePublishedEntity>();
@@ -104,7 +108,11 @@ namespace CPS_API.Repositories
                 {
                     failedToBePublishedEntities.Add(entity);
                     TrackCpsException(ex, objectId: entity.ObjectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {Entity})", entity);
+                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "ObjectId", entity.ObjectId },
+                        { "ErrorMessage", ex.Message }
+                    });
                     continue;
                 }
 
@@ -121,7 +129,12 @@ namespace CPS_API.Repositories
                 {
                     failedToBePublishedEntities.Add(entity);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
-                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "ObjectId", objectIdentifiersEntity.ObjectId },
+                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                        { "ErrorMessage", ex.Message }
+                    });
                 }
             }
 
@@ -158,7 +171,13 @@ namespace CPS_API.Repositories
                 {
                     notAddedItems.Add(newItem);
                     TrackCpsException(ex, newItem.DriveId, newItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace(ex, "New document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", newItem.DriveId, newItem.Id, newItem.Name);
+                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "driveId", newItem.DriveId },
+                        { "driveItemId", newItem.Id },
+                        { "name", newItem.Name },
+                        { "ErrorMessage", ex.Message }
+                    });
                     continue;
                 }
 
@@ -174,7 +193,12 @@ namespace CPS_API.Repositories
                 {
                     notAddedItems.Add(newItem);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
-                    _logger.LogTrace(ex, "New document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "objectId", objectIdentifiersEntity.ObjectId },
+                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                        { "ErrorMessage", ex.Message }
+                    });
                 }
             }
 
@@ -239,7 +263,13 @@ namespace CPS_API.Repositories
                 {
                     notUpdatedItems.Add(updatedItem);
                     TrackCpsException(ex, updatedItem.DriveId, updatedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace(ex, "Updated document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", updatedItem.DriveId, updatedItem.Id, updatedItem.Name);
+                    _telemetryClient.TrackTrace("Updated document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "driveId", updatedItem.DriveId },
+                        { "driveItemId", updatedItem.Id },
+                        { "name", updatedItem.Name },
+                        { "ErrorMessage", ex.Message }
+                    });
                     continue;
                 }
 
@@ -255,8 +285,12 @@ namespace CPS_API.Repositories
                 {
                     notUpdatedItems.Add(updatedItem);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising updated documents");
-                    _logger.LogTrace(ex, "Error while updating file (DriveId: {DriveId}, DriveItemId: {DriveItemId}) in FileStorage: {ErrorMessage}", objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, ex.Message);
-                    _logger.LogTrace(ex, "Updated document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+                    _telemetryClient.TrackTrace("Updated document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "objectId", objectIdentifiersEntity.ObjectId },
+                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                        { "ErrorMessage", ex.Message }
+                    });
                 }
             }
 
@@ -264,14 +298,14 @@ namespace CPS_API.Repositories
             return new ExportResponse(newNextTokens, notUpdatedItems, itemsUpdated);
         }
 
-        private async Task<bool> UploadFileAndXmlToFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
+        private async Task<(bool, string)> UploadFileAndXmlToFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
         {
             // When metadata is unknown, we skip the synchronisation.
             // The file is a new incomplete file or something went wrong while adding the file.
             var metadataExists = await FileContainsMetadataAsync(objectIdentifiersEntity);
             if (!metadataExists)
             {
-                return false;
+                return (false, "Metadata is incomplete");
             }
 
             var metadata = await GetMetadataAsync(objectIdentifiersEntity.ObjectId);
@@ -280,7 +314,7 @@ namespace CPS_API.Repositories
             var isReadyForPublishing = await CheckPublicationDateAsync(metadata, objectIdentifiersEntity.ObjectId);
             if (!isReadyForPublishing)
             {
-                return false;
+                return (false, "Document is not ready for publishing");
             }
 
             var stream = await GetStreamAsync(objectIdentifiersEntity);
@@ -288,7 +322,7 @@ namespace CPS_API.Repositories
 
             var metadataXml = GetMetadataAsXml(metadata);
             await CreateMetadataXmlAsync(objectIdentifiersEntity, metadataXml);
-            return true;
+            return (true, "Success");
         }
 
         private async Task<bool> FileContainsMetadataAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
@@ -322,7 +356,7 @@ namespace CPS_API.Repositories
         private async Task<bool> CheckPublicationDateAsync(FileInformation metadata, string objectId)
         {
             if (metadata.AdditionalMetadata == null) throw new CpsException("Error while getting metadata: AdditionalMetadata is null");
-            if (metadata.AdditionalMetadata.PublicationDate.HasValue && metadata.AdditionalMetadata.PublicationDate > DateTime.Now.Date.ToUniversalTime())
+            if (metadata.AdditionalMetadata.PublicationDate.HasValue && metadata.AdditionalMetadata.PublicationDate.Value.IsDateInFuture())
             {
                 await _publicationRepository.AddToQueueAsync(objectId, metadata.AdditionalMetadata.PublicationDate.Value);
                 return false;
@@ -450,7 +484,13 @@ namespace CPS_API.Repositories
                 {
                     notDeletedItems.Add(deletedItem);
                     TrackCpsException(ex, deletedItem.DriveId, deletedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _logger.LogTrace(ex, "Deleted document synchronisation failed (driveId = {DriveId}, driveItemId = {DriveItemId}, name = {Name})", deletedItem.DriveId, deletedItem.Id, deletedItem.Name);
+                    _telemetryClient.TrackTrace("Deleted document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "driveId", deletedItem.DriveId },
+                        { "driveItemId", deletedItem.Id },
+                        { "name", deletedItem.Name },
+                        { "ErrorMessage", ex.Message }
+                    });
                     continue;
                 }
 
@@ -466,8 +506,12 @@ namespace CPS_API.Repositories
                 {
                     notDeletedItems.Add(deletedItem);
                     TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising deleted documents");
-                    _logger.LogTrace(ex, "Error while deleting file (DriveId: {DriveId}, DriveItemId: {DriveItemId}) from FileStorage: {ErrorMessage}", objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, ex.Message);
-                    _logger.LogTrace(ex, "Deleted document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+                    _telemetryClient.TrackTrace("Deleted document synchronisation failed", new Dictionary<string, string>
+                    {
+                        { "objectId", objectIdentifiersEntity.ObjectId },
+                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                        { "ErrorMessage", ex.Message }
+                    });
                 }
             }
 
@@ -510,6 +554,7 @@ namespace CPS_API.Repositories
         private async Task<bool> SynchroniseDocumentsAsync(ObjectIdentifiersEntity objectIdentifiersEntity, SynchronisationType synchronisationType)
         {
             bool succeeded;
+            var errorMessage = string.Empty;
             if (synchronisationType == SynchronisationType.delete)
             {
                 await DeleteIfExistsFileAndXmlFromFileStorageAsync(objectIdentifiersEntity);
@@ -517,7 +562,7 @@ namespace CPS_API.Repositories
             }
             else
             {
-                succeeded = await UploadFileAndXmlToFileStorageAsync(objectIdentifiersEntity);
+                (succeeded, errorMessage) = await UploadFileAndXmlToFileStorageAsync(objectIdentifiersEntity);
             }
 
             var traceSynchronisationPart = "Deleted";
@@ -525,14 +570,23 @@ namespace CPS_API.Repositories
             if (synchronisationType == SynchronisationType.update) traceSynchronisationPart = "Updated";
             if (!succeeded)
             {
-                _logger.LogTrace("{TraceSynchronisationPart} document synchronisation failed (objectId = {ObjectId}, driveItemId = {DriveItemId})", traceSynchronisationPart, objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+                _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation failed", new Dictionary<string, string>
+                {
+                    { "objectId", objectIdentifiersEntity.ObjectId },
+                    { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                    { "ErrorMessage", errorMessage }
+                });
                 return false;
             }
 
             // Callback for changed file.
             await _callbackRepository.CallCallbackAsync(objectIdentifiersEntity.ObjectId, synchronisationType);
 
-            _logger.LogTrace("{TraceSynchronisationPart} document synchronisation succeeded (objectId = {ObjectId}, driveItemId = {DriveItemId})", traceSynchronisationPart, objectIdentifiersEntity.ObjectId, objectIdentifiersEntity.DriveItemId);
+            _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation succeeded", new Dictionary<string, string>
+            {
+                { "objectId", objectIdentifiersEntity.ObjectId },
+                { "driveItemId", objectIdentifiersEntity.DriveItemId }
+            });
             return true;
         }
 

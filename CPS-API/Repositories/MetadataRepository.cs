@@ -20,7 +20,7 @@ namespace CPS_API.Repositories
     {
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
-        Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false);
+        Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getObjectId = false, bool getAsUser = false);
 
         DropOffFileMetadata GetDropOffMetadata(ListItem listItem);
 
@@ -85,9 +85,9 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
-            var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser);
+            var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser: getAsUser);
 
-            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, ids, getAsUser);
+            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, ids, getAsUser: getAsUser);
             metadata.ExternalReferences = await GetExternalReferencesAsync(ids, getAsUser);
             return metadata;
         }
@@ -96,7 +96,7 @@ namespace CPS_API.Repositories
         /// Get metadata excluding external references for document.
         /// External references are stored in a different list with a different listItem.
         /// </summary>
-        public async Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false)
+        public async Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getObjectId = false, bool getAsUser = false)
         {
             var metadata = new FileInformation();
             metadata.Ids = ids;
@@ -109,14 +109,15 @@ namespace CPS_API.Repositories
             metadata.AdditionalMetadata = new FileMetadata();
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
-                // ObjectId is stored in Ids
-                if (fieldMapping.FieldName.Equals(nameof(metadata.Ids.ObjectId), StringComparison.InvariantCultureIgnoreCase))
-                {
-                    continue;
-                }
+                var isObjectId = fieldMapping.FieldName.Equals(nameof(metadata.Ids.ObjectId), StringComparison.InvariantCultureIgnoreCase);
+                if (isObjectId && !getObjectId) continue;
 
                 var value = MetadataHelper.GetMetadataValue(listItem, fieldMapping);
-                if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
+                if (isObjectId)
+                {
+                    metadata.Ids.ObjectId = value?.ToString();
+                }
+                else if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
                 {
                     metadata[fieldMapping.FieldName] = value;
                 }
@@ -382,7 +383,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogTrace(ex, "Error while adding externalReference (Fields = {ListItemFields})", JsonSerializer.Serialize(listItem.Fields));
+                    _logger.LogError(ex, "Error while adding externalReference (Fields = {ListItemFields})", JsonSerializer.Serialize(listItem.Fields));
                     throw new CpsException("An error occurred while adding external reference", ex);
                 }
             }
@@ -397,7 +398,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogTrace(ex, "Error while updating externalReference (Id = {ListItemId}, Fields = {ListItemFields})", existingListItem.Id, JsonSerializer.Serialize(listItem.Fields));
+                _logger.LogError(ex, "Error while updating externalReference (Id = {ListItemId}, Fields = {ListItemFields})", existingListItem.Id, JsonSerializer.Serialize(listItem.Fields));
                 throw new CpsException("An error occurred while updating external reference", ex);
             }
         }
