@@ -6,7 +6,6 @@ using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
@@ -21,7 +20,7 @@ namespace CPS_API.Repositories
     {
         Task<FileInformation> GetMetadataAsync(string objectId, bool getAsUser = false);
 
-        Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false);
+        Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getObjectId = false, bool getAsUser = false);
 
         DropOffFileMetadata GetDropOffMetadata(ListItem listItem);
 
@@ -46,7 +45,7 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
         private readonly IListRepository _listRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
         private readonly ISharePointRepository _sharePointRepository;
 
         private List<ColumnDefinition>? _metadataColumns = null;
@@ -57,14 +56,14 @@ namespace CPS_API.Repositories
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
             IListRepository listRepository,
-            TelemetryClient telemetryClient,
+            ILogger<MetadataRepository> logger,
             ISharePointRepository sharePointRepository)
         {
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
             _listRepository = listRepository;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
             _sharePointRepository = sharePointRepository;
         }
 
@@ -86,9 +85,9 @@ namespace CPS_API.Repositories
             if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
-            var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser);
+            var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser: getAsUser);
 
-            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, ids, getAsUser);
+            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, ids, getAsUser: getAsUser);
             metadata.ExternalReferences = await GetExternalReferencesAsync(ids, getAsUser);
             return metadata;
         }
@@ -97,7 +96,7 @@ namespace CPS_API.Repositories
         /// Get metadata excluding external references for document.
         /// External references are stored in a different list with a different listItem.
         /// </summary>
-        public async Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getAsUser = false)
+        public async Task<FileInformation> GetMetadataWithoutExternalReferencesAsync(ListItem listItem, ObjectIdentifiers ids, bool getObjectId = false, bool getAsUser = false)
         {
             var metadata = new FileInformation();
             metadata.Ids = ids;
@@ -110,14 +109,15 @@ namespace CPS_API.Repositories
             metadata.AdditionalMetadata = new FileMetadata();
             foreach (var fieldMapping in _globalSettings.MetadataMapping)
             {
-                // ObjectId is stored in Ids
-                if (fieldMapping.FieldName.Equals(nameof(metadata.Ids.ObjectId), StringComparison.InvariantCultureIgnoreCase))
-                {
-                    continue;
-                }
+                var isObjectId = fieldMapping.FieldName.Equals(nameof(metadata.Ids.ObjectId), StringComparison.InvariantCultureIgnoreCase);
+                if (isObjectId && !getObjectId) continue;
 
                 var value = MetadataHelper.GetMetadataValue(listItem, fieldMapping);
-                if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
+                if (isObjectId)
+                {
+                    metadata.Ids.ObjectId = value?.ToString();
+                }
+                else if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
                 {
                     metadata[fieldMapping.FieldName] = value;
                 }
@@ -381,10 +381,10 @@ namespace CPS_API.Repositories
                     var newListItem = await _listRepository.AddListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, listItem, getAsUser);
                     return newListItem;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    _telemetryClient.TrackEvent($"Error while adding externalReference (Fields = {JsonSerializer.Serialize(listItem.Fields)})");
-                    throw;
+                    _logger.LogError(ex, "Error while adding externalReference (Fields = {ListItemFields})", JsonSerializer.Serialize(listItem.Fields));
+                    throw new CpsException("An error occurred while adding external reference", ex);
                 }
             }
 
@@ -396,10 +396,10 @@ namespace CPS_API.Repositories
                 await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, existingListItem.Id, listItem.Fields!, getAsUser);
                 return existingListItem;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                _telemetryClient.TrackEvent($"Error while updating externalReference (Id = {existingListItem.Id}, Fields = {JsonSerializer.Serialize(listItem.Fields)})");
-                throw;
+                _logger.LogError(ex, "Error while updating externalReference (Id = {ListItemId}, Fields = {ListItemFields})", existingListItem.Id, JsonSerializer.Serialize(listItem.Fields));
+                throw new CpsException("An error occurred while updating external reference", ex);
             }
         }
 
@@ -442,7 +442,7 @@ namespace CPS_API.Repositories
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.NotFound)
             {
-                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
+                throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!", ex);
             }
             catch (Exception ex)
             {
@@ -782,7 +782,7 @@ namespace CPS_API.Repositories
 
             if (string.IsNullOrEmpty(fieldMapping.TermsetName)) return (fieldMapping.SpoColumnName, value);
 
-            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, isForExternalReference: true);
+            var termValue = await GetTermValue(metadata, fieldMapping, propertyInfo, value, isForNewFile, ignoreRequiredFields, true);
             if (termValue == null) return null;
 
             return (termValue.Value.name, termValue.Value.value);

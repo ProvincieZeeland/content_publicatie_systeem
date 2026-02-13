@@ -2,7 +2,6 @@
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
-using Microsoft.ApplicationInsights;
 using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
@@ -36,19 +35,19 @@ namespace CPS_API.Repositories
         private readonly GlobalSettings _globalSettings;
         private readonly IDriveRepository _driveRepository;
         private readonly IMetadataRepository _metadataRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
         public FilesRepository(
             IObjectIdRepository objectIdRepository,
             Microsoft.Extensions.Options.IOptions<GlobalSettings> settings,
             IDriveRepository driveRepository,
-            TelemetryClient telemetryClient,
+            ILogger<FilesRepository> logger,
             IMetadataRepository metadataRepository)
         {
             _objectIdRepository = objectIdRepository;
             _globalSettings = settings.Value;
             _driveRepository = driveRepository;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
             _metadataRepository = metadataRepository;
         }
 
@@ -72,7 +71,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
+                _logger.LogError(ex, "Error while getting objectIdentifiers");
             }
             if (objectIdentifiers == null) throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
             return objectIdentifiers;
@@ -100,7 +99,7 @@ namespace CPS_API.Repositories
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex);
+                _logger.LogError(ex, "Error while getting driveItem");
             }
             if (driveItem == null) throw new FileNotFoundException($"DriveItem (objectId = {objectId}) does not exist!");
             return driveItem;

@@ -1,7 +1,10 @@
-﻿using System.Net.Http;
+﻿using System;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using CPS_Jobs.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
 
@@ -16,10 +19,10 @@ namespace CPS_Jobs.Helpers
 
     public class AppService : IAppService
     {
-        private readonly ILogger<HandleWebHookQueue> _logger;
+        private readonly ILogger<AppService> _logger;
         private readonly ITokenAcquisition _tokenAcquisition;
 
-        public AppService(ILogger<HandleWebHookQueue> logger, ITokenAcquisition tokenAcquisition)
+        public AppService(ILogger<AppService> logger, ITokenAcquisition tokenAcquisition)
         {
             _logger = logger;
             _tokenAcquisition = tokenAcquisition;
@@ -51,12 +54,17 @@ namespace CPS_Jobs.Helpers
                     request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 }
 
-                return await client.SendAsync(request);
+                // Make sure long calls don't timeout easily
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+                HttpResponseMessage response = await client.SendAsync(request, cts.Token);
+                cts.Dispose();
+                return response;
             }
-            catch
+            catch (Exception ex)
             {
-                _logger.LogError("Could not start sync for url {Url}", url);
-                throw;
+                _logger.LogError(ex, "Could not start sync for url {Url}", url);
+                throw new CpsException($"An error occurred while calling {method} {baseUrl}{url}", ex);
             }
         }
     }

@@ -21,7 +21,7 @@ namespace CPS_API.Services
     {
         Task<string?> GetSiteWebUrlAsync(string siteId, bool getAsUser = false);
 
-        Task<GraphSite> GetSiteAsync(string siteId, bool getAsUser = false);
+        Task<GraphSite> GetSiteByRelativeUrlAsync(string relativeSiteUrl, bool getAsUser = false);
 
         Task<string> MoveFileAsync(string siteId, string listId, string listItemId, string destinationSiteId, string destinationListId);
 
@@ -69,11 +69,16 @@ namespace CPS_API.Services
             return site.WebUrl;
         }
 
-        public async Task<GraphSite> GetSiteAsync(string siteId, bool getAsUser = false)
+        public async Task<GraphSite> GetSiteByRelativeUrlAsync(string relativeSiteUrl, bool getAsUser = false)
         {
             var graphServiceClient = GetGraphServiceClient(getAsUser);
-            var site = await graphServiceClient.Sites[siteId].GetAsync();
-            if (site == null) throw new CpsException($"Error while getting site (siteId:{siteId})");
+            var siteId = _globalSettings.HostName + ":" + relativeSiteUrl + ":/";
+            var site = await graphServiceClient.Sites[siteId].GetAsync(x =>
+            {
+                x.QueryParameters.Select = new[] { Constants.SelectSharePointIds, Constants.SelectWebUrl };
+            });
+            if (site == null) throw new CpsException($"Error while getting site (relativeSiteUrl:{relativeSiteUrl})");
+            site.Id = site.SharepointIds?.SiteId;
             return site;
         }
 

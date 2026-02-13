@@ -30,6 +30,8 @@ namespace CPS_API.Repositories
 
     public class WebHookRepository : IWebHookRepository
     {
+        private readonly TelemetryClient _telemetryClient;
+
         private readonly IDriveRepository _driveRepository;
         private readonly IListRepository _listRepository;
         private readonly IObjectIdRepository _objectIdRepository;
@@ -44,10 +46,11 @@ namespace CPS_API.Repositories
 
         private readonly GlobalSettings _globalSettings;
 
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
-        public WebHookRepository(IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient)//NOSONAR
+        public WebHookRepository(TelemetryClient telemetryClient, IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, ILogger<WebHookRepository> logger)//NOSONAR
         {
+            _telemetryClient = telemetryClient;
             _driveRepository = driveRepository;
             _listRepository = listRepository;
             _objectIdRepository = objectIdRepository;
@@ -59,7 +62,7 @@ namespace CPS_API.Repositories
             _certificateService = certificateService;
             _emailService = emailService;
             _globalSettings = settings.Value;
-            _telemetryClient = telemetryClient;
+            _logger = logger;
         }
 
         #region Create/Edit/Delete Webhook
@@ -276,7 +279,7 @@ namespace CPS_API.Repositories
                 return validationToken;
             }
 
-            _telemetryClient.TrackTrace($"SharePoint triggered our webhook");
+            _telemetryClient.TrackTrace("SharePoint triggered our webhook");
 
             if (notificationsResponse == null)
             {
@@ -324,9 +327,8 @@ namespace CPS_API.Repositories
         /// </summary>
         public async Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification)
         {
-            var siteId = _globalSettings.HostName + ":" + notification.SiteUrl + ":/";
-            var site = await _sharePointRepository.GetSiteAsync(siteId);
-            if (string.IsNullOrWhiteSpace(site.Id) || string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while getting site (ID = {siteId})");
+            var site = await _sharePointRepository.GetSiteByRelativeUrlAsync(notification.SiteUrl);
+            if (string.IsNullOrWhiteSpace(site.Id) || string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while getting site (SiteUrl = {notification.SiteUrl})");
 
             var dropOffList = _globalSettings.WebHookSettings.WebHookLists.Find(item => site.Id.Contains(item.SiteId) && item.ListId == notification.Resource);
             if (dropOffList == null) throw new CpsException($"Error while getting list for DropOff (siteId = {site.Id}, listId = {notification.Resource})");
@@ -394,7 +396,7 @@ namespace CPS_API.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _telemetryClient.TrackException(new CpsException($"Error while processing listItem {listItemId}", ex));
+                    _logger.LogError(ex, "Error while processing listItem {ListItemId}", listItemId);
                     response.notProcessedItemIds.Add(listItemId.ToString());
                 }
             }
@@ -418,7 +420,7 @@ namespace CPS_API.Repositories
             try
             {
                 var ids = await _objectIdRepository.GetObjectIdentifiersAsync(siteId, listId, listItem.Id);
-                metadata = await _metadataRepository.GetMetadataWithoutExternalReferencesAsync(listItem, ids);
+                metadata = await _metadataRepository.GetMetadataWithoutExternalReferencesAsync(listItem, ids, getObjectId: true);
             }
             catch (Exception ex)
             {
@@ -537,7 +539,7 @@ namespace CPS_API.Repositories
                 ["listId"] = listId,
                 ["listItemId"] = listItemId
             };
-            _telemetryClient.TrackException(new CpsException(errorMessage, ex), properties);
+            _telemetryClient.TrackException(ex ?? new Exception(errorMessage), properties);
         }
 
         #endregion Error logging

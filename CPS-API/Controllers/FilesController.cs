@@ -1,8 +1,8 @@
 ﻿using System.Net;
+using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Repositories;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph.Models.ODataErrors;
@@ -17,14 +17,15 @@ namespace CPS_API.Controllers
     {
         private readonly IFilesRepository _filesRepository;
         private readonly IMetadataRepository _metadataRepository;
-        private readonly TelemetryClient _telemetryClient;
+        private readonly ILogger _logger;
 
-        public FilesController(IFilesRepository filesRepository,
-                               TelemetryClient telemetry,
-                               IMetadataRepository metadataRepository)
+        public FilesController(
+            IFilesRepository filesRepository,
+            ILogger<FilesController> logger,
+            IMetadataRepository metadataRepository)
         {
             _filesRepository = filesRepository;
-            _telemetryClient = telemetry;
+            _logger = logger;
             _metadataRepository = metadataRepository;
         }
 
@@ -38,35 +39,18 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            string? fileUrl;
-            try
-            {
-                fileUrl = await _filesRepository.GetUrlAsync(objectId);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Access denied");
-            }
-            catch (FileNotFoundException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while getting url");
-            }
+            string? fileUrl = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => fileUrl = await _filesRepository.GetUrlAsync(objectId),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while getting url"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(fileUrl))
             {
-                _telemetryClient.TrackEvent("Error while getting url", properties);
-                return StatusCode(500, "Error while getting url");
+                return this.LogAndThrowInternalServerError(_logger, errorMessage: "Error while getting url", properties: properties);
             }
 
             return Ok(fileUrl);
@@ -81,31 +65,15 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            FileInformation metadata;
-            try
-            {
-                metadata = await _metadataRepository.GetMetadataAsync(objectId);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Access denied");
-            }
-            catch (FileNotFoundException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while getting metadata");
-            }
+            FileInformation? metadata = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => metadata = await _metadataRepository.GetMetadataAsync(objectId),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while getting metadata"
+            );
+            if (errorResult != null) return errorResult;
+
             if (metadata == null) return StatusCode(500, "Error while getting metadata");
 
             var settings = new JsonSerializerSettings
@@ -136,37 +104,20 @@ namespace CPS_API.Controllers
                 ["Classification"] = file.Metadata.AdditionalMetadata!.Classification!
             };
 
-            string? objectId;
-            try
-            {
-                var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
-                objectId = spoIds.ObjectId;
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex) when (ex is NameAlreadyExistsException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(409, "Filename already exists");
-            }
-            catch (ObjectIdAlreadyExistsException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while creating file");
-            }
+            string? objectId = null;
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var spoIds = await _filesRepository.CreateFileByBytesAsync(file.Metadata, file.Content);
+                    objectId = spoIds.ObjectId;
+                },
+                properties,
+                conflictMessage: "Filename already exists",
+                internalErrorMessage: "Error while creating file",
+                objectIdExistsMessage: "ObjectId already exists"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating file");
 
             return Ok(objectId);
@@ -217,7 +168,7 @@ namespace CPS_API.Controllers
             if (string.IsNullOrEmpty(source)) return StatusCode(400, "Source is required");
             if (string.IsNullOrEmpty(classification)) return StatusCode(400, "Classification is required");
 
-            string? objectId;
+            string? objectId = null;
             var formFile = Request.Form.Files[0];
 
             var properties = new Dictionary<string, string>
@@ -228,31 +179,18 @@ namespace CPS_API.Controllers
                 ["Classification"] = classification
             };
 
-            try
-            {
-                var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
-                objectId = spoIds.ObjectId;
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex) when (ex is NameAlreadyExistsException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(409, "Filename already exists");
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while creating large file");
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var spoIds = await _filesRepository.CreateLargeFileAsync(source, classification, formFile);
+                    objectId = spoIds.ObjectId;
+                },
+                properties,
+                conflictMessage: "Filename already exists",
+                internalErrorMessage: "Error while creating large file"
+            );
+            if (errorResult != null) return errorResult;
+
             if (string.IsNullOrEmpty(objectId)) return StatusCode(500, "Error while creating large file");
 
             return Ok(objectId);
@@ -269,30 +207,13 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            try
-            {
-                await _filesRepository.UpdateContentAsync(objectId, content);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
-            }
-            catch (FileNotFoundException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while updating content");
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _filesRepository.UpdateContentAsync(objectId, content),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating content"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -308,31 +229,17 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
-            try
-            {
-                var formFile = Request.Form.Files[0];
-                await _filesRepository.UpdateContentAsync(objectId, formFile);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
-            }
-            catch (FileNotFoundException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while updating content");
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () =>
+                {
+                    var formFile = Request.Form.Files[0];
+                    await _filesRepository.UpdateContentAsync(objectId, formFile);
+                },
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating content"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -352,35 +259,14 @@ namespace CPS_API.Controllers
             }
             fileInfo.Ids.ObjectId = objectId;
 
-            try
-            {
-                await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true);
-            }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
-            }
-            catch (FileNotFoundException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
-            }
-            catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
-            }
-            catch (ObjectIdAlreadyExistsException ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while updating metadata");
-            }
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _metadataRepository.UpdateAllMetadataAsync(fileInfo, ignoreRequiredFields: true),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating metadata",
+                objectIdExistsMessage: "ObjectId already exists"
+            );
+            if (errorResult != null) return errorResult;
 
             return Ok(objectId);
         }
@@ -394,32 +280,57 @@ namespace CPS_API.Controllers
                 ["ObjectId"] = objectId
             };
 
+            IActionResult? errorResult = await HandleApiExceptionsAsync(
+                async () => await _metadataRepository.UpdateFileName(objectId, data.FileName),
+                properties,
+                notFoundMessage: $"File not found by objectId ({objectId})",
+                internalErrorMessage: "Error while updating fileName"
+            );
+            if (errorResult != null) return errorResult;
+
+            return Ok();
+        }
+
+        /// <summary>
+        /// Handles common API exception logic and returns an appropriate IActionResult if an error occurs, otherwise null.
+        /// </summary>
+        private async Task<IActionResult?> HandleApiExceptionsAsync(
+            Func<Task> action,
+            Dictionary<string, string> properties,
+            string? notFoundMessage = null,
+            string? conflictMessage = null,
+            string? internalErrorMessage = null,
+            string? objectIdExistsMessage = null)
+        {
             try
             {
-                await _metadataRepository.UpdateFileName(objectId, data.FileName);
+                await action();
+                return null;
             }
             catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Forbidden)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(403, ex.Message ?? "Forbidden");
+                return this.LogAndThrowForbidden(_logger, ex, "Access denied", properties);
             }
             catch (FileNotFoundException ex)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return NotFound(ex.Message ?? $"File not found by objectId ({objectId})");
+                return this.LogAndThrowNotFound(_logger, ex, notFoundMessage ?? "File not found", properties);
             }
             catch (Exception ex) when (ex.InnerException is UnauthorizedAccessException)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(401, ex.Message ?? "Unauthorized");
+                return this.LogAndThrowUnauthorized(_logger, ex, properties: properties);
+            }
+            catch (Exception ex) when (ex is NameAlreadyExistsException)
+            {
+                return this.LogAndThrowConflict(_logger, ex, conflictMessage ?? "Conflict", properties);
+            }
+            catch (ObjectIdAlreadyExistsException ex)
+            {
+                return this.LogAndThrowInternalServerError(_logger, ex, objectIdExistsMessage ?? "ObjectId already exists", properties);
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackException(ex, properties);
-                return StatusCode(500, ex.Message ?? "Error while updating fileName");
+                return this.LogAndThrowInternalServerError(_logger, ex, internalErrorMessage ?? "Internal Server Error", properties);
             }
-
-            return Ok();
         }
     }
 }

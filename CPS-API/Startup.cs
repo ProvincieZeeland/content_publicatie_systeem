@@ -1,5 +1,6 @@
 ﻿using Azure.Core;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
@@ -16,6 +17,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
+using OpenTelemetry.Trace;
 using Constants = Microsoft.Identity.Web.Constants;
 
 namespace CPS_API
@@ -57,6 +59,7 @@ namespace CPS_API
             services.AddSingleton<EmailService, EmailService>();
             services.AddSingleton<CertificateService, CertificateService>();
             services.AddSingleton<IRestClient, RestClient>();
+            services.AddSingleton<AppInsightsTelemetryProcessor>();
 
             services
                 .AddHttpClient("restClient")
@@ -71,9 +74,6 @@ namespace CPS_API
                 opt.ValueLengthLimit = int.MaxValue;
                 opt.MultipartBodyLengthLimit = int.MaxValue;
             });
-
-            // Application Insights
-            services.AddApplicationInsightsTelemetry();
 
             // Add GlobalSettings
             var globalSettings = Configuration.GetSection("GlobalSettings");
@@ -94,14 +94,7 @@ namespace CPS_API
                 var keyvaultUri = "https://" + keyVaultName + ".vault.azure.net";
                 builder.AddSecretClient(new Uri(keyvaultUri));
                 builder.ConfigureDefaults(options => options.Retry.Mode = RetryMode.Exponential);
-
-#if DEBUG
-                // For debugging, allow us to login via browser and use a local account to access keyvault
-                var credential = new VisualStudioCredential();
-#else
-                var credential = new DefaultAzureCredential();
-#endif
-                builder.UseCredential(credential);
+                builder.UseCredential(GetDefaultAzureCredential());
             });
 
             services.AddControllersWithViews(options =>
@@ -129,6 +122,30 @@ namespace CPS_API
                  .AddMicrosoftIdentityWebApi(Configuration)
                  .EnableTokenAcquisitionToCallDownstreamApi()
                  .AddInMemoryTokenCaches();
+
+            // Application Insights
+            services.AddOpenTelemetry()
+               .UseAzureMonitor(options =>
+               {
+                   options.Credential = GetDefaultAzureCredential();
+                   options.EnableLiveMetrics = true;
+               })
+                .WithTracing(traceBuilder =>
+                    traceBuilder
+                    .AddAspNetCoreInstrumentation()
+                    .AddProcessor(provider =>
+                        provider.GetRequiredService<AppInsightsTelemetryProcessor>()
+                    )
+                );
+        }
+
+        private static DefaultAzureCredential GetDefaultAzureCredential()
+        {
+#if DEBUG
+            return new DefaultAzureCredential();
+#else
+            return new ManagedIdentityCredential();
+#endif
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
