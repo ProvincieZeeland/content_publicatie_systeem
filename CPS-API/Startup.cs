@@ -1,11 +1,13 @@
 ﻿using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
+using CPS_API.Database;
 using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
 using CPS_API.Services;
 using IExperts.SocialIntranet.Services;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
@@ -13,6 +15,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
@@ -44,22 +47,24 @@ namespace CPS_API
             services.AddScoped<IObjectIdRepository, ObjectIdRepository>();
             services.AddScoped<IDriveRepository, DriveRepository>();
             services.AddScoped<IMetadataRepository, MetadataRepository>();
-            services.AddSingleton<ISettingsRepository, SettingsRepository>();
+            services.AddScoped<ISettingsRepository, SettingsRepository>();
             services.AddScoped<IWebHookRepository, WebHookRepository>();
             services.AddScoped<IExportRepository, ExportRepository>();
             services.AddScoped<IPublicationRepository, PublicationRepository>();
             services.AddScoped<ICallbackRepository, CallbackRepository>();
             services.AddScoped<IListRepository, ListRepository>();
             services.AddScoped<ISharePointRepository, SharePointRepository>();
+            services.AddScoped<IDatabaseHealthService, DatabaseHealthService>();
 
             // Add Custom Services
             services.AddSingleton<FileStorageService, FileStorageService>();
-            services.AddSingleton<StorageTableService, StorageTableService>();
             services.AddSingleton<XmlExportSerivce, XmlExportSerivce>();
             services.AddSingleton<EmailService, EmailService>();
             services.AddSingleton<CertificateService, CertificateService>();
+            services.AddScoped<WebhookNotificationService, WebhookNotificationService>();
             services.AddSingleton<IRestClient, RestClient>();
             services.AddSingleton<AppInsightsTelemetryProcessor>();
+            services.AddSingleton<TelemetryClient>();
 
             services
                 .AddHttpClient("restClient")
@@ -96,6 +101,12 @@ namespace CPS_API
                 builder.ConfigureDefaults(options => options.Retry.Mode = RetryMode.Exponential);
                 builder.UseCredential(GetDefaultAzureCredential());
             });
+
+            // Setup database
+            var SqlConnection =
+                Configuration.GetSection("ConnectionStrings")["AZURE_SQL_CONNECTIONSTRING"];
+            services.AddDbContext<CpsDbContext>(
+                options => options.UseSqlServer(SqlConnection));
 
             services.AddControllersWithViews(options =>
             {
@@ -139,7 +150,7 @@ namespace CPS_API
                 );
         }
 
-        private static DefaultAzureCredential GetDefaultAzureCredential()
+        private static TokenCredential GetDefaultAzureCredential()
         {
 #if DEBUG
             return new DefaultAzureCredential();

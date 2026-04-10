@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace CPS_API.Models
 {
@@ -8,7 +8,7 @@ namespace CPS_API.Models
     /// <typeparam name="T">Type of object</typeparam>
     public class ResponseModel<T>
     {
-        [JsonProperty(PropertyName = "value")]
+        [JsonPropertyName("value")]
         public List<T> Value { get; set; } = [];
     }
 }

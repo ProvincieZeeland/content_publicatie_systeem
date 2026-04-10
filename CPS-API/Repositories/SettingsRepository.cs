@@ -1,227 +1,67 @@
-﻿using System.Diagnostics;
-using CPS_API.Helpers;
+﻿using CPS_API.Database;
 using CPS_API.Models;
-using CPS_API.Models.Exceptions;
-using Microsoft.Extensions.Options;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
+using CPS_API.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CPS_API.Repositories
 {
     public interface ISettingsRepository
     {
-        Task<T?> GetSetting<T>(string fieldName);
-
-        Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName);
-
-        Task SaveSettingAsync(string fieldName, object? value);
-
-        Task SaveSettingsAsync(Dictionary<string, object?> settings);
-
-        Task<long?> IncreaseSequenceNumberAsync();
+        Task<long> IncreaseSequenceNumberAsync();
     }
 
     public class SettingsRepository : ISettingsRepository
     {
-        private readonly StorageTableService _storageTableService;
+        private readonly CpsDbContext _dbContext;
+        private readonly IDatabaseHealthService _databaseHealthService;
 
-        private readonly GlobalSettings _globalSettings;
-
-        public SettingsRepository(StorageTableService storageTableService,
-                                  IOptions<GlobalSettings> settings)
+        public SettingsRepository(
+            CpsDbContext dbContext,
+            IDatabaseHealthService databaseHealthService)
         {
-            _storageTableService = storageTableService;
-            _globalSettings = settings.Value;
+            _dbContext = dbContext;
+            _databaseHealthService = databaseHealthService;
         }
 
-        private async Task<SettingsEntity> GetCurrentSettings()
+        private async Task<Settings> GetCurrentSettings()
         {
-            var table = _storageTableService.GetTable(_globalSettings.SettingsTableName);
-            if (table == null)
-            {
-                throw new CpsException($"Table \"{_globalSettings.SettingsTableName}\" not found");
-            }
-
-            var currentSetting = await _storageTableService.GetAsync<SettingsEntity>(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsRowKey, table);
-            if (currentSetting == null) currentSetting = new SettingsEntity(_globalSettings.SettingsPartitionKey, _globalSettings.SettingsRowKey);
+            Settings? currentSetting = await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.Settings.FirstOrDefaultAsync(),
+                nameof(GetCurrentSettings)
+            );
+            if (currentSetting == null) return new Settings();
             return currentSetting;
         }
 
-        public async Task<T?> GetSetting<T>(string fieldName)
+        public async Task<long> IncreaseSequenceNumberAsync()
         {
-            var currentSetting = await GetCurrentSettings();
-            return FieldPropertyHelper.GetFieldValue<T>(currentSetting, fieldName);
-        }
-
-        public async Task<Dictionary<string, string>> GetLastTokensAsync(string fieldName)
-        {
-            var value = await GetSetting<string>(fieldName);
-            if (string.IsNullOrEmpty(value)) return new Dictionary<string, string>();
-            return value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
-               .Select(part => part.Split('='))
-               .ToDictionary(split => split[0], split => split.Length == 2 ? split[1] : split[1] + "=" + split[2]);
-        }
-
-        public async Task SaveSettingAsync(string fieldName, object? value)
-        {
-            await SaveSettingsAsync(new Dictionary<string, object?> { { fieldName, value } });
-        }
-
-        /// <summary>
-        /// Try to save settings.
-        /// Keeps checking if the lease is active in 30 seconds.
-        /// Retries once after 5 minutes.
-        /// </summary>
-        public async Task SaveSettingsAsync(Dictionary<string, object?> settings)
-        {
-            // Set up lease container
-            CloudBlobContainer? leaseContainer = await _storageTableService.GetLeaseContainer();
-            if (leaseContainer == null) throw new CpsException("Error while getting leaseContainer");
-
-            (bool succeeded, _) = await AcquireLeaseAndSaveSettingsAsync(leaseContainer, settings);
-
-            if (!succeeded)
+            var settings = await ExecuteWithTableLockAsync(async () =>
             {
-                // Sleep for 5 minutes before retry.
-                await Task.Delay(TimeSpan.FromMinutes(5));
+                Settings settings = await GetCurrentSettings();
+                settings.SequenceNumber++;
 
-                (bool succeeded, string lastErrorMessage) result = await AcquireLeaseAndSaveSettingsAsync(leaseContainer, settings);
-                if (!result.succeeded) throw new CpsException($"Error while saving setting: {result.lastErrorMessage}");
-            }
+                await _databaseHealthService.ExecuteWithWarmupAsync(
+                    async () => await _dbContext.SaveChangesAsync(),
+                    nameof(IncreaseSequenceNumberAsync)
+                );
+                return settings;
+            });
+            return settings.SequenceNumber;
         }
 
-        public async Task<(bool succeeded, string lastErrorMessage)> AcquireLeaseAndSaveSettingsAsync(CloudBlobContainer leaseContainer, Dictionary<string, object?> settings)
+        private async Task<Settings> ExecuteWithTableLockAsync(Func<Task<Settings>> action)
         {
-            var lastErrorMessage = "";
-            var s = new Stopwatch();
-            s.Start();
-            while (s.Elapsed < TimeSpan.FromSeconds(30))
-            {
-                try
-                {
-                    // Create blob for acquiring lease.
-                    var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
-                    await blob.UploadTextAsync("");
+            // Lock the settings row in the database to prevent concurrent updates.
+            using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync();
+            await _dbContext.Database.ExecuteSqlRawAsync("SELECT * FROM [Settings] WITH (TABLOCKX)");
 
-                    // Acquire lease.
-                    var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
-                    if (string.IsNullOrEmpty(leaseId))
-                    {
-                        throw new AcquiringLeaseException("Error while acquiring lease");
-                    }
+            Settings settings = await action();
 
-                    // Actually update settings
-                    try
-                    {
-                        var currentSettings = await GetCurrentSettings();
-                        if (currentSettings == null) throw new CpsException($"Error while getting current settings");
+            // Release the lock by committing the transaction.
+            await transaction.CommitAsync();
 
-                        foreach (var setting in settings)
-                        {
-                            FieldPropertyHelper.SetFieldValue(currentSettings, setting.Key, setting.Value);
-                        }
-                        await SaveSettingsAsync(currentSettings);
-                        return (true, "");
-                    }
-                    finally
-                    {
-                        await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
-                    }
-                }
-                catch (AcquiringLeaseException)
-                {
-                    // Lease is still active, continue loop.
-                    lastErrorMessage = "Lease is still active.";
-                }
-                catch (StorageException ex)
-                {
-                    // Lease still active? (status 409 or 412)
-                    // Then try again for 30 seconds.
-                    lastErrorMessage = ex.Message;
-                    if (ex.RequestInformation.HttpStatusCode != 409 && ex.RequestInformation.HttpStatusCode != 412)
-                    {
-                        throw;
-                    }
-                }
-            }
-            s.Stop();
-
-            return (false, lastErrorMessage);
-        }
-
-        private async Task<bool> SaveSettingsAsync(SettingsEntity setting)
-        {
-            var settingsTable = _storageTableService.GetTable(_globalSettings.SettingsTableName);
-            if (settingsTable == null)
-            {
-                throw new CpsException($"Table \"{_globalSettings.SettingsTableName}\" not found");
-            }
-
-            await _storageTableService.SaveAsync(settingsTable, setting);
-            return true;
-        }
-
-        public async Task<long?> IncreaseSequenceNumberAsync()
-        {
-            var leaseContainer = await _storageTableService.GetLeaseContainer();
-            if (leaseContainer == null)
-            {
-                throw new CpsException("Error while getting leaseContainer");
-            }
-
-            // Try to get the new sequence number and saving it in the storage table.
-            var s = new Stopwatch();
-            s.Start();
-            while (s.Elapsed < TimeSpan.FromSeconds(30))
-            {
-                try
-                {
-                    (CloudBlockBlob blob, string leaseId) = await GetLeaseId(leaseContainer);
-
-                    // Get new sequence number after acquiring lease.
-                    var settings = await GetCurrentSettings();
-                    if (settings == null) throw new CpsException("Error while getting settings");
-                    try
-                    {
-                        if (!settings.SequenceNumber.HasValue) settings.SequenceNumber = 1;
-                        else settings.SequenceNumber++;
-
-                        await SaveSettingsAsync(settings);
-                    }
-                    finally
-                    {
-                        await blob.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
-                    }
-                    return settings.SequenceNumber;
-                }
-                catch (AcquiringLeaseException)
-                {
-                    // Lease is still active, continue loop.
-                }
-                catch (StorageException ex)
-                {
-                    // Lease still active? (status 409 or 412)
-                    // Then try again for 30 seconds.
-                    if (ex.RequestInformation.HttpStatusCode != 409 && ex.RequestInformation.HttpStatusCode != 412)
-                    {
-                        throw;
-                    }
-                }
-            }
-            s.Stop();
-            return null;
-        }
-
-        private async Task<(CloudBlockBlob, string)> GetLeaseId(CloudBlobContainer leaseContainer)
-        {
-            // Create blob for acquiring lease.
-            var blob = leaseContainer.GetBlockBlobReference(String.Format("{0}.lck", _globalSettings.SettingsPartitionKey));
-            await blob.UploadTextAsync("");
-
-            // Acquire lease.
-            var leaseId = await blob.AcquireLeaseAsync(TimeSpan.FromSeconds(30), Guid.NewGuid().ToString());
-            if (string.IsNullOrEmpty(leaseId)) throw new AcquiringLeaseException("Error while acquiring lease");
-            return (blob, leaseId);
+            return settings;
         }
     }
 }

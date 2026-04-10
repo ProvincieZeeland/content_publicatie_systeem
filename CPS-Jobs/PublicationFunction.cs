@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using CPS_API.Models.Exceptions;
 using CPS_Jobs.Helpers;
 using CPS_Jobs.Models;
 using Microsoft.Azure.Functions.Worker;

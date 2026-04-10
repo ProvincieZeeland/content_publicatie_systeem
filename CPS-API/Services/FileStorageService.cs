@@ -7,12 +7,6 @@ namespace CPS_API.Helpers
 {
     public interface IFileStorageService
     {
-        Task<IEnumerable<string>> GetAllAsync(string containerName, string folder);
-
-        Task<string> GetContentAsStringAsync(string containerName, string filename);
-
-        Task<byte[]> GetContentAsync(string containerName, string filename);
-
         Task CreateAsync(string containerName, string filename, string content, string contenttype, string objectId);
 
         Task CreateAsync(string containerName, string filename, Stream content, string contenttype, string objectId);
@@ -27,69 +21,6 @@ namespace CPS_API.Helpers
         public FileStorageService(Microsoft.Extensions.Options.IOptions<GlobalSettings> settings)
         {
             _globalSettings = settings.Value;
-        }
-
-        public async Task<IEnumerable<string>> GetAllAsync(string containerName, string folder)
-        {
-            var containerClient = await GetBlobContainerClient(containerName);
-
-            List<string> files = new List<string>();
-
-            // Call the listing operation and return pages of the specified size.
-            var resultSegment = containerClient.GetBlobsByHierarchyAsync(prefix: folder, delimiter: "/").AsPages(default, 500);
-
-            // Enumerate the blobs returned for each page.
-            await foreach (Page<BlobHierarchyItem> blobPage in resultSegment)
-            {
-                // A hierarchical listing may return both virtual directories and blobs.
-                foreach (BlobHierarchyItem blobhierarchyItem in blobPage.Values)
-                {
-                    if (blobhierarchyItem.IsPrefix)
-                    {
-                        // Call recursively with the prefix to traverse the virtual directory.
-                        IEnumerable<string> subfiles = await GetAllAsync(containerName, blobhierarchyItem.Prefix);
-                        files.AddRange(subfiles);
-                    }
-                    else
-                    {
-                        files.Add(blobhierarchyItem.Blob.Name);
-                    }
-                }
-            }
-
-            return files;
-        }
-
-        public async Task<string> GetContentAsStringAsync(string containerName, string filename)
-        {
-            var containerClient = await GetBlobContainerClient(containerName);
-
-            BlobClient blobClient = containerClient.GetBlobClient(filename);
-            if (!await blobClient.ExistsAsync())
-                throw new FileNotFoundException("File " + filename + " does not exist!");
-
-            var response = await blobClient.DownloadAsync();
-            using (var streamReader = new StreamReader(response.Value.Content))
-            {
-                string content = await streamReader.ReadToEndAsync();
-                return content;
-            }
-        }
-
-        public async Task<byte[]> GetContentAsync(string containerName, string filename)
-        {
-            var containerClient = await GetBlobContainerClient(containerName);
-
-            BlobClient blobClient = containerClient.GetBlobClient(filename);
-            if (!await blobClient.ExistsAsync())
-                throw new FileNotFoundException("File " + filename + " does not exist!");
-
-            using (var streamReader = new MemoryStream())
-            {
-                await blobClient.DownloadToAsync(streamReader);
-                byte[] content = streamReader.ToArray();
-                return content;
-            }
         }
 
         public async Task CreateAsync(string containerName, string filename, string content, string contenttype, string objectId)

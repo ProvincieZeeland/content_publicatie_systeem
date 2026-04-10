@@ -7,5 +7,7 @@
         public string BaseUrl { get; set; } = string.Empty;
 
         public string KeyVaultName { get; set; } = string.Empty;
+
+        public string ClientState { get; set; } = string.Empty;
     }
 }

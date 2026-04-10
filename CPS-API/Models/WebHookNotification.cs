@@ -1,28 +1,28 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace CPS_API.Models
 {
     public class WebHookNotification
     {
-        [JsonProperty(PropertyName = "subscriptionId")]
+        [JsonPropertyName("subscriptionId")]
         public string SubscriptionId { get; set; } = string.Empty;
 
-        [JsonProperty(PropertyName = "clientState")]
+        [JsonPropertyName("clientState")]
         public string? ClientState { get; set; }
 
-        [JsonProperty(PropertyName = "expirationDateTime")]
+        [JsonPropertyName("expirationDateTime")]
         public DateTime ExpirationDateTime { get; set; }
 
-        [JsonProperty(PropertyName = "resource")]
+        [JsonPropertyName("resource")]
         public string Resource { get; set; } = string.Empty;
 
-        [JsonProperty(PropertyName = "tenantId")]
+        [JsonPropertyName("tenantId")]
         public string TenantId { get; set; } = string.Empty;
 
-        [JsonProperty(PropertyName = "siteUrl")]
+        [JsonPropertyName("siteUrl")]
         public string SiteUrl { get; set; } = string.Empty;
 
-        [JsonProperty(PropertyName = "webId")]
+        [JsonPropertyName("webId")]
         public string WebId { get; set; } = string.Empty;
     }
 }

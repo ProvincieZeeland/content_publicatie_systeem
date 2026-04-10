@@ -1,62 +1,52 @@
 ﻿using System.Net;
-using CPS_API.Helpers;
+using Azure;
+using CPS_API.Database;
 using CPS_API.Models;
-using CPS_API.Models.Exceptions;
-using Microsoft.Extensions.Options;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Table;
+using CPS_API.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace CPS_API.Repositories
 {
     public interface IPublicationRepository
     {
-        Task<List<ToBePublishedEntity>> GetEntitiesFromQueueAsync();
+        Task<List<ToBePublished>> GetItemsFromQueueAsync(int maxRetries = 2);
 
         Task AddToQueueAsync(string objectId, DateTime publicationDate);
 
-        Task RemoveFromQueueAsync(ToBePublishedEntity entity);
-
         Task RemoveFromQueueIfExistsAsync(string objectId);
+
+        Task RemoveFromQueueAsync(ToBePublished item);
     }
 
     public class PublicationRepository : IPublicationRepository
     {
-        private readonly StorageTableService _storageTableService;
-
-        private readonly GlobalSettings _globalSettings;
+        private readonly CpsDbContext _dbContext;
+        private readonly IDatabaseHealthService _databaseHealthService;
 
         public PublicationRepository(
-            StorageTableService storageTableService,
-            IOptions<GlobalSettings> settings)
+            CpsDbContext dbContext,
+            IDatabaseHealthService databaseHealthService)
         {
-            _storageTableService = storageTableService;
-            _globalSettings = settings.Value;
+            _dbContext = dbContext;
+            _databaseHealthService = databaseHealthService;
         }
 
         #region Get
 
-        public async Task<List<ToBePublishedEntity>> GetEntitiesFromQueueAsync()
+        public async Task<List<ToBePublished>> GetItemsFromQueueAsync(int maxRetries = 2)
         {
-            var table = GetTable();
-            var query = new TableQuery<ToBePublishedEntity>();
-            var results = await _storageTableService.ExecuteQuerySegmentedAsync(table, query);
-            if (results == null)
-            {
-                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\"");
-            }
-            return results;
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ToBePublished.ToListAsync(),
+                nameof(GetItemsFromQueueAsync)
+            );
         }
 
-        private async Task<ToBePublishedEntity?> GetToBePublishedEntityAsync(CloudTable table, string objectId)
+        private async Task<ToBePublished?> GetToBePublishedAsync(string objectId)
         {
-            var filter = TableQuery.GenerateFilterCondition(nameof(TableEntity.RowKey), QueryComparisons.Equal, objectId);
-            var query = new TableQuery<ToBePublishedEntity>().Where(filter);
-            var results = await _storageTableService.ExecuteQuerySegmentedAsync(table, query);
-            if (results == null)
-            {
-                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ToBePublishedTableName}\" by \"{objectId}\"");
-            }
-            return results.FirstOrDefault();
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ToBePublished.FirstOrDefaultAsync(tp => tp.ObjectId.Equals(objectId)),
+                nameof(GetToBePublishedAsync)
+            );
         }
 
         #endregion
@@ -65,55 +55,42 @@ namespace CPS_API.Repositories
 
         public async Task AddToQueueAsync(string objectId, DateTime publicationDate)
         {
-            var table = GetTable();
-            var entity = new ToBePublishedEntity(_globalSettings.ToBePublishedPartitionKey, objectId, publicationDate);
-            await _storageTableService.SaveAsync(table, entity);
-        }
-
-        public async Task RemoveFromQueueAsync(ToBePublishedEntity entity)
-        {
-            var table = GetTable();
-            await DeleteEntityAsync(table, entity);
+            _dbContext.ToBePublished.Add(new ToBePublished
+            {
+                ObjectId = objectId,
+                PublicationDate = publicationDate
+            });
+            await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.SaveChangesAsync(),
+                nameof(AddToQueueAsync)
+            );
         }
 
         public async Task RemoveFromQueueIfExistsAsync(string objectId)
         {
-            var table = GetTable();
-            ToBePublishedEntity? entity;
+            ToBePublished? item;
             try
             {
-                entity = await GetToBePublishedEntityAsync(table, objectId);
+                item = await GetToBePublishedAsync(objectId);
             }
-            catch (StorageException ex) when (ex.RequestInformation.HttpStatusCode == (int)HttpStatusCode.NotFound)
+            catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
             {
                 return;
             }
-            if (entity == null)
+            if (item == null)
             {
                 return;
             }
-            await DeleteEntityAsync(table, entity);
+            await RemoveFromQueueAsync(item);
         }
 
-        private async Task DeleteEntityAsync(CloudTable table, ToBePublishedEntity entity)
+        public async Task RemoveFromQueueAsync(ToBePublished item)
         {
-            // Etag * is required for deleting.
-            entity.ETag = "*";
-            await _storageTableService.DeleteAsync(table, entity);
-        }
-
-        #endregion
-
-        #region Helpers
-
-        private CloudTable GetTable()
-        {
-            var table = _storageTableService.GetTable(_globalSettings.ToBePublishedTableName);
-            if (table == null)
-            {
-                throw new CpsException($"Table \"{_globalSettings.ToBePublishedTableName}\" not found");
-            }
-            return table;
+            _dbContext.ToBePublished.Remove(item);
+            await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.SaveChangesAsync(),
+                nameof(RemoveFromQueueAsync)
+            );
         }
 
         #endregion

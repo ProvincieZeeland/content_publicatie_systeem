@@ -79,16 +79,15 @@ namespace CPS_API.Repositories
             {
                 throw new CpsException("Error while getting objectIdentifiers");
             }
-            var ids = new ObjectIdentifiers(objectIdentifiers);
 
-            if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(ids.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
+            if (string.IsNullOrEmpty(objectIdentifiers.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(FileInformation.Ids)}");
 
-            var listItem = await _listRepository.GetListItemAsync(ids.SiteId!, ids.ListId!, ids.ListItemId!, getAsUser: getAsUser);
+            var listItem = await _listRepository.GetListItemAsync(objectIdentifiers.SiteId!, objectIdentifiers.ListId!, objectIdentifiers.ListItemId!, getAsUser: getAsUser);
 
-            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, ids, getAsUser: getAsUser);
-            metadata.ExternalReferences = await GetExternalReferencesAsync(ids, getAsUser);
+            var metadata = await GetMetadataWithoutExternalReferencesAsync(listItem, objectIdentifiers, getAsUser: getAsUser);
+            metadata.ExternalReferences = await GetExternalReferencesAsync(objectIdentifiers, getAsUser);
             return metadata;
         }
 
@@ -115,7 +114,7 @@ namespace CPS_API.Repositories
                 var value = MetadataHelper.GetMetadataValue(listItem, fieldMapping);
                 if (isObjectId)
                 {
-                    metadata.Ids.ObjectId = value?.ToString();
+                    metadata.Ids.ObjectId = value?.ToString() ?? string.Empty;
                 }
                 else if (MetadataHelper.FieldIsMainMetadata(fieldMapping.FieldName))
                 {
@@ -194,8 +193,6 @@ namespace CPS_API.Repositories
 
         private async Task<ObjectIdentifiers> MoveFileAsync(FileInformation metadata, LocationMapping locationMapping)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
-            ArgumentNullException.ThrowIfNull(nameof(locationMapping));
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
             if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(metadata.Ids.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(FileInformation.Ids)}");
@@ -209,7 +206,6 @@ namespace CPS_API.Repositories
                 SiteId = locationMapping.SiteId,
                 ListId = locationMapping.ListId,
                 DriveItemId = driveItemId,
-                ExternalReferenceListId = locationMapping.ExternalReferenceListId,
                 AdditionalObjectId = metadata.Ids.AdditionalObjectId
             };
             ids = await _objectIdRepository.FindMissingIds(ids);
@@ -225,7 +221,6 @@ namespace CPS_API.Repositories
 
         public async Task UpdateAllMetadataAsync(FileInformation metadata, bool ignoreRequiredFields = false, bool getAsUser = false)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
             if (string.IsNullOrEmpty(metadata.Ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
@@ -258,7 +253,6 @@ namespace CPS_API.Repositories
 
         private async Task<UpdateMetadataModel> GetUpdateMetadataAction(FileInformation metadata)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
             if (metadata.Ids.ObjectId == null) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
             if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
@@ -331,7 +325,6 @@ namespace CPS_API.Repositories
             ArgumentNullException.ThrowIfNull(metadata);
             if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
             if (string.IsNullOrEmpty(metadata.Ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(metadata.Ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
 
             // Keep the existing value, if value equals null.
             if (metadata.ExternalReferences == null)
@@ -370,7 +363,9 @@ namespace CPS_API.Repositories
         private async Task<ListItem> AddOrUpdateListItem(ListItem listItem, ExternalReferences externalReference, List<ListItem> existingListItems, ObjectIdentifiers ids, bool getAsUser = false)
         {
             if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
+
+            var externalReferenceListId = _objectIdRepository.GetExternalReferenceListId(ids);
+            if (string.IsNullOrEmpty(externalReferenceListId)) throw new CpsException($"No externalReferenceListId found for {nameof(FileInformation.Ids)}");
 
             var existingListItem = GetExistingListItem(externalReference, existingListItems);
             if (existingListItem == null)
@@ -378,7 +373,7 @@ namespace CPS_API.Repositories
                 // Add new external reference
                 try
                 {
-                    var newListItem = await _listRepository.AddListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, listItem, getAsUser);
+                    var newListItem = await _listRepository.AddListItemAsync(ids.SiteId!, externalReferenceListId!, listItem, getAsUser);
                     return newListItem;
                 }
                 catch (Exception ex)
@@ -393,7 +388,7 @@ namespace CPS_API.Repositories
             {
                 if (existingListItem.Id == null) throw new CpsException("Error while getting ID for existing external reference");
 
-                await _listRepository.UpdateListItemAsync(ids.SiteId!, ids.ExternalReferenceListId!, existingListItem.Id, listItem.Fields!, getAsUser);
+                await _listRepository.UpdateListItemAsync(ids.SiteId!, externalReferenceListId!, existingListItem.Id, listItem.Fields!, getAsUser);
                 return existingListItem;
             }
             catch (Exception ex)
@@ -506,7 +501,6 @@ namespace CPS_API.Repositories
 
         public async Task UpdateDropOffMetadataAsync(bool isComplete, string status, ObjectIdentifiers objectIdentifiers, bool getAsUser = false)
         {
-            ArgumentNullException.ThrowIfNull(nameof(objectIdentifiers));
             if (string.IsNullOrEmpty(objectIdentifiers.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(objectIdentifiers)}");
             if (string.IsNullOrEmpty(objectIdentifiers.ListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListId)} found for {nameof(objectIdentifiers)}");
             if (string.IsNullOrEmpty(objectIdentifiers.ListItemId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ListItemId)} found for {nameof(objectIdentifiers)}");
@@ -631,28 +625,58 @@ namespace CPS_API.Repositories
             return (termValue.Value.name, termValue.Value.value);
         }
 
-        private async Task<(string name, string value)?> GetTermValue(FileInformation metadata, FieldMapping fieldMapping, PropertyInfo propertyInfo, object? value, bool isForNewFile, bool ignoreRequiredFields, bool isForExternalReference = false)
+        private async Task<(string name, string value)?> GetTermValue(
+            FileInformation metadata,
+            FieldMapping fieldMapping,
+            PropertyInfo propertyInfo,
+            object? value,
+            bool isForNewFile,
+            bool ignoreRequiredFields,
+            bool isForExternalReference = false)
         {
             // Only get termstore and columns if we need to update a taxonomy value.
             List<ColumnDefinition>? columns = isForExternalReference ? _externalReferencesColumns : _metadataColumns;
             if (columns == null)
             {
-                if (metadata.Ids == null) throw new CpsException($"Error while getting columns: SiteId amd ListId unknown");
-                columns = await _listRepository.GetColumnsAsync(metadata.Ids.SiteId!, isForExternalReference ? metadata.Ids.ExternalReferenceListId! : metadata.Ids.ListId!);
+                columns = await GetColumnsForTermValue(metadata, isForExternalReference);
                 if (isForExternalReference) { _externalReferencesColumns = columns; }
                 else { _metadataColumns = columns; }
             }
+            if (columns == null) return null;
 
-            var spoColumnName = fieldMapping.SpoColumnName.Replace("_x0020_", " ").Replace("_x002d_", "-");
-            var column = columns!.Find(item => item.DisplayName != null && item.DisplayName.Equals(spoColumnName + "_0"));
+            var column = FindColumnForTermValue(columns, fieldMapping);
             if (column == null || string.IsNullOrWhiteSpace(column.Name)) return null;
 
-            var termGuid = await _sharePointRepository.GetNewTermValue(metadata.Ids!.SiteId!, propertyInfo, value, fieldMapping, isForNewFile, ignoreRequiredFields);
-            if (!string.IsNullOrWhiteSpace(termGuid))
+            var termGuid = await _sharePointRepository.GetNewTermValue(
+                metadata.Ids!.SiteId!,
+                propertyInfo,
+                value,
+                fieldMapping,
+                isForNewFile,
+                ignoreRequiredFields);
+
+            if (string.IsNullOrWhiteSpace(termGuid)) return null;
+
+            return (column.Name, $"-1;#{value}|{termGuid}");
+        }
+
+        private async Task<List<ColumnDefinition>?> GetColumnsForTermValue(FileInformation metadata, bool isForExternalReference)
+        {
+            if (metadata.Ids == null) throw new CpsException($"Error while getting columns: SiteId amd ListId unknown");
+
+            string? externalReferenceListId = string.Empty;
+            if (isForExternalReference)
             {
-                return (column.Name, $"-1;#{value}|{termGuid}");
+                externalReferenceListId = _objectIdRepository.GetExternalReferenceListId(metadata.Ids);
+                if (string.IsNullOrEmpty(externalReferenceListId)) throw new CpsException($"No externalReferenceListId found for {nameof(FileInformation.Ids)}");
             }
-            return null;
+            return await _listRepository.GetColumnsAsync(metadata.Ids.SiteId!, isForExternalReference ? externalReferenceListId! : metadata.Ids.ListId!);
+        }
+
+        private static ColumnDefinition? FindColumnForTermValue(List<ColumnDefinition> columns, FieldMapping fieldMapping)
+        {
+            var spoColumnName = fieldMapping.SpoColumnName.Replace("_x0020_", " ").Replace("_x002d_", "-");
+            return columns.Find(item => item.DisplayName != null && item.DisplayName.Equals(spoColumnName + "_0"));
         }
 
         private FieldValueSet MapDropOffMetadata(DropOffFileMetadata dropOffMetadata)
@@ -722,7 +746,6 @@ namespace CPS_API.Repositories
 
         private async Task<List<ExternalReferenceItem>> MapExternalReferences(FileInformation metadata, bool isForNewFile = false, bool ignoreRequiredFields = false)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.Ids == null) throw new ArgumentNullException("metadata.Ids");
             if (metadata.ExternalReferences == null) throw new ArgumentNullException("metadata.ExternalReferences");
 
@@ -811,14 +834,16 @@ namespace CPS_API.Repositories
         private async Task<List<ListItem>> GetExternalReferenceListItems(ObjectIdentifiers ids, bool getAsUser = false)
         {
             if (string.IsNullOrEmpty(ids.SiteId)) throw new CpsException($"No {nameof(ObjectIdentifiers.SiteId)} found for {nameof(FileInformation.Ids)}");
-            if (string.IsNullOrEmpty(ids.ExternalReferenceListId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ExternalReferenceListId)} found for {nameof(FileInformation.Ids)}");
             if (string.IsNullOrEmpty(ids.ObjectId)) throw new CpsException($"No {nameof(ObjectIdentifiers.ObjectId)} found for {nameof(FileInformation.Ids)}");
 
             var field = _globalSettings.ExternalReferencesMapping.Find(s => s.FieldName.Equals(Constants.ObjectIdSpoColumnName, StringComparison.InvariantCultureIgnoreCase));
             if (field == null) throw new CpsException("Object ID field not found in external reference mapping");
 
-            var listItems = await _listRepository.GetListItemsAsync(ids.SiteId!, ids.ExternalReferenceListId!, field.SpoColumnName, ids.ObjectId!, getAsUser);
-            if (listItems == null) throw new CpsException($"Error while getting listItems from externalReferencesList ({ids.ExternalReferenceListId})");
+            var externalReferenceListId = _objectIdRepository.GetExternalReferenceListId(ids);
+            if (string.IsNullOrEmpty(externalReferenceListId)) throw new CpsException($"No externalReferenceListId found for {nameof(FileInformation.Ids)}");
+
+            var listItems = await _listRepository.GetListItemsAsync(ids.SiteId!, externalReferenceListId!, field.SpoColumnName, ids.ObjectId!, getAsUser);
+            if (listItems == null) throw new CpsException($"Error while getting listItems from externalReferencesList ({externalReferenceListId})");
             return listItems;
         }
 

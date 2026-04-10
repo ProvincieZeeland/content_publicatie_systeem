@@ -1,11 +1,13 @@
 ﻿using System.Net;
-using CPS_API.Helpers;
+using CPS_API.Database;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
+using CPS_API.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Models.ODataErrors;
-using Microsoft.WindowsAzure.Storage.Table;
 using Constants = CPS_API.Models.Constants;
+using ObjectIdentifiers = CPS_API.Models.ObjectIdentifiers;
 
 namespace CPS_API.Repositories
 {
@@ -15,9 +17,11 @@ namespace CPS_API.Repositories
 
         Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId);
 
-        Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId);
+        Task<ObjectIdentifiers?> GetObjectIdentifiersAsync(string driveId, string driveItemId);
 
-        Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId);
+        Task<ObjectIdentifiers?> GetObjectIdentifiersAsync(string objectId);
+
+        Task<ObjectIdentifiers?> GetObjectIdentifiersBySharePointIdsAsync(string siteId, string listId, string listItemId);
 
         Task<string?> GetObjectIdAsync(ObjectIdentifiers ids);
 
@@ -28,25 +32,30 @@ namespace CPS_API.Repositories
         Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds);
 
         Task<ObjectIdentifiers> FindMissingIds(ObjectIdentifiers ids, bool getAsUser = false);
+
+        string? GetExternalReferenceListId(ObjectIdentifiers ids);
     }
 
     public class ObjectIdRepository : IObjectIdRepository
     {
         private const string prefix = "ZLD";
         private readonly ISettingsRepository _settingsRepository;
-        private readonly StorageTableService _storageTableService;
         private readonly IDriveRepository _driveRepository;
         private readonly GlobalSettings _globalSettings;
+        private readonly CpsDbContext _dbContext;
+        private readonly IDatabaseHealthService _databaseHealthService;
 
         public ObjectIdRepository(ISettingsRepository settingsRepository,
-                                   StorageTableService storageTableService,
                                    IDriveRepository driveRepository,
-                                   IOptions<GlobalSettings> settings)
+                                   IOptions<GlobalSettings> settings,
+                                   CpsDbContext dbContext,
+                                   IDatabaseHealthService databaseHealthService)
         {
             _settingsRepository = settingsRepository;
-            _storageTableService = storageTableService;
             _driveRepository = driveRepository;
             _globalSettings = settings.Value;
+            _dbContext = dbContext;
+            _databaseHealthService = databaseHealthService;
         }
 
         public async Task<string> GenerateObjectIdAsync(ObjectIdentifiers ids, bool getAsUser = false)
@@ -116,9 +125,9 @@ namespace CPS_API.Repositories
             ids = await FindMissingIdsBySharePointIds(ids, getAsUser);
             ids = await FindMissingIdsByDriveIds(ids, getAsUser);
             ids = await FindMissingIdsFromStorageTable(ids);
-            if (string.IsNullOrEmpty(ids.ExternalReferenceListId))
+            if (string.IsNullOrWhiteSpace(ids.ObjectId) && !string.IsNullOrWhiteSpace(ids.SiteId) && !string.IsNullOrWhiteSpace(ids.ListId) && !string.IsNullOrWhiteSpace(ids.ListItemId))
             {
-                ids.ExternalReferenceListId = GetExternalReferenceListId(ids);
+                ids.ObjectId = await GetObjectIdAsync(ids) ?? string.Empty;
             }
             return ids;
         }
@@ -160,7 +169,7 @@ namespace CPS_API.Repositories
                 if (string.IsNullOrWhiteSpace(driveId)) throw new CpsException($"Error while getting driveId (SiteId = {ids.SiteId}, ListId = {ids.ListId})");
                 return driveId;
             }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.InvalidHostnameForThisTenancyErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.ODataErrors.InvalidHostnameForThisTenancy, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified site was not found", ex);
             }
@@ -212,12 +221,12 @@ namespace CPS_API.Repositories
             try
             {
                 var driveItem = await _driveRepository.GetDriveItemIdsAsync(ids.DriveId, ids.DriveItemId, getAsUser);
-                ids.SiteId = driveItem.SharepointIds.SiteId;
-                ids.ListId = driveItem.SharepointIds.ListId;
-                ids.ListItemId = driveItem.SharepointIds.ListItemId;
+                ids.SiteId = driveItem.SharepointIds!.SiteId!;
+                ids.ListId = driveItem.SharepointIds.ListId!;
+                ids.ListItemId = driveItem.SharepointIds.ListItemId!;
                 return ids;
             }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.ProvidedDriveIdMalformedErrorMessage, StringComparison.InvariantCultureIgnoreCase)))
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.BadRequest && (ex.Error == null || ex.Error.Message == null || ex.Error.Message.Equals(Constants.ODataErrors.ProvidedDriveIdMalformed, StringComparison.InvariantCultureIgnoreCase)))
             {
                 throw new FileNotFoundException("The specified drive was not found", ex);
             }
@@ -248,7 +257,7 @@ namespace CPS_API.Repositories
             {
                 var idsFromStorageTable = await this.GetObjectIdentifiersAsync(ids.ObjectId);
                 if (idsFromStorageTable == null) throw new CpsException("Identifiers not found");
-                return new ObjectIdentifiers(idsFromStorageTable);
+                return idsFromStorageTable;
             }
             catch (Exception ex)
             {
@@ -256,20 +265,13 @@ namespace CPS_API.Repositories
             }
         }
 
-        private string? GetExternalReferenceListId(ObjectIdentifiers ids)
+        public string? GetExternalReferenceListId(ObjectIdentifiers ids)
         {
             var locationMapping = _globalSettings.LocationMapping.Find(item =>
                 item.SiteId == ids.SiteId
                 && item.ListId == ids.ListId
             );
             return locationMapping?.ExternalReferenceListId;
-        }
-
-        private CloudTable GetObjectIdentifiersTable()
-        {
-            var table = _storageTableService.GetTable(_globalSettings.ObjectIdentifiersTableName);
-            if (table == null) throw new CpsException($"Table \"{_globalSettings.ObjectIdentifiersTableName}\" not found");
-            return table;
         }
 
         public async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string siteId, string listId, string listItemId)
@@ -283,118 +285,128 @@ namespace CPS_API.Repositories
             return await FindMissingIds(ids);
         }
 
-        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string driveId, string driveItemId)
+        public async Task<ObjectIdentifiers?> GetObjectIdentifiersAsync(string driveId, string driveItemId)
         {
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
-
-            var filterDrive = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveId), QueryComparisons.Equal, driveId);
-            var filter = TableQuery.GenerateFilterCondition(nameof(ObjectIdentifiersEntity.DriveItemId), QueryComparisons.Equal, driveItemId);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filterDrive).Where(filter).Take(1);
-
-            var results = await _storageTableService.ExecuteQuerySegmentedAsync(objectIdentifiersTable, query);
-            if (results == null)
-            {
-                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ObjectIdentifiersTableName}\"");
-            }
-            return results.FirstOrDefault();
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ObjectIdentifiers.FirstOrDefaultAsync(
+                    oi => oi.DriveId == driveId && oi.DriveItemId == driveItemId),
+                nameof(GetObjectIdentifiersAsync)
+            );
         }
 
-        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersAsync(string objectId)
+        public async Task<ObjectIdentifiers?> GetObjectIdentifiersAsync(string objectId)
         {
-            ObjectIdentifiersEntity? objectIdentifiersEntity = null;
+            ObjectIdentifiers? objectIdentifiers = null;
             if (!string.IsNullOrEmpty(_globalSettings.AdditionalObjectId))
-                objectIdentifiersEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(objectId);
+                objectIdentifiers = await GetObjectIdentifiersByAdditionalIdsAsync(objectId);
 
-            if (objectIdentifiersEntity == null)
-                objectIdentifiersEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+            if (objectIdentifiers == null)
+                objectIdentifiers = await GetObjectIdentifiersByObjectIdAsync(objectId);
 
-            if (objectIdentifiersEntity == null)
-                throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
+            if (objectIdentifiers == null)
+                throw new FileNotFoundException($"ObjectIdentifiers (objectId = {objectId}) does not exist!");
 
-            return objectIdentifiersEntity;
+            return objectIdentifiers;
         }
 
-        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByAdditionalIdsAsync(string objectId)
+        private async Task<ObjectIdentifiers?> GetObjectIdentifiersByAdditionalIdsAsync(string objectId)
         {
             ArgumentNullException.ThrowIfNull(objectId);
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
             objectId = objectId.ToUpper().Trim();
-            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(ObjectIdentifiersEntity.AdditionalObjectId), objectId);
+
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ObjectIdentifiers
+                    .FirstOrDefaultAsync(oi => oi.AdditionalObjectId != null && oi.AdditionalObjectId.Equals(objectId)),
+                nameof(GetObjectIdentifiersByAdditionalIdsAsync)
+            );
         }
 
-        private async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityByObjectIdAsync(string objectId)
+        private async Task<ObjectIdentifiers?> GetObjectIdentifiersByObjectIdAsync(string objectId)
         {
             ArgumentNullException.ThrowIfNull(objectId);
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
             objectId = objectId.ToUpper().Trim();
-            return await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(TableEntity.PartitionKey), objectId);
+
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ObjectIdentifiers
+                    .FirstOrDefaultAsync(oi => oi.ObjectId.Equals(objectId)),
+                nameof(GetObjectIdentifiersByObjectIdAsync)
+            );
+        }
+
+        public async Task<ObjectIdentifiers?> GetObjectIdentifiersBySharePointIdsAsync(string siteId, string listId, string listItemId)
+        {
+            ArgumentNullException.ThrowIfNull(siteId);
+            ArgumentNullException.ThrowIfNull(listId);
+            ArgumentNullException.ThrowIfNull(listItemId);
+
+            return await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ObjectIdentifiers
+                    .FirstOrDefaultAsync(oi => oi.SiteId.Equals(siteId) && oi.ListId.Equals(listId) && oi.ListItemId.Equals(listItemId)),
+                nameof(GetObjectIdentifiersBySharePointIdsAsync)
+            );
         }
 
         public async Task<string?> GetObjectIdAsync(ObjectIdentifiers ids)
         {
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
-            var rowKey = ids.SiteId + ids.ListId + ids.ListItemId;
-            var objectIdentifiersEntity = await GetObjectIdentifiersEntityAsync(objectIdentifiersTable, nameof(TableEntity.RowKey), rowKey);
-            return objectIdentifiersEntity?.PartitionKey;
-        }
-
-        public async Task<ObjectIdentifiersEntity?> GetObjectIdentifiersEntityAsync(CloudTable objectIdentifiersTable, string filterPropertyName, string filterGivenValue)
-        {
-            var filter = TableQuery.GenerateFilterCondition(filterPropertyName, QueryComparisons.Equal, filterGivenValue);
-            var query = new TableQuery<ObjectIdentifiersEntity>().Where(filter).Take(1);
-
-            var results = await _storageTableService.ExecuteQuerySegmentedAsync(objectIdentifiersTable, query);
-            if (results == null)
-            {
-                throw new CpsException($"Error while getting entities from table \"{_globalSettings.ObjectIdentifiersTableName}\"");
-            }
-            return results.FirstOrDefault();
+            var storedIds = await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.ObjectIdentifiers
+                    .FirstOrDefaultAsync(oi => oi.SiteId.Equals(ids.SiteId) && oi.ListId.Equals(ids.ListId) && oi.ListItemId.Equals(ids.ListItemId)),
+                nameof(GetObjectIdAsync)
+            );
+            return storedIds?.ObjectId;
         }
 
         public async Task SaveObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
-            var existingEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            if (existingEntity != null) throw new ObjectIdAlreadyExistsException($"File with objectId \"{objectId}\" already exists");
+            var storedIds = await GetObjectIdentifiersByObjectIdAsync(objectId);
+            if (storedIds != null) throw new ObjectIdAlreadyExistsException($"File with objectId \"{objectId}\" already exists");
 
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
             if (!string.IsNullOrEmpty(ids.AdditionalObjectId))
             {
                 ids.AdditionalObjectId = ids.AdditionalObjectId.ToUpper().Trim();
             }
-
-            var document = new ObjectIdentifiersEntity(objectId, ids);
-            await _storageTableService.SaveAsync(objectIdentifiersTable, document);
+            await _dbContext.ObjectIdentifiers.AddAsync(ids);
+            await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.SaveChangesAsync(),
+                nameof(SaveObjectIdentifiersAsync)
+            );
         }
 
         public async Task UpdateObjectIdentifiersAsync(string objectId, ObjectIdentifiers ids)
         {
-            var objectIdentifiersTable = GetObjectIdentifiersTable();
+            var storedIds = await GetObjectIdentifiersByObjectIdAsync(objectId);
+            if (storedIds == null) throw new CpsException($"No existing objectIdentifiers found for {objectId}");
+
             if (!string.IsNullOrEmpty(ids.AdditionalObjectId))
             {
-                ids.AdditionalObjectId = ids.AdditionalObjectId.ToUpper().Trim();
+                storedIds.AdditionalObjectId = ids.AdditionalObjectId.ToUpper().Trim();
             }
-
-            var existingEntity = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
-            if (existingEntity == null) throw new CpsException($"No existing objectIdentifiers found for {objectId}");
-            await _storageTableService.DeleteAsync(objectIdentifiersTable, existingEntity);
-
-            var document = new ObjectIdentifiersEntity(objectId, ids);
-            await _storageTableService.SaveAsync(objectIdentifiersTable, document);
+            storedIds.SiteId = ids.SiteId;
+            storedIds.ListId = ids.ListId;
+            storedIds.ListItemId = ids.ListItemId;
+            storedIds.DriveId = ids.DriveId;
+            storedIds.DriveItemId = ids.DriveItemId;
+            await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.SaveChangesAsync(),
+                nameof(UpdateObjectIdentifiersAsync)
+            );
         }
 
         public async Task SaveAdditionalIdentifiersAsync(string objectId, string additionalIds)
         {
-            var existingEntity = await GetObjectIdentifiersEntityByAdditionalIdsAsync(additionalIds);
-            if (existingEntity != null) throw new ObjectIdAlreadyExistsException($"File with additionalObjectId \"{additionalIds}\" already exists");
+            var storedIds = await GetObjectIdentifiersByAdditionalIdsAsync(additionalIds);
+            if (storedIds != null) throw new ObjectIdAlreadyExistsException($"File with additionalObjectId \"{additionalIds}\" already exists");
 
-            var ids = await GetObjectIdentifiersEntityByObjectIdAsync(objectId);
+            var ids = await GetObjectIdentifiersByObjectIdAsync(objectId);
             if (ids == null) throw new FileNotFoundException($"ObjectIdentifiersEntity (objectId = {objectId}) does not exist!");
-            ids.AdditionalObjectId = additionalIds.ToUpper().Trim();
 
             try
             {
-                var objectIdentifiersTable = GetObjectIdentifiersTable();
-                await _storageTableService.SaveAsync(objectIdentifiersTable, ids);
+                ids.AdditionalObjectId = additionalIds?.ToUpper().Trim();
+                await _databaseHealthService.ExecuteWithWarmupAsync(
+                    async () => await _dbContext.SaveChangesAsync(),
+                    nameof(SaveAdditionalIdentifiersAsync)
+                );
             }
             catch (Exception ex)
             {

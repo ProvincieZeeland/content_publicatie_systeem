@@ -1,11 +1,11 @@
 ﻿using CPS_API.Helpers;
 using CPS_API.Models;
 using CPS_API.Repositories;
+using CPS_API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
-using PnP.Framework.Entities;
+using WebhookSubscription = PnP.Framework.Entities.WebhookSubscription;
 
 namespace CPS_API.Controllers
 {
@@ -16,21 +16,24 @@ namespace CPS_API.Controllers
     {
         private readonly GlobalSettings _globalSettings;
         private readonly IWebHookRepository _webHookRepository;
+        private readonly WebhookNotificationService _webhookNotificationService;
         private readonly ILogger _logger;
 
         public WebHookController(
             IOptions<GlobalSettings> settings,
             IWebHookRepository webHookRepository,
+            WebhookNotificationService webhookNotificationService,
             ILogger<WebHookController> logger)
         {
             _globalSettings = settings.Value;
             _webHookRepository = webHookRepository;
+            _webhookNotificationService = webhookNotificationService;
             _logger = logger;
         }
 
         [HttpPut]
         [Route("Create")]
-        public async Task<IActionResult> Create(DropOffType dropOffType)
+        public async Task<IActionResult> Create(string siteId, string listId, WebhookType webHookType)
         {
             if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
@@ -40,7 +43,7 @@ namespace CPS_API.Controllers
             WebhookSubscription subscription;
             try
             {
-                subscription = await _webHookRepository.CreateWebHookForDropOffAsync(dropOffType);
+                subscription = await _webHookRepository.CreateWebHookAsync(siteId, listId, webHookType);
             }
             catch (Exception ex)
             {
@@ -49,60 +52,41 @@ namespace CPS_API.Controllers
             return Ok(subscription);
         }
 
-        [HttpPost]
-        [AllowAnonymous]
-        [Route("HandleSharePointNotification")]
-        public async Task<IActionResult> HandleSharePointNotification([FromQuery] string? validationToken)
+        [HttpPut]
+        [Route("Extend")]
+        public async Task<IActionResult> Extend(string webUrl, string listId, string subscriptionId, string endpoint)
         {
-            if (HttpContext.Request.Headers.TryGetValue("ClientState", out var clientStateHeader))
+            if (!_globalSettings.WebHookSettings.CreateEnabled)
             {
-                var clientStateHeaderValue = clientStateHeader.FirstOrDefault() ?? string.Empty;
-                if (string.IsNullOrEmpty(clientStateHeaderValue) || !clientStateHeaderValue.Equals(_globalSettings.WebHookSettings.ClientState))
-                {
-                    return StatusCode(403);
-                }
-            }
-            else
-            {
-                return StatusCode(403);
+                return StatusCode(404);
             }
 
-            string? message;
+            DateTime expirationDateTime;
             try
             {
-                var requestBody = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-                var notificationsResponse = JsonConvert.DeserializeObject<ResponseModel<WebHookNotification>>(requestBody);
-                message = await _webHookRepository.HandleSharePointNotificationAsync(validationToken, notificationsResponse);
+                expirationDateTime = await _webHookRepository.ExtendWebHookAsync(webUrl, listId, subscriptionId);
             }
             catch (Exception ex)
             {
-                return this.LogAndThrowInternalServerError(_logger, ex, "Error while handling notification");
+                return this.LogAndThrowInternalServerError(_logger, ex, "Error while updating webhook");
             }
-            if (message == null)
-            {
-                return Ok();
-            }
-            return Ok(message);
+            return Ok(expirationDateTime);
         }
 
         [HttpPut]
-        [Route("HandleDropOffNotification")]
-        public async Task<IActionResult> HandleDropOffNotification(WebHookNotification notification)
+        [Route("HandleWebhookNotificationFromQueue")]
+        public async Task<IActionResult> HandleWebhookNotificationFromQueue(WebHookNotification notification)
         {
-            ListItemsProcessModel processedItems;
+            string message;
             try
             {
-                processedItems = await _webHookRepository.HandleDropOffNotificationAsync(notification);
+                message = await _webhookNotificationService.HandleWebhookNotificationFromQueueAsync(notification);
             }
             catch (Exception ex)
             {
                 return this.LogAndThrowInternalServerError(_logger, ex, "Error while handling notification");
             }
 
-            var message = "Notification proccesed.";
-            message += $" Found {processedItems.processedItemIds.Count + processedItems.notProcessedItemIds.Count} items, ";
-            message += $" {processedItems.processedItemIds.Count} items successfully processed, ";
-            message += $" {processedItems.notProcessedItemIds.Count} items not processed ({String.Join(", ", processedItems.notProcessedItemIds)})";
             return Ok(message);
         }
     }
