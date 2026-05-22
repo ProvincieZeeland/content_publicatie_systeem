@@ -2,7 +2,7 @@
 {
     public partial class ToBePublished
     {
-        public Guid Id { get; set; }
+        public long Id { get; set; }
 
         public string ObjectId { get; set; } = string.Empty;
 

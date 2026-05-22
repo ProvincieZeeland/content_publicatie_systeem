@@ -10,8 +10,8 @@ namespace CPS_API.Models.Configurations
             e.HasKey(x => x.Id).HasName("PK_WebhookSubscription");
 
             e.Property(x => x.Id)
-             .HasColumnType("UNIQUEIDENTIFIER")
-             .HasDefaultValueSql("NEWID()")
+             .HasColumnType("BIGINT")
+             .ValueGeneratedOnAdd()  // Identity kolom
              .IsRequired();
 
             e.Property(x => x.LastChangeToken)

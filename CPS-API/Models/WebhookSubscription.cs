@@ -8,7 +8,7 @@
 
     public partial class WebhookSubscription
     {
-        public Guid Id { get; set; }
+        public long Id { get; set; }
 
         public string? LastChangeToken { get; set; }
 

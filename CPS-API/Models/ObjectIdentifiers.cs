@@ -4,7 +4,7 @@ namespace CPS_API.Models
 {
     public partial class ObjectIdentifiers
     {
-        public Guid? Id { get; set; }
+        public long? Id { get; set; }
 
         public string ObjectId { get; set; } = string.Empty;
 

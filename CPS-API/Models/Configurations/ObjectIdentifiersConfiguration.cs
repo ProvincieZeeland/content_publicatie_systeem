@@ -12,8 +12,8 @@ namespace CPS_API.Models.Configurations
              .HasName("PK_ObjectIdentifiers");
 
             e.Property(x => x.Id)
-             .HasColumnType("UNIQUEIDENTIFIER")
-             .HasDefaultValueSql("NEWID()")
+             .HasColumnType("BIGINT")
+             .ValueGeneratedOnAdd()  // Identity kolom
              .IsRequired();
 
             e.Property(x => x.ObjectId)

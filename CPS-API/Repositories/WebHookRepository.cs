@@ -147,9 +147,7 @@ namespace CPS_API.Repositories
                 string baseUrl = siteUrl.TrimEnd('/');
                 string safeListId = Uri.EscapeDataString(listId);
                 string safeSubscriptionId = Uri.EscapeDataString(subscriptionId);
-                var uriBuilder = new UriBuilder(baseUrl);
-                uriBuilder.Path = $"/_api/web/lists('{safeListId}')/subscriptions('{safeSubscriptionId}')";
-                string requestUrl = uriBuilder.ToString();
+                string requestUrl = $"{baseUrl}/_api/web/lists('{safeListId}')/subscriptions('{safeSubscriptionId}')";
                 HttpRequestMessage request = new HttpRequestMessage(new HttpMethod("PATCH"), requestUrl);
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
