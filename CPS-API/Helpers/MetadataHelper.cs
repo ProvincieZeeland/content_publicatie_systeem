@@ -249,7 +249,6 @@ namespace CPS_API.Helpers
         /// </summary>
         public static LocationMapping? GetLocationMapping(List<LocationMapping> locationMapping, FileInformation metadata)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
 
             return locationMapping.Find(item =>

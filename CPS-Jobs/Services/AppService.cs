@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using CPS_Jobs.Models;
+using CPS_API.Models.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Web;
 

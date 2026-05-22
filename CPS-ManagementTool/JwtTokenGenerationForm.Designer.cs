@@ -123,7 +123,7 @@ namespace CPS_ManagementTool
                 if (openFileDialog.ShowDialog() != DialogResult.OK) return;
 
                 (string password, string clientId) = Prompt.ShowPasswordAndClientIdDialog();
-                if (!string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(clientId))
+                if (!string.IsNullOrEmpty(clientId))
                 {
                     try
                     {
@@ -134,6 +134,9 @@ namespace CPS_ManagementTool
                     {
                         MessageBox.Show($"{JwtTokenGenerationFormConstants.ErrorTitle}: {ex.Message}", JwtTokenGenerationFormConstants.ErrorTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
+                }
+                else {
+                    txtJwt.Text = "INSERT CLIENT ID!";
                 }
             }
         }
@@ -147,7 +150,8 @@ namespace CPS_ManagementTool
 
         private string CreateJwt(X509Certificate2 cert, string clientId)
         {
-            var expiration = DateTimeOffset.Now.AddMonths(1).ToUnixTimeSeconds();
+            var expiration = DateTime.UtcNow.AddMonths(1);
+            var notBefore = DateTime.UtcNow;
 
             var securityKey = new X509SecurityKey(cert);
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256);
@@ -155,12 +159,12 @@ namespace CPS_ManagementTool
             JwtSecurityToken token = handler.CreateJwtSecurityToken(
                 subject: new ClaimsIdentity(new[] {
                     new Claim(JwtTokenGenerationFormConstants.AudTitle, JwtTokenGenerationFormConstants.AudValue),
-                    new Claim(JwtTokenGenerationFormConstants.ExpTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32),
-                    new Claim(JwtTokenGenerationFormConstants.NbfTitle, expiration.ToString(), System.Security.Claims.ClaimValueTypes.Integer32),
                     new Claim(JwtTokenGenerationFormConstants.IssTitle, clientId),
                     new Claim(JwtTokenGenerationFormConstants.SubTitle, clientId),
                     new Claim(JwtTokenGenerationFormConstants.JtiTitle, new Guid().ToString())
                 }),
+                notBefore: notBefore,
+                expires: expiration,
                 signingCredentials: credentials
             );
 

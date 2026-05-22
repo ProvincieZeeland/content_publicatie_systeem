@@ -11,7 +11,6 @@ using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Constants = CPS_API.Models.Constants;
-using GraphDeltaResponse = Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse;
 
 namespace CPS_API.Repositories
 {
@@ -31,12 +30,6 @@ namespace CPS_API.Repositories
 
         Task DeleteFileAsync(string driveId, string driveItemId, bool getAsUser = false);
 
-        Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
-
-        Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false);
-
-        Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false);
-
         Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false);
     }
 
@@ -44,7 +37,6 @@ namespace CPS_API.Repositories
     {
         private readonly GraphServiceClient _graphServiceClient;
         private readonly GraphServiceClient _graphAppServiceClient;
-        private readonly GlobalSettings _globalSettings;
 
         public DriveRepository(
             GraphServiceClient graphServiceClient,
@@ -53,7 +45,6 @@ namespace CPS_API.Repositories
         {
             _graphServiceClient = graphServiceClient;
             _graphAppServiceClient = new GraphServiceClient(new BaseBearerTokenAuthenticationProvider(new AppOnlyAuthenticationProvider(tokenAcquisition, settings)));
-            _globalSettings = settings.Value;
         }
 
         private GraphServiceClient GetGraphServiceClient(bool getAsUser)
@@ -67,7 +58,7 @@ namespace CPS_API.Repositories
             var graphServiceClient = GetGraphServiceClient(getAsUser);
             var drive = await graphServiceClient.Sites[siteId].Lists[listId].Drive.GetAsync(x =>
             {
-                x.QueryParameters.Select = [Constants.SelectId];
+                x.QueryParameters.Select = [Constants.Selectors.Id];
             });
             if (drive == null) throw new CpsException($"Error while getting drive (siteId={siteId}, listId={listId})");
             return drive.Id;
@@ -118,7 +109,7 @@ namespace CPS_API.Repositories
             var graphServiceClient = GetGraphServiceClient(getAsUser);
             var driveItem = await graphServiceClient.Drives[driveId].Items[driveItemId].GetAsync(x =>
             {
-                x.QueryParameters.Select = new[] { Constants.SelectSharePointIds };
+                x.QueryParameters.Select = new[] { Constants.Selectors.SharePointIds };
             });
             if (driveItem == null) throw new CpsException($"Error while getting driveItem (driveId={driveId}, driveItemId={driveItemId})");
             return driveItem;
@@ -213,185 +204,6 @@ namespace CPS_API.Repositories
         {
             var graphServiceClient = GetGraphServiceClient(getAsUser);
             await graphServiceClient.Drives[driveId].Items[driveItemId].DeleteAsync();
-        }
-
-        public async Task<DeltaResponse> GetNewItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
-        {
-            var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
-            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime >= lastSynchronisation).ToList();
-            response.Items = response.Items.Where(item => item.Folder == null).ToList();
-            response.Items = response.Items.OrderBy(item => item.CreatedDateTime).ToList();
-            return response;
-        }
-
-        public async Task<DeltaResponse> GetUpdatedItems(DateTime lastSynchronisation, Dictionary<string, string> tokens, bool getAsUser = false)
-        {
-            var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
-            response.Items = response.Items.Where(item => item.Deleted == null && item.CreatedDateTime < lastSynchronisation && item.LastModifiedDateTime >= lastSynchronisation).ToList();
-            response.Items = response.Items.Where(item => item.Folder == null).ToList();
-            response.Items = response.Items.OrderBy(item => item.LastModifiedDateTime).ToList();
-            return response;
-        }
-
-        public async Task<DeltaResponse> GetDeletedItems(Dictionary<string, string> tokens, bool getAsUser = false)
-        {
-            var response = await GetDeltaForPublicDrivesAsync(tokens, getAsUser);
-            response.Items = response.Items.Where(item => item.Deleted != null).ToList();
-            response.Items = response.Items.Where(item => item.Folder == null).ToList();
-            response.Items = response.Items.OrderBy(item => item.LastModifiedDateTime).ToList();
-            return response;
-        }
-
-        private async Task<DeltaResponse> GetDeltaForPublicDrivesAsync(Dictionary<string, string> tokens, bool getAsUser = false)
-        {
-            // Get all public drives
-            var driveIds = _globalSettings.PublicDriveIds;
-            if (driveIds == null || driveIds.Count == 0) throw new CpsException("Drives not found");
-
-            // For each drive:
-            // Call graph delta and get changed items since time
-            var driveItems = new List<DeltaDriveItem>();
-            var deltaLinks = new Dictionary<string, string>();
-            foreach (var driveId in driveIds)
-            {
-                var response = await GetDeltaResponseAsync(driveId, tokens, getAsUser);
-                driveItems.AddRange(response.driveItems);
-                if (response.deltaLink != null) deltaLinks.Add(driveId, response.deltaLink!);
-            }
-
-            // Delta can contain doubles
-            driveItems = driveItems.DistinctBy(item => item.DriveId + item.Id).ToList();
-
-            return new DeltaResponse(
-                items: driveItems,
-                deltaLinks: deltaLinks
-            );
-        }
-
-        private async Task<(List<DeltaDriveItem> driveItems, string? deltaLink)> GetDeltaResponseAsync(string driveId, Dictionary<string, string> tokens, bool getAsUser = false)
-        {
-            var driveItems = new List<DeltaDriveItem>();
-            GraphDeltaResponse delta;
-            try
-            {
-                var deltaLink = await GetDeltaLinkForDelta(tokens, driveId, getAsUser);
-                if (deltaLink == null) throw new CpsException("Error while getting query token");
-
-                try
-                {
-                    delta = await GetDeltaAsync(driveId, deltaLink, getAsUser);
-                }
-                catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Gone && ex.Error != null && ex.Error.Code == Constants.ResyncRequiredCode)
-                {
-                    // Http 410 error occurs when requested resource is no longer available at the server.
-                    // There may be cases when the service can't provide a list of changes for a given token
-                    // (for example, if a client tries to reuse an old token after being disconnected for a long time,
-                    // or if server state has changed and a new token is required).
-                    // This is an indication that the application must restart with a full synchronization of the target tenant.
-                    // This usually happens to prevent data inconsistency due to internal maintenance or migration of the target tenant.
-                    // Delta tokens are only valid for a specific period before the client application needs to run a full synchronization again.
-                    // https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0&tabs=http#response-2
-                    delta = await GetDeltaAsync(driveId, getAsUser: getAsUser);
-                }
-                if (delta.Value == null) throw new CpsException($"Error while getting delta (driveId:{driveId})");
-                driveItems.AddRange(delta.Value.Select(i => MapDriveItemToDeltaItem(driveId, i)));
-
-                // Fetch additional pages for delta; we get max of 500 per request by default
-                while (delta.OdataNextLink != null)
-                {
-                    delta = await GetNextPageForDeltaAsync(delta, driveId, getAsUser);
-                    if (delta.Value == null) throw new CpsException($"Error while getting next delta (driveId:{driveId},OdataNextLink:{delta.OdataNextLink})");
-                    driveItems.AddRange(delta.Value.Select(i => MapDriveItemToDeltaItem(driveId, i)));
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting changed driveItems with delta", ex);
-            }
-
-            if (delta.OdataDeltaLink != null) return (driveItems, delta.OdataDeltaLink);
-            return (driveItems, null);
-        }
-
-        private async Task<string?> GetDeltaLinkForDelta(Dictionary<string, string> tokens, string driveId, bool getAsUser = false)
-        {
-            var gettingDeltaLinkSucceeded = tokens.TryGetValue(driveId, out var deltaLink);
-            if (!gettingDeltaLinkSucceeded)
-            {
-                return null;
-            }
-
-            // Transition to Graph SDK 5 requires an other format for deltaLink.
-            // TODO: This validation is only required for the first time using the new graph sdk, after this the code can be deleted.
-            if (Uri.TryCreate(deltaLink, UriKind.Absolute, out var outUri)
-               && (outUri.Scheme == Uri.UriSchemeHttp || outUri.Scheme == Uri.UriSchemeHttps))
-            {
-                return deltaLink;
-            }
-
-            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
-            return $"https://graph.microsoft.com/v1.0/drives/{driveId}/items/{rootDriveItemId}/delta()?token={deltaLink}";
-        }
-
-        private async Task<GraphDeltaResponse> GetDeltaAsync(string driveId, string? deltaLink = null, bool getAsUser = false)
-        {
-            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
-
-            GraphDeltaResponse? deltaResponse;
-            if (string.IsNullOrWhiteSpace(deltaLink))
-            {
-                // Initial call does not contain a nextLink.
-                var graphServiceClient = GetGraphServiceClient(getAsUser);
-                deltaResponse = await graphServiceClient.Drives[driveId].Items[rootDriveItemId].Delta.GetAsDeltaGetResponseAsync();
-            }
-            else
-            {
-                return await GetDeltaByLinkAsync(driveId, rootDriveItemId, deltaLink, getAsUser);
-            }
-            if (deltaResponse == null) throw new CpsException($"Error while getting delta (driveId:{driveId},rootDriveItemId:{rootDriveItemId})");
-            return deltaResponse;
-        }
-
-        private async Task<GraphDeltaResponse> GetNextPageForDeltaAsync(GraphDeltaResponse delta, string driveId, bool getAsUser = false)
-        {
-            if (string.IsNullOrWhiteSpace(delta.OdataNextLink)) throw new CpsException($"Error while getting next page for delta (driveId:{driveId})");
-
-            string rootDriveItemId = await GetRootDriveItemIdAsync(driveId, getAsUser);
-
-            return await GetDeltaByLinkAsync(driveId, rootDriveItemId, delta.OdataNextLink, getAsUser);
-        }
-
-        private async Task<string> GetRootDriveItemIdAsync(string driveId, bool getAsUser = false)
-        {
-            var graphServiceClient = GetGraphServiceClient(getAsUser);
-
-            var rootDriveItem = await graphServiceClient.Drives[driveId].Root.GetAsync();
-            if (rootDriveItem == null || string.IsNullOrWhiteSpace(rootDriveItem.Id)) throw new CpsException($"Error while getting root for delta (driveId:{driveId})");
-            return rootDriveItem.Id;
-        }
-
-        private async Task<GraphDeltaResponse> GetDeltaByLinkAsync(string driveId, string rootDriveItemId, string link, bool getAsUser = false)
-        {
-            var graphServiceClient = GetGraphServiceClient(getAsUser);
-            var deltaResponse = await graphServiceClient.Drives[driveId].Items[rootDriveItemId].Delta.WithUrl(link).GetAsDeltaGetResponseAsync();
-            if (deltaResponse == null) throw new CpsException($"Error while getting delta (driveId:{driveId},rootDriveId:{rootDriveItemId},link:{link})");
-            return deltaResponse;
-        }
-
-        private static DeltaDriveItem MapDriveItemToDeltaItem(string driveId, DriveItem item)
-        {
-            if (item == null) return new DeltaDriveItem();
-
-            return new DeltaDriveItem
-            {
-                Id = item.Id,
-                DriveId = driveId,
-                Name = item.Name,
-                Folder = item.Folder,
-                CreatedDateTime = item.CreatedDateTime?.DateTime,
-                LastModifiedDateTime = item.LastModifiedDateTime?.DateTime,
-                Deleted = item.Deleted
-            };
         }
 
         public async Task<Stream> GetStreamAsync(string driveId, string driveItemId, bool getAsUser = false)

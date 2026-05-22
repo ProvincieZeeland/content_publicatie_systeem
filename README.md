@@ -1,36 +1,49 @@
 # Content Publicatie Systeem
 
-.NET 8.0 Web Application which processes files in SharePoint developed by _I-Experts_ for _Provincie Zeeland_.
+.NET 8.0 Web Application that processes files in SharePoint, developed by _I-Experts_ for _Provincie Zeeland_.
 
-The Content Publicatie Systeem is fed from various sources. Archive management and preparatory actions such as anonymizing and OCR-ing documents take place in the source systems, for example, Zaaksysteem.
+The Content Publicatie Systeem is supplied with content from various sources. Archive management and preparatory actions such as anonymization and OCR of documents are performed in the source systems, for example, Zaaksysteem.
 
-The goal of the Content Publicatie Systeem is to make official content available to internal and external channels during the period that the content must be published: from the addition of new content to the destruction date.
+The goal of the Content Publicatie Systeem is to make official content available to internal and external channels during the required publication period: from the addition of new content to its destruction date.
 
 ## Prerequisites
 
-- Azure App registration
+- Azure App Registration
 - Azure Key Vault
 - Azure Storage account
+- Azure SQL Database
+
+## Storage Account
+
+- File contents and metadata are stored in the Storage Account.
+
+## Database
+
+- The ObjectId and its related SharePoint IDs are stored in the SQL database.
+- Publication details are stored in the SQL database.
+- Webhook data is stored in the SQL database.
 
 ## Getting files as user
 
-With this Web Application a logged in user can get a file and its metadata.
+With this Web Application an authenticated user can get a file and its metadata.
 
 ## Synchronisation
 
-Every 15 minutes an Azure Function will run to synchronise public files. If the public file is ready for publication then these public file will be saved in the Storage account and send to the callback url.
+SharePoint sends a webhook notification when changes occur on the public library ([HandleSharePointNotification](#handlesharepointnotification)). When a file is ready for publication, it is stored in the Storage Account and sent to the callback URL.
+It is possible to have multilple public libraries in SharePoint. Each library has its own webhook.
 
 ## Publication
 
-Every day an Azure Function will run to check files that need to be published. The publication is determined from the saves publication date in SharePoint.
+An Azure Function checks daily for files to publish, based on the publication date in SharePoint. Publication status and scheduling are tracked in the SQL database.
 
 ## DropOff
 
-This Web Application handles files from a DropOff location in SharePoint. SharePoint will send a webhook notification to identify that something has changed ([HandleSharePointNotification](#handlesharepointnotification)). The Application will put this notification on a queue in the Storage account. One by one these notifications will be handled by the Azure Function. The Azure Funtion will call the Application to handle the notifications ([HandleDropOffNotification](#handledropoffnotification)).
+SharePoint sends a webhook notification when changes occur on the DropOff library ([HandleSharePointNotification](#handlesharepointnotification)). The application places this notification on a queue in the Storage account. Notifications are processed one by one by the Azure Function, which calls the application to handle them ([HandleDropOffNotification](#handledropoffnotification)).
+It is possible to have multiple DropOff libraries in SharePoint. Each library has its own webhook.
 
-## Endpoints
+## API Endpoints
 
-The API endpoints can be divided into four parts; objectId, files, export and webhook
+The API endpoints are grouped into four categories: objectId, files, export, and webhook.
 
 - ObjectId
   - [CreateId](#createid)
@@ -44,95 +57,72 @@ The API endpoints can be divided into four parts; objectId, files, export and we
   - [UpdateLargeFileContent](#updatelargefilecontent)
   - [UpdateFileName](#updatefilename)
 - Export
-  - [SynchroniseNewDocuments](#synchronisenewdocuments)
-  - [SynchroniseUpdatedDocuments](#synchroniseupdateddocuments)
-  - [SynchroniseDeletedDocuments](#synchronisedeleteddocuments)
+  - [SynchroniseToBePublishedDocuments](#synchronisetobepublisheddocuments)
 - Webhook
   - [CreateWebhook](#createwebhook)
-  - [HandleSharePointNotification](#handlesharepointnotification)
-  - [HandleDropOffNotification](#handledropoffnotification)
+  - [HandleWebhookNotificationFromQueue](#handlewebhooknotificationfromqueue)
 
 ### CreateId
 
-Create a new ObjectId.\
-DriveId and driveItemId requierd. Or siteId, listId and listItemId required.
+Create a new ObjectId.  
+Requires either DriveId and DriveItemId, or SiteId, ListId, and ListItemId.  
+The ObjectId is stored in the SQL database.
 
-### GetFileURL
+### GetFileUrl
 
-Get file url by objectId or additionalObjectId. Allowed for logged in user.
+Retrieve a file URL by objectId or additionalObjectId. Allowed for authenticated users.
 
 ### GetFileMetadata
 
-Get metadata for file by ObjectId. Allowed for logged in user.
+Retrieve metadata for a file by ObjectId. Allowed for authenticated users.
 
 ### CreateFile
 
-Create file by content and metadata.
+Create a file with content and metadata.
 
 ### CreateLargeFile
 
-Create large file by content.
+Create a large file by uploading its content.
 
 ### UpdateFileContent
 
-Update content for file by objectId.
+Update the content of a file by objectId.
 
 ### UpdateLargeFileContent
 
-Update content for large file by objectId.
+Update the content of a large file by objectId.
 
 ### UpdateFileMetadata
 
-Update metadata for file by objectId.
+Update the metadata of a file by objectId.
 
 ### UpdateFileName
 
-Update fileName for file by objectId.
+Update the file name of a file by objectId.
 
-### SynchroniseNewDocuments
+### SynchroniseToBePublishedDocuments
 
-Synchronise new documents
+Synchronize documents ready for publication:
 
-- Upload content and metadata to storage container
-- Send new file to callback
-
-### SynchroniseUpdatedDocuments
-
-Synchronise updated documents
-
-- Update content and metadata in storage container
-- Send updated file to callback
-
-### SynchroniseDeletedDocuments
-
-Synchronise deleted documents
-
-- Delete content and metadata from storage container
-- Send deleted file to callback
+- Upload content and metadata to the storage container.
+- Notify the callback with the new file.
 
 ### CreateWebhook
 
-Create a new webhook for DropOff list.
+Create a new webhook for a SharePoint list.
 
-### HandleSharePointNotification
+### HandleWebhookNotificationFromQueue
 
-Handle Webhook notification from SharePoint
+Handle webhook notifications from the queue (triggered by the Azure Webhook Function):
 
-- If a validationToken is send then return this token
-- If notifications are send then put them on a queue
-
-### HandleDropOffNotification
-
-Handle DropOff notification from queue (placed with HandleSharePointNotification).
-
-- Get files to process
-- For each file
+- Retrieve files to process
+- For each file:
   - Create ObjectId
-  - Move file to the correct site and list
+  - Move the file to the correct site and list
 
 ## Author
 
-_I-Experts_ commisioned by _Provincie Zeeland_
+_I-Experts_ commissioned by _Provincie Zeeland_
 
 ## License
 

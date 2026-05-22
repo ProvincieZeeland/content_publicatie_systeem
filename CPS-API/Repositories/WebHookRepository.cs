@@ -1,95 +1,59 @@
 ﻿using System.Net.Http.Headers;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using CPS_API.Helpers;
+using CPS_API.Database;
 using CPS_API.Models;
 using CPS_API.Models.Exceptions;
 using CPS_API.Services;
-using Microsoft.ApplicationInsights;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
-using PnP.Framework.Entities;
-using Constants = CPS_API.Models.Constants;
-using GraphListItem = Microsoft.Graph.Models.ListItem;
 using GraphSite = Microsoft.Graph.Models.Site;
+using PnPWebhookSubscription = PnP.Framework.Entities.WebhookSubscription;
+using WebHookType = CPS_API.Models.WebhookType;
 
 namespace CPS_API.Repositories
 {
     public interface IWebHookRepository
     {
-        Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType);
-
-        Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType);
+        Task<PnPWebhookSubscription> CreateWebHookAsync(string siteId, string listId, WebHookType webHookType);
 
         Task<bool> DeleteWebHookAsync(GraphSite site, string listId, string subscriptionId);
 
-        Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse);
-
-        Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification);
+        Task<DateTime> ExtendWebHookAsync(string webUrl, string listId, string subscriptionId);
     }
 
     public class WebHookRepository : IWebHookRepository
     {
-        private readonly TelemetryClient _telemetryClient;
-
-        private readonly IDriveRepository _driveRepository;
-        private readonly IListRepository _listRepository;
-        private readonly IObjectIdRepository _objectIdRepository;
-        private readonly IMetadataRepository _metadataRepository;
-        private readonly IFilesRepository _filesRepository;
-        private readonly ISettingsRepository _settingsRepository;
         private readonly ISharePointRepository _sharePointRepository;
-
-        private readonly StorageTableService _storageTableService;
-        private readonly EmailService _emailService;
         private readonly CertificateService _certificateService;
-
         private readonly GlobalSettings _globalSettings;
+        private readonly CpsDbContext _dbContext;
+        private readonly IDatabaseHealthService _databaseHealthService;
 
-        private readonly ILogger _logger;
-
-        public WebHookRepository(TelemetryClient telemetryClient, IDriveRepository driveRepository, IListRepository listRepository, IObjectIdRepository objectIdRepository, IMetadataRepository metadataRepository, IFilesRepository filesRepository, ISettingsRepository settingsRepository, ISharePointRepository sharePointRepository, StorageTableService storageTableService, EmailService emailService, CertificateService certificateService, IOptions<GlobalSettings> settings, ILogger<WebHookRepository> logger)//NOSONAR
+        public WebHookRepository(ISharePointRepository sharePointRepository, CertificateService certificateService, IOptions<GlobalSettings> settings, CpsDbContext dbContext, IDatabaseHealthService databaseHealthService)//NOSONAR
         {
-            _telemetryClient = telemetryClient;
-            _driveRepository = driveRepository;
-            _listRepository = listRepository;
-            _objectIdRepository = objectIdRepository;
-            _metadataRepository = metadataRepository;
-            _filesRepository = filesRepository;
-            _settingsRepository = settingsRepository;
             _sharePointRepository = sharePointRepository;
-            _storageTableService = storageTableService;
             _certificateService = certificateService;
-            _emailService = emailService;
             _globalSettings = settings.Value;
-            _logger = logger;
+            _dbContext = dbContext;
+            _databaseHealthService = databaseHealthService;
         }
 
-        #region Create/Edit/Delete Webhook
-
-        public async Task<WebhookSubscription> CreateWebHookForDropOffAsync(DropOffType dropOffType)
+        public async Task<PnPWebhookSubscription> CreateWebHookAsync(string siteId, string listId, WebHookType webHookType)
         {
-            var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
-            if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
+            ArgumentNullException.ThrowIfNullOrWhiteSpace(siteId);
+            ArgumentNullException.ThrowIfNullOrWhiteSpace(listId);
+
             var webUrl = await _sharePointRepository.GetSiteWebUrlAsync(siteId);
             if (string.IsNullOrWhiteSpace(webUrl)) throw new CpsException("Error while getting webhook site");
 
-            var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            var accessToken = await authenticationManager.GetAccessTokenAsync(webUrl);
-            if (accessToken == null) throw new CpsException("Error while getting accessToken");
-
-            var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
-            if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
+            string accessToken = await GetAccessTokenAsync(webUrl);
             var subscription = await AddListWebHookAsync(webUrl, listId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
             if (subscription == null) throw new CpsException("Error while adding webhook");
 
             // Save expiration date and subscriptionId for extending webhook.
-            var newSettings = new Dictionary<string, object?> {
-                {dropOffType.GetDropOffSubscriptionId(), subscription.Id },
-                { dropOffType.GetDropOffSubscriptionExpirationDateTime(), subscription.ExpirationDateTime }
-            };
-            await _settingsRepository.SaveSettingsAsync(newSettings);
+            await UpsertWebhookSubscriptionAsync(subscription.Id, subscription.ExpirationDateTime, webHookType);
 
             return subscription;
         }
@@ -104,18 +68,20 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
         /// <returns>subscription ID of the new web hook</returns>
-        private static async Task<WebhookSubscription?> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        private static async Task<PnPWebhookSubscription?> AddListWebHookAsync(string siteUrl, string listId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
             string? responseString = null;
             using (var httpClient = new HttpClient())
             {
-                string requestUrl = String.Format("{0}/_api/web/lists('{1}')/subscriptions", siteUrl, listId);
+                string baseUrl = siteUrl.TrimEnd('/');
+                string safeListId = Uri.EscapeDataString(listId);
+                string requestUrl = $"{baseUrl}/_api/web/lists('{safeListId}')/subscriptions";
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new WebhookSubscription()
+                    new PnPWebhookSubscription()
                     {
                         Resource = String.Format("{0}/_api/web/lists('{1}')", siteUrl, listId.ToString()),
                         NotificationUrl = webHookEndPoint,
@@ -137,34 +103,31 @@ namespace CPS_API.Repositories
                 }
             }
 
-            return await Task.Run(() => JsonConvert.DeserializeObject<WebhookSubscription>(responseString));
+            return await Task.Run(() => JsonConvert.DeserializeObject<PnPWebhookSubscription>(responseString));
         }
 
-        public async Task<DateTime?> ExtendWebHookForDropOffAsync(DropOffType dropOffType)
+        public async Task<DateTime> ExtendWebHookAsync(string webUrl, string listId, string subscriptionId)
         {
-            var siteId = dropOffType.GetDropOffSiteId(_globalSettings.WebHookSettings.WebHookLists);
-            if (string.IsNullOrWhiteSpace(siteId)) throw new CpsException("Error while getting webhook site");
-            var webUrl = await _sharePointRepository.GetSiteWebUrlAsync(siteId);
             if (string.IsNullOrWhiteSpace(webUrl)) throw new CpsException("Error while getting webhook site");
-
-            var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            var accessToken = await authenticationManager.GetAccessTokenAsync(webUrl);
-            if (accessToken == null) throw new CpsException("Error while getting accessToken");
-
-            var listId = dropOffType.GetDropOffListId(_globalSettings.WebHookSettings.WebHookLists);
             if (string.IsNullOrWhiteSpace(listId)) throw new CpsException("Error while getting webhook list");
+            if (string.IsNullOrWhiteSpace(subscriptionId)) throw new CpsException("Error while getting subscriptionId for webhook");
 
-            var subscriptionId = await _settingsRepository.GetSetting<string>(dropOffType.GetDropOffSubscriptionId());
-            if (subscriptionId == null) throw new CpsException("Error while getting subscriptionId for webhook");
-
-            var expirationDateTime = await UpdateListWebHookAsync(webUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
-            if (expirationDateTime == null) throw new CpsException("Error while adding webhook");
+            string accessToken = await GetAccessTokenAsync(webUrl);
+            DateTime expirationDateTime = await UpdateListWebHookAsync(webUrl, listId, subscriptionId, _globalSettings.WebHookSettings.EndPoint, accessToken, _globalSettings.WebHookSettings.ClientState);
 
             // Save expiration date for renewing webhook.
-            await _settingsRepository.SaveSettingAsync(dropOffType.GetDropOffSubscriptionExpirationDateTime(), expirationDateTime);
+            await UpsertWebhookSubscriptionAsync(subscriptionId, expirationDateTime);
 
             return expirationDateTime;
+        }
+
+        private async Task<string> GetAccessTokenAsync(string webUrl)
+        {
+            X509Certificate2? certificate = await _certificateService.GetCertificateAsync();
+            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
+            string accessToken = await authenticationManager.GetAccessTokenAsync(webUrl);
+            if (accessToken == null) throw new CpsException("Error while getting accessToken");
+            return accessToken;
         }
 
         /// <summary>
@@ -177,18 +140,21 @@ namespace CPS_API.Repositories
         /// <param name="accessToken">Access token to authenticate against SharePoint</param>
         /// <returns>true if succesful, exception in case something went wrong</returns>
         /// <param name="validityInMonths">Optional web hook validity in months, defaults to 3 months, max is 6 months</param>
-        public async Task<DateTime?> UpdateListWebHookAsync(string siteUrl, string listId, string subscriptionId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
+        private static async Task<DateTime> UpdateListWebHookAsync(string siteUrl, string listId, string subscriptionId, string webHookEndPoint, string accessToken, string webHookClientState, int validityInMonths = 3)
         {
             using (var httpClient = new HttpClient())
             {
-                string requestUrl = String.Format("{0}/_api/web/lists('{1}')/subscriptions('{2}')", siteUrl, listId, subscriptionId);
+                string baseUrl = siteUrl.TrimEnd('/');
+                string safeListId = Uri.EscapeDataString(listId);
+                string safeSubscriptionId = Uri.EscapeDataString(subscriptionId);
+                string requestUrl = $"{baseUrl}/_api/web/lists('{safeListId}')/subscriptions('{safeSubscriptionId}')";
                 HttpRequestMessage request = new HttpRequestMessage(new HttpMethod("PATCH"), requestUrl);
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
                 var expirationDateTime = DateTime.Now.AddMonths(validityInMonths).ToUniversalTime();
                 request.Content = new StringContent(JsonConvert.SerializeObject(
-                    new WebhookSubscription()
+                    new PnPWebhookSubscription()
                     {
                         ExpirationDateTime = expirationDateTime,
                         NotificationUrl = webHookEndPoint,
@@ -214,14 +180,7 @@ namespace CPS_API.Repositories
         {
             if (string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while deleting webhook: site webUrl unknown");
 
-            var certificate = await _certificateService.GetCertificateAsync();
-            using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
-            var accessToken = await authenticationManager.GetAccessTokenAsync(site.WebUrl);
-            if (accessToken == null)
-            {
-                throw new CpsException("Error while deleting accessToken");
-            }
-
+            string accessToken = await GetAccessTokenAsync(site.WebUrl);
             return await DeleteListWebHookAsync(site.WebUrl, listId, subscriptionId, accessToken);
         }
 
@@ -256,294 +215,30 @@ namespace CPS_API.Repositories
             }
         }
 
-        #endregion Create/Edit/Delete Webhook
-
-        #region Handle SharePoint Notification
-
-        /// <summary>
-        /// When adding a webhook respond with given validation token.
-        /// 
-        /// Webhook sends notification when something changes in the list.
-        /// Put this notification on a queue, so response time remains within 5 seconds.
-        /// </summary>
-        public async Task<string?> HandleSharePointNotificationAsync(string? validationToken, ResponseModel<WebHookNotification>? notificationsResponse)
+        public async Task UpsertWebhookSubscriptionAsync(string subscriptionId, DateTime subscriptionExpirationDate, WebhookType? webhookType = null)
         {
-            _telemetryClient.TrackTrace($"Webhook endpoint triggered!");
-
-            // If a validation token is present, we need to respond within 5 seconds by
-            // returning the given validation token. This only happens when a new
-            // webhook is being added
-            if (validationToken != null)
-            {
-                _telemetryClient.TrackTrace($"Validation token {validationToken} received");
-                return validationToken;
-            }
-
-            _telemetryClient.TrackTrace("SharePoint triggered our webhook");
-
-            if (notificationsResponse == null)
-            {
-                _telemetryClient.TrackTrace($"NotificationsResponse is null");
-                return null;
-            }
-
-            var notifications = notificationsResponse.Value;
-            _telemetryClient.TrackTrace($"Found {notifications.Count} notifications");
-
-            if (notifications.Count > 0)
-            {
-                _telemetryClient.TrackTrace($"Processing notifications...");
-                foreach (var notification in notifications)
-                {
-                    await AddNotificationToQueueAsync(notification);
-                }
-            }
-
-            // if we get here we assume the request was well received
-            return null;
-        }
-
-        private async Task AddNotificationToQueueAsync(WebHookNotification notification)
-        {
-            var queue = await _storageTableService.GetQueue("sharepointlistwebhooknotifications");
-            var message = JsonConvert.SerializeObject(notification);
-            _telemetryClient.TrackTrace($"Before adding a message to the queue. Message content: {message}");
-            await queue.AddMessageAsync(new CloudQueueMessage(message));
-            _telemetryClient.TrackTrace($"Message added");
-        }
-
-        #endregion Handle Notification
-
-        #region Handle DropOff Notification
-
-        /// <summary>
-        /// Handle the webhook notification from a queue.
-        ///  - Get the changes in list from the notification.
-        ///  - Process the changes
-        ///     - Check if document must me processed
-        ///     - Add or update the document in the right list
-        ///     - Set status in DropOff to processed
-        ///  - Keep last changetoken for next notification
-        /// </summary>
-        public async Task<ListItemsProcessModel> HandleDropOffNotificationAsync(WebHookNotification notification)
-        {
-            var site = await _sharePointRepository.GetSiteByRelativeUrlAsync(notification.SiteUrl);
-            if (string.IsNullOrWhiteSpace(site.Id) || string.IsNullOrWhiteSpace(site.WebUrl)) throw new CpsException($"Error while getting site (SiteUrl = {notification.SiteUrl})");
-
-            var dropOffList = _globalSettings.WebHookSettings.WebHookLists.Find(item => site.Id.Contains(item.SiteId) && item.ListId == notification.Resource);
-            if (dropOffList == null) throw new CpsException($"Error while getting list for DropOff (siteId = {site.Id}, listId = {notification.Resource})");
-
-            // Get changes
-            var changeToken = await _settingsRepository.GetSetting<string>(dropOffList.DropOffType.GetDropOffLastChangeToken());
-            if (string.IsNullOrWhiteSpace(changeToken))
-            {
-                _telemetryClient.TrackTrace("Change token is empty, attempting to retrieve whole change history.");
-            }
-            var changes = await _listRepository.GetListAndFilteredChangesAsync(site.WebUrl, notification.Resource, changeToken);
-
-            // Process the changes
-            var processedItems = await ProccessListItemsAsync(site.Id, notification.Resource, changes.Items);
-            await _settingsRepository.SaveSettingAsync(dropOffList.DropOffType.GetDropOffLastChangeToken(), changes.NewChangeToken);
-
-            // Extend the webhook when needed
-            // If the webhook is about to expire within the coming 7 days then prolong it
-            if (notification.ExpirationDateTime.AddDays(-7) < DateTime.Now)
-            {
-                await ExtendWebHookForDropOffAsync(dropOffList.DropOffType);
-            }
-
-            return processedItems;
-        }
-
-        #region Process Changes
-
-        /// <summary>
-        /// Process documents from DropOff
-        ///  - Check if document is complete for processing
-        ///  - Add or update the document in the right list
-        /// </summary>
-        private async Task<ListItemsProcessModel> ProccessListItemsAsync(string siteId, string listId, List<SharePointListItemDelta> items)
-        {
-            ListItemsProcessModel response = new();
-            response.processedItemIds = [];
-            response.notProcessedItemIds = [];
-
-            var itemIds = items.Select(item => item.ListItemId);
-            foreach (var listItemId in itemIds)
-            {
-                try
-                {
-                    // Get ListItem and ids
-                    var listItem = await _listRepository.GetListItemAsync(siteId, listId, listItemId.ToString());
-
-                    // Check if listitem must me processed
-                    var dropOffMetadata = _metadataRepository.GetDropOffMetadata(listItem);
-                    if (!dropOffMetadata.IsComplete || (dropOffMetadata.Status != null && dropOffMetadata.Status.Equals(Constants.DropOffMetadataStatusProcessed, StringComparison.InvariantCultureIgnoreCase)))
-                    {
-                        continue;
-                    }
-
-                    // Process listitem
-                    var isProcessed = await ProcessListItemAndSendMailAsync(siteId, listId, listItem);
-                    if (isProcessed)
-                    {
-                        response.processedItemIds.Add(listItem.Id);
-                    }
-                    else
-                    {
-                        response.notProcessedItemIds.Add(listItem.Id);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error while processing listItem {ListItemId}", listItemId);
-                    response.notProcessedItemIds.Add(listItemId.ToString());
-                }
-            }
-            return response;
-        }
-
-        /// <summary>
-        /// - Create or update the document in the right list
-        /// - Update document in DropOff
-        ///      - Succesfull -> Status 'Verwerkt'
-        ///      - Unsuccesfull -> Status 'Er gaat iets mis'
-        /// - Send mail to creater
-        /// </summary>
-        private async Task<bool> ProcessListItemAndSendMailAsync(string siteId, string listId, GraphListItem listItem)
-        {
-            if (string.IsNullOrWhiteSpace(listItem.Id)) throw new CpsException($"Error while processing listItem: listItem ID unknown");
-
-            // DropOff document metadata
-            // DropOff does not have external references
-            FileInformation metadata;
-            try
-            {
-                var ids = await _objectIdRepository.GetObjectIdentifiersAsync(siteId, listId, listItem.Id);
-                metadata = await _metadataRepository.GetMetadataWithoutExternalReferencesAsync(listItem, ids, getObjectId: true);
-            }
-            catch (Exception ex)
-            {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to get metadata for DropOff file.", ex);
-                return false;
-            }
-
-            // New location document metadata
-            FileInformation newMetadata;
-            try
-            {
-                newMetadata = metadata.clone();
-                newMetadata.Ids = await GetIdsForNewLocationAsync(metadata);
-            }
-            catch (Exception ex)
-            {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to get new metadata for DropOff file.", ex, metadata);
-                return false;
-            }
-            if (metadata.Ids == null || string.IsNullOrEmpty(metadata.Ids.DriveId) || string.IsNullOrEmpty(metadata.Ids.DriveItemId))
-            {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to process DropOff file.", metadata: metadata);
-                return false;
-            }
-
-            try
-            {
-                var stream = await _driveRepository.GetStreamAsync(metadata.Ids.DriveId!, metadata.Ids.DriveItemId!);
-                metadata.Ids.ObjectId = await CreateOrUpdateFileAsync(newMetadata, stream);
-                await _metadataRepository.UpdateDropOffMetadataAsync(true, "Verwerkt", metadata.Ids);
-            }
-            catch (Exception ex)
-            {
-                await LogErrorAndSendMailAsync(siteId, listId, listItem, "Failed to process DropOff file.", ex, metadata);
-                return false;
-            }
-
-            _emailService.GetAuthorEmailAndSendMailAsync("DropOff Bestand succesvol verwerkt: " + metadata.Ids.ObjectId, $"Het bestand \"{metadata.FileName}\" is succesvol verwerkt en nu beschikbaar op de doellocatie", listItem);
-            return true;
-        }
-
-        /// <summary>
-        /// Classification and source determine new location for DropOff document.
-        /// </summary>
-        private async Task<ObjectIdentifiers?> GetIdsForNewLocationAsync(FileInformation metadata)
-        {
-            if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
-            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-
-            var locationMapping = _globalSettings.LocationMapping.Find(item =>
-                item.Classification.Equals(metadata.AdditionalMetadata.Classification, StringComparison.OrdinalIgnoreCase)
-                && item.Source.Equals(metadata.AdditionalMetadata.Source, StringComparison.OrdinalIgnoreCase)
+            var webhookSubscription = await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.WebhookSubscription.FirstOrDefaultAsync(ws => ws.SubscriptionId.Equals(subscriptionId)),
+                nameof(UpsertWebhookSubscriptionAsync)
             );
-            if (locationMapping == null)
+            if (webhookSubscription == null)
             {
-                return null;
-            }
-
-            var newLocationIds = new ObjectIdentifiers();
-            newLocationIds.SiteId = locationMapping.SiteId;
-            newLocationIds.ListId = locationMapping.ListId;
-            newLocationIds.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
-            newLocationIds.ObjectId = metadata.Ids.ObjectId;
-            if (newLocationIds.ObjectId != null)
-            {
-                newLocationIds = await _objectIdRepository.FindMissingIds(newLocationIds);
-            }
-            return newLocationIds;
-        }
-
-        private async Task<string?> CreateOrUpdateFileAsync(FileInformation metadata, Stream stream)
-        {
-            if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-
-            var isNewFile = metadata.Ids.ObjectId == null;
-            if (isNewFile)
-            {
-                var spoIds = await _filesRepository.CreateFileByStreamAsync(metadata, stream);
-                return spoIds.ObjectId;
+                if (webhookType == null) throw new CpsException("Error while upserting webhook subscription: webhookType is required for new subscription");
+                await _dbContext.WebhookSubscription.AddAsync(new WebhookSubscription
+                {
+                    SubscriptionId = subscriptionId,
+                    WebhookType = webhookType.Value,
+                    SubscriptionExpirationDateTime = subscriptionExpirationDate,
+                });
             }
             else
             {
-                await _metadataRepository.UpdateAllMetadataAsync(metadata);
-                await _filesRepository.UpdateContentAsync(metadata.Ids.ObjectId!, stream);
-                return metadata.Ids.ObjectId;
+                webhookSubscription.SubscriptionExpirationDateTime = subscriptionExpirationDate;
             }
+            await _databaseHealthService.ExecuteWithWarmupAsync(
+                async () => await _dbContext.SaveChangesAsync(),
+                nameof(UpsertWebhookSubscriptionAsync)
+            );
         }
-
-        #endregion Process Changes
-
-        #region Error logging
-
-        private async Task LogErrorAndSendMailAsync(string siteId, string listId, GraphListItem listItem, string errorMessage, Exception? ex = null, FileInformation? metadata = null)
-        {
-            // Unsuccesfull -> change status
-            if (metadata != null)
-            {
-                if (metadata.Ids == null) throw new CpsException($"No {nameof(FileInformation.Ids)} found for {nameof(metadata)}");
-                await _metadataRepository.UpdateDropOffMetadataAsync(false, "Er gaat iets mis", metadata.Ids);
-            }
-
-            // Log error, we need the metadata to update the error in the DropOff.
-            if (string.IsNullOrWhiteSpace(listItem.Id)) throw new CpsException($"Error while logging error: listItem ID unknown");
-            LogError(siteId, listId, listItem.Id, errorMessage, ex);
-
-            // Mail not proccessed file.
-            var fileIdentifier = metadata == null ? listItem.Id : metadata.FileName;
-            _emailService.GetAuthorEmailAndSendMailAsync("DropOff foutmelding", $"Er is iets mis gegaan bij het verwerken van het bestand \"{fileIdentifier}\".", listItem);
-        }
-
-        private void LogError(string siteId, string listId, string listItemId, string errorMessage, Exception? ex = null)
-        {
-            var properties = new Dictionary<string, string>
-            {
-                ["siteId"] = siteId,
-                ["listId"] = listId,
-                ["listItemId"] = listItemId
-            };
-            _telemetryClient.TrackException(ex ?? new Exception(errorMessage), properties);
-        }
-
-        #endregion Error logging
-
-        #endregion Handle DropOff Notification
     }
 }

@@ -4,27 +4,21 @@ using CPS_API.Models.Exceptions;
 using CPS_API.Services;
 using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.Options;
+using Microsoft.SharePoint.Client;
 
 namespace CPS_API.Repositories
 {
     public interface IExportRepository
     {
-        Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens);
-
-        Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens);
-
-        Task<ExportResponse> SynchroniseDeletedDocumentsAsync(Dictionary<string, string> tokens);
-
         Task<ToBePublishedExportResponse> SynchroniseToBePublishedDocumentsAsync();
+
+        Task<ExportResponse> SynchroniseFoundDocumentsAsync(SharePointListItemsDelta changes, string siteId, string listId);
     }
 
     public class ExportRepository : IExportRepository
     {
-        private readonly TelemetryClient _telemetryClient;
-
         private readonly IDriveRepository _driveRepository;
-        private readonly ISettingsRepository _settingsRepository;
-        private readonly IMetadataRepository _sharePointRepository;
+        private readonly IMetadataRepository _metadataRepository;
         private readonly IObjectIdRepository _objectIdRepository;
         private readonly IPublicationRepository _publicationRepository;
         private readonly ICallbackRepository _callbackRepository;
@@ -34,49 +28,143 @@ namespace CPS_API.Repositories
 
         private readonly GlobalSettings _globalSettings;
 
+        private readonly TelemetryClient _telemetryClient;
         private readonly ILogger _logger;
 
-        public ExportRepository(TelemetryClient telemetryClient, IDriveRepository driveRepository, ISettingsRepository settingsRepository, IMetadataRepository sharePointRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, ILogger<ExportRepository> logger)//NOSONAR
+        public ExportRepository(IDriveRepository driveRepository, IMetadataRepository metadataRepository, IObjectIdRepository objectIdRepository, IPublicationRepository publicationRepository, ICallbackRepository callbackRepository, FileStorageService fileStorageService, XmlExportSerivce xmlExportSerivce, IOptions<GlobalSettings> settings, TelemetryClient telemetryClient, ILogger<ExportRepository> logger)//NOSONAR
         {
-            _telemetryClient = telemetryClient;
             _driveRepository = driveRepository;
-            _settingsRepository = settingsRepository;
-            _sharePointRepository = sharePointRepository;
+            _metadataRepository = metadataRepository;
             _objectIdRepository = objectIdRepository;
             _publicationRepository = publicationRepository;
             _callbackRepository = callbackRepository;
             _fileStorageService = fileStorageService;
             _xmlExportSerivce = xmlExportSerivce;
             _globalSettings = settings.Value;
+            _telemetryClient = telemetryClient;
             _logger = logger;
         }
 
-        #region New Documents
-
-        public async Task<ExportResponse> SynchroniseNewDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens)
+        /// <summary>
+        /// For each file:
+        ///  - Generate xml from metadata
+        ///  - Upload file to storage container
+        ///  - Upload xml to storage container
+        ///  - Post new file to callback
+        ///  
+        /// Check for to be published documents
+        ///  - Synchronise each to be published file
+        /// </summary>
+        public async Task<ExportResponse> SynchroniseFoundDocumentsAsync(SharePointListItemsDelta changes, string siteId, string listId)
         {
-            // Get all new files from known locations
-            DeltaResponse deltaResponse;
+            var groupedChanges = changes.Items.GroupBy(item => item.ListItemId);
+
+            var notSyncedItemIds = new List<int>();
+            var addedItemIds = new List<int>();
+            var updatedItemIds = new List<int>();
+            var deletedItemIds = new List<int>();
+            foreach (var groupedChange in groupedChanges)
+            {
+                if (groupedChange == null)
+                {
+                    continue;
+                }
+
+                var listItemId = groupedChange.Key;
+                var items = groupedChange.ToList();
+
+                var synchronisationType = GetSynchronisationType(items);
+                if (synchronisationType == null)
+                {
+                    continue;
+                }
+
+                ObjectIdentifiers? objectIdentifiers = await TryGetObjectIdentifiersAsync(siteId, listId, listItemId, notSyncedItemIds);
+                if (objectIdentifiers == null)
+                {
+                    continue;
+                }
+
+                await TrySynchroniseDocumentsAsync(objectIdentifiers, synchronisationType.Value, notSyncedItemIds, addedItemIds, updatedItemIds, deletedItemIds, listItemId);
+            }
+
+            return new ExportResponse(siteId, listId, changes.NewChangeToken, notSyncedItemIds, addedItemIds, updatedItemIds, deletedItemIds);
+        }
+
+        private static SynchronisationType? GetSynchronisationType(List<SharePointListItemDelta> items)
+        {
+            // One version is deleted? Then the file is deleted
+            // When one version is an add action, we need to add the newest version.
+            // When there are only updated actions, then we need to update the file to the newest version.
+            if (items.Exists(item => item.ChangeType == ChangeType.DeleteObject || item.ChangeType == ChangeType.MoveAway))
+                return SynchronisationType.delete;
+            if (items.Exists(item => item.ChangeType == ChangeType.Add || item.ChangeType == ChangeType.MoveInto))
+                return SynchronisationType.create;
+            if (items.Exists(item => item.ChangeType == ChangeType.Update || item.ChangeType == ChangeType.Rename))
+                return SynchronisationType.update;
+            return null;
+        }
+
+        private async Task<ObjectIdentifiers?> TryGetObjectIdentifiersAsync(string siteId, string listId, int listItemId, List<int> notSyncedItemIds)
+        {
             try
             {
-                deltaResponse = await _driveRepository.GetNewItems(lastSynchronisation, tokens);
-                if (deltaResponse == null) throw new CpsException("Deltaresponse is null");
+                return await _objectIdRepository.GetObjectIdentifiersBySharePointIdsAsync(siteId, listId, listItemId.ToString());
             }
             catch (Exception ex)
             {
-                TrackCpsException(ex);
-                await StopNewSynchronisationAsync();
-                throw new CpsException("Error while getting new documents: " + ex.Message);
+                notSyncedItemIds.Add(listItemId);
+                TrackCpsException(ex, siteId, listId, listItemId.ToString(), errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
+                _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                {
+                    { nameof(siteId), siteId },
+                    { nameof(listId), listId },
+                    { nameof(listItemId), listItemId.ToString() },
+                    { "ErrorMessage", ex.Message }
+                });
+                return null;
             }
-
-            // Synchronise each file
-            return await SynchroniseNewDocumentsAsync(deltaResponse);
         }
 
-        private async Task StopNewSynchronisationAsync()
+        private async Task TrySynchroniseDocumentsAsync(
+            ObjectIdentifiers objectIdentifiers,
+            SynchronisationType synchronisationType,
+            List<int> notSyncedItemIds,
+            List<int> addedItemIds,
+            List<int> updatedItemIds,
+            List<int> deletedItemIds,
+            int listItemId)
         {
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsNewSynchronisationRunningField, false);
-            _logger.LogTrace("New item synchronisation has stopped");
+            try
+            {
+                var succeeded = await SynchroniseDocumentsAsync(objectIdentifiers, synchronisationType);
+                if (succeeded)
+                {
+                    switch (synchronisationType)
+                    {
+                        case SynchronisationType.create:
+                            addedItemIds.Add(listItemId);
+                            break;
+                        case SynchronisationType.update:
+                            updatedItemIds.Add(listItemId);
+                            break;
+                        case SynchronisationType.delete:
+                            deletedItemIds.Add(listItemId);
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                notSyncedItemIds.Add(listItemId);
+                TrackCpsException(ex, objectIdentifiers.SiteId, objectIdentifiers.ListId, objectIdentifiers.ListItemId, objectIdentifiers.ObjectId, "Error while synchronising new documents");
+                _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                {
+                    { nameof(objectIdentifiers.ObjectId), objectIdentifiers.ObjectId },
+                    { nameof(objectIdentifiers.ListItemId), objectIdentifiers.ListItemId },
+                    { "ErrorMessage", ex.Message }
+                });
+            }
         }
 
         /// <summary>
@@ -92,25 +180,25 @@ namespace CPS_API.Repositories
         public async Task<ToBePublishedExportResponse> SynchroniseToBePublishedDocumentsAsync()
         {
             // Check for to be published documents and synchronise.
-            var entities = await _publicationRepository.GetEntitiesFromQueueAsync();
-            entities = [.. entities.Where(entity => !entity.PublicationDate.IsDateInFuture())];
+            List<ToBePublished> items = await _publicationRepository.GetItemsFromQueueAsync();
+            items = [.. items.Where(item => !item.PublicationDate.IsDateInFuture())];
 
             var itemsAdded = 0;
-            var failedToBePublishedEntities = new List<ToBePublishedEntity>();
-            foreach (var entity in entities)
+            var failedToBePublishedItems = new List<ToBePublished>();
+            foreach (var item in items)
             {
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
+                ObjectIdentifiers? objectIdentifiers;
                 try
                 {
-                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(entity.ObjectId);
+                    objectIdentifiers = await GetObjectIdentifiersAsync(item.ObjectId);
                 }
                 catch (Exception ex)
                 {
-                    failedToBePublishedEntities.Add(entity);
-                    TrackCpsException(ex, objectId: entity.ObjectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
+                    failedToBePublishedItems.Add(item);
+                    TrackCpsException(ex, objectId: item.ObjectId, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
+                    _telemetryClient.TrackTrace($"New document synchronisation failed", new Dictionary<string, string>
                     {
-                        { "ObjectId", entity.ObjectId },
+                        { nameof(item.ObjectId), item.ObjectId },
                         { "ErrorMessage", ex.Message }
                     });
                     continue;
@@ -118,224 +206,54 @@ namespace CPS_API.Repositories
 
                 try
                 {
-                    var succeeded = await SynchroniseDocumentsAsync(objectIdentifiersEntity, SynchronisationType.create);
+                    var succeeded = await SynchroniseDocumentsAsync(objectIdentifiers, SynchronisationType.create);
                     if (succeeded)
                     {
-                        await _publicationRepository.RemoveFromQueueAsync(entity);
+                        await _publicationRepository.RemoveFromQueueAsync(item);
                         itemsAdded++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    failedToBePublishedEntities.Add(entity);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
+                    failedToBePublishedItems.Add(item);
+                    TrackCpsException(ex, objectIdentifiers.DriveId, objectIdentifiers.DriveItemId, objectIdentifiers.ObjectId, Constants.NewDocumentsSynchronisationError);
                     _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
                     {
-                        { "ObjectId", objectIdentifiersEntity.ObjectId },
-                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                        { nameof(objectIdentifiers.ObjectId), objectIdentifiers.ObjectId },
+                        { nameof(objectIdentifiers.DriveItemId), objectIdentifiers.DriveItemId },
                         { "ErrorMessage", ex.Message }
                     });
                 }
             }
 
-            return new ToBePublishedExportResponse(itemsAdded, failedToBePublishedEntities);
+            return new ToBePublishedExportResponse(itemsAdded, failedToBePublishedItems);
         }
 
-        /// <summary>
-        /// For each file:
-        ///  - Generate xml from metadata
-        ///  - Upload file to storage container
-        ///  - Upload xml to storage container
-        ///  - Post new file to callback
-        ///  
-        /// Check for to be published documents
-        ///  - Synchronise each to be published file
-        /// </summary>
-        private async Task<ExportResponse> SynchroniseNewDocumentsAsync(DeltaResponse deltaResponse)
-        {
-            var itemsAdded = 0;
-            var notAddedItems = new List<DeltaDriveItem>();
-            foreach (var newItem in deltaResponse.Items)
-            {
-                if (newItem == null)
-                {
-                    continue;
-                }
-
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(newItem);
-                }
-                catch (Exception ex)
-                {
-                    notAddedItems.Add(newItem);
-                    TrackCpsException(ex, newItem.DriveId, newItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "driveId", newItem.DriveId },
-                        { "driveItemId", newItem.Id },
-                        { "name", newItem.Name },
-                        { "ErrorMessage", ex.Message }
-                    });
-                    continue;
-                }
-
-                try
-                {
-                    var succeeded = await SynchroniseDocumentsAsync(objectIdentifiersEntity, SynchronisationType.create);
-                    if (succeeded)
-                    {
-                        itemsAdded++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    notAddedItems.Add(newItem);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, Constants.NewDocumentsSynchronisationError);
-                    _telemetryClient.TrackTrace("New document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "objectId", objectIdentifiersEntity.ObjectId },
-                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
-                        { "ErrorMessage", ex.Message }
-                    });
-                }
-            }
-
-            var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, notAddedItems, itemsAdded);
-        }
-
-        #endregion
-
-        #region Updated Documents
-
-        public async Task<ExportResponse> SynchroniseUpdatedDocumentsAsync(DateTime lastSynchronisation, Dictionary<string, string> tokens)
-        {
-            // Get all updated files from known locations
-            DeltaResponse deltaResponse;
-            try
-            {
-                deltaResponse = await _driveRepository.GetUpdatedItems(lastSynchronisation, tokens);
-                if (deltaResponse == null) throw new CpsException("Deltaresponse is null");
-            }
-            catch (Exception ex)
-            {
-                TrackCpsException(ex);
-                await StopChangedSynchronisationAsync();
-                throw new CpsException("Error while getting updated documents: " + ex.Message);
-            }
-
-            // Synchronise each file
-            return await GetAndSynchroniseUpdatedDocumentsAsync(deltaResponse);
-        }
-
-        private async Task StopChangedSynchronisationAsync()
-        {
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsChangedSynchronisationRunningField, false);
-            _logger.LogTrace("Changed item synchronisation has stopped");
-        }
-
-        /// <summary>
-        /// For each file:
-        ///  - Generate xml from metadata
-        ///  - Upload file to storage container
-        ///  - Upload xml to storage container
-        ///  - Post new file to callback
-        /// </summary>
-        private async Task<ExportResponse> GetAndSynchroniseUpdatedDocumentsAsync(DeltaResponse deltaResponse)
-        {
-            var itemsUpdated = 0;
-            var notUpdatedItems = new List<DeltaDriveItem>();
-            foreach (var updatedItem in deltaResponse.Items)
-            {
-                if (updatedItem == null)
-                {
-                    continue;
-                }
-
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(updatedItem);
-                }
-                catch (Exception ex)
-                {
-                    notUpdatedItems.Add(updatedItem);
-                    TrackCpsException(ex, updatedItem.DriveId, updatedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _telemetryClient.TrackTrace("Updated document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "driveId", updatedItem.DriveId },
-                        { "driveItemId", updatedItem.Id },
-                        { "name", updatedItem.Name },
-                        { "ErrorMessage", ex.Message }
-                    });
-                    continue;
-                }
-
-                try
-                {
-                    var succeeded = await SynchroniseDocumentsAsync(objectIdentifiersEntity, SynchronisationType.update);
-                    if (succeeded)
-                    {
-                        itemsUpdated++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    notUpdatedItems.Add(updatedItem);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising updated documents");
-                    _telemetryClient.TrackTrace("Updated document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "objectId", objectIdentifiersEntity.ObjectId },
-                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
-                        { "ErrorMessage", ex.Message }
-                    });
-                }
-            }
-
-            var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, notUpdatedItems, itemsUpdated);
-        }
-
-        private async Task<(bool, string)> UploadFileAndXmlToFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
+        private async Task<(bool, string)> UploadFileAndXmlToFileStorageAsync(ObjectIdentifiers objectIdentifiers)
         {
             // When metadata is unknown, we skip the synchronisation.
             // The file is a new incomplete file or something went wrong while adding the file.
-            var metadataExists = await FileContainsMetadataAsync(objectIdentifiersEntity);
+            var metadataExists = await _metadataRepository.FileContainsMetadata(objectIdentifiers);
             if (!metadataExists)
             {
                 return (false, "Metadata is incomplete");
             }
 
-            var metadata = await GetMetadataAsync(objectIdentifiersEntity.ObjectId);
+            var metadata = await GetMetadataAsync(objectIdentifiers.ObjectId);
 
             // Skip document when it is not ready for publishing.
-            var isReadyForPublishing = await CheckPublicationDateAsync(metadata, objectIdentifiersEntity.ObjectId);
+            var isReadyForPublishing = await CheckPublicationDateAsync(metadata, objectIdentifiers.ObjectId);
             if (!isReadyForPublishing)
             {
                 return (false, "Document is not ready for publishing");
             }
 
-            var stream = await GetStreamAsync(objectIdentifiersEntity);
-            await CreateContentAsync(objectIdentifiersEntity, metadata, stream);
+            var stream = await GetStreamAsync(objectIdentifiers);
+            await CreateContentAsync(objectIdentifiers, metadata, stream);
 
             var metadataXml = GetMetadataAsXml(metadata);
-            await CreateMetadataXmlAsync(objectIdentifiersEntity, metadataXml);
+            await CreateMetadataXmlAsync(objectIdentifiers, metadataXml);
             return (true, "Success");
-        }
-
-        private async Task<bool> FileContainsMetadataAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
-        {
-            try
-            {
-                var ids = new ObjectIdentifiers(objectIdentifiersEntity);
-                return await _sharePointRepository.FileContainsMetadata(ids);
-            }
-            catch (Exception ex)
-            {
-                throw new CpsException("Error while getting metadata", ex);
-            }
         }
 
         private async Task<FileInformation> GetMetadataAsync(string objectId)
@@ -343,7 +261,7 @@ namespace CPS_API.Repositories
             FileInformation? metadata;
             try
             {
-                metadata = await _sharePointRepository.GetMetadataAsync(objectId);
+                metadata = await _metadataRepository.GetMetadataAsync(objectId);
             }
             catch (Exception ex)
             {
@@ -364,12 +282,12 @@ namespace CPS_API.Repositories
             return true;
         }
 
-        private async Task<Stream> GetStreamAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
+        private async Task<Stream> GetStreamAsync(ObjectIdentifiers objectIdentifiers)
         {
             Stream? stream;
             try
             {
-                stream = await _driveRepository.GetStreamAsync(objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId);
+                stream = await _driveRepository.GetStreamAsync(objectIdentifiers.DriveId, objectIdentifiers.DriveItemId);
             }
             catch (Exception ex)
             {
@@ -379,13 +297,13 @@ namespace CPS_API.Repositories
             return stream;
         }
 
-        private async Task CreateContentAsync(ObjectIdentifiersEntity objectIdentifiersEntity, FileInformation metadata, Stream stream)
+        private async Task CreateContentAsync(ObjectIdentifiers objectIdentifiers, FileInformation metadata, Stream stream)
         {
             if (metadata.MimeType == null) throw new CpsException($"No {nameof(FileInformation.MimeType)} found for {nameof(metadata)}");
             try
             {
-                var fileName = objectIdentifiersEntity.ObjectId + "." + metadata.FileExtension;
-                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiersEntity.ObjectId);
+                var fileName = objectIdentifiers.ObjectId + "." + metadata.FileExtension;
+                await _fileStorageService.CreateAsync(_globalSettings.ContentContainerName, fileName, stream, metadata.MimeType, objectIdentifiers.ObjectId);
             }
             catch (Exception ex)
             {
@@ -405,12 +323,12 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task CreateMetadataXmlAsync(ObjectIdentifiersEntity objectIdentifiersEntity, string metadataXml)
+        private async Task CreateMetadataXmlAsync(ObjectIdentifiers objectIdentifiers, string metadataXml)
         {
             try
             {
-                var metadataName = objectIdentifiersEntity.ObjectId + ".xml";
-                await _fileStorageService.CreateAsync(_globalSettings.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiersEntity.ObjectId);
+                var metadataName = objectIdentifiers.ObjectId + ".xml";
+                await _fileStorageService.CreateAsync(_globalSettings.MetadataContainerName, metadataName, metadataXml, "application/xml", objectIdentifiers.ObjectId);
             }
             catch (Exception ex)
             {
@@ -418,112 +336,11 @@ namespace CPS_API.Repositories
             }
         }
 
-        #endregion
-
-        #region Deleted Documents
-
-        public async Task<ExportResponse> SynchroniseDeletedDocumentsAsync(Dictionary<string, string> tokens)
-        {
-            // Get all deleted files from known locations
-            DeltaResponse deltaResponse;
-            try
-            {
-                deltaResponse = await GetDeletedItemsAsync(tokens);
-            }
-            catch (Exception ex)
-            {
-                TrackCpsException(ex);
-                await StopDeletedSynchronisationAsync();
-                throw new CpsException("Error while getting deleted documents: " + ex.Message);
-            }
-
-            // Synchronise each file
-            return await GetAndSynchroniseDeletedDocumentsAsync(deltaResponse);
-        }
-
-        private async Task<DeltaResponse> GetDeletedItemsAsync(Dictionary<string, string> tokens)
-        {
-            var deltaResponse = await _driveRepository.GetDeletedItems(tokens);
-            if (deltaResponse == null)
-            {
-                throw new CpsException("Deltaresponse is null");
-            }
-            return deltaResponse;
-        }
-
-        private async Task StopDeletedSynchronisationAsync()
-        {
-            await _settingsRepository.SaveSettingAsync(Constants.SettingsIsDeletedSynchronisationRunningField, false);
-            _logger.LogTrace("Deleted item synchronisation has stopped");
-        }
-
-        /// <summary>
-        /// For each file:
-        ///  - Generate xml from metadata
-        ///  - Upload file to storage container
-        ///  - Upload xml to storage container
-        ///  - Post new file to callback
-        /// </summary>
-        private async Task<ExportResponse> GetAndSynchroniseDeletedDocumentsAsync(DeltaResponse deltaResponse)
-        {
-            var itemsDeleted = 0;
-            var notDeletedItems = new List<DeltaDriveItem>();
-            foreach (var deletedItem in deltaResponse.Items)
-            {
-                if (deletedItem == null)
-                {
-                    continue;
-                }
-
-                ObjectIdentifiersEntity? objectIdentifiersEntity;
-                try
-                {
-                    objectIdentifiersEntity = await GetObjectIdentifiersAsync(deletedItem);
-                }
-                catch (Exception ex)
-                {
-                    notDeletedItems.Add(deletedItem);
-                    TrackCpsException(ex, deletedItem.DriveId, deletedItem.Id, errorMessage: "Error while getting objectIdentifiers: " + ex.Message);
-                    _telemetryClient.TrackTrace("Deleted document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "driveId", deletedItem.DriveId },
-                        { "driveItemId", deletedItem.Id },
-                        { "name", deletedItem.Name },
-                        { "ErrorMessage", ex.Message }
-                    });
-                    continue;
-                }
-
-                try
-                {
-                    var succeeded = await SynchroniseDocumentsAsync(objectIdentifiersEntity, SynchronisationType.delete);
-                    if (succeeded)
-                    {
-                        itemsDeleted++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    notDeletedItems.Add(deletedItem);
-                    TrackCpsException(ex, objectIdentifiersEntity.DriveId, objectIdentifiersEntity.DriveItemId, objectIdentifiersEntity.ObjectId, "Error while synchronising deleted documents");
-                    _telemetryClient.TrackTrace("Deleted document synchronisation failed", new Dictionary<string, string>
-                    {
-                        { "objectId", objectIdentifiersEntity.ObjectId },
-                        { "driveItemId", objectIdentifiersEntity.DriveItemId },
-                        { "ErrorMessage", ex.Message }
-                    });
-                }
-            }
-
-            var newNextTokens = GetNewNextToken(deltaResponse);
-            return new ExportResponse(newNextTokens, notDeletedItems, itemsDeleted);
-        }
-
-        private async Task DeleteIfExistsFileAndXmlFromFileStorageAsync(ObjectIdentifiersEntity objectIdentifiersEntity)
+        private async Task DeleteIfExistsFileAndXmlFromFileStorageAsync(ObjectIdentifiers objectIdentifiers)
         {
             try
             {
-                await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiersEntity.ObjectId, deleteIfExists: true);
+                await _fileStorageService.DeleteAsync(_globalSettings.ContentContainerName, objectIdentifiers.ObjectId, deleteIfExists: true);
             }
             catch (Exception ex)
             {
@@ -531,7 +348,7 @@ namespace CPS_API.Repositories
             }
             try
             {
-                await _fileStorageService.DeleteAsync(_globalSettings.MetadataContainerName, objectIdentifiersEntity.ObjectId, deleteIfExists: true);
+                await _fileStorageService.DeleteAsync(_globalSettings.MetadataContainerName, objectIdentifiers.ObjectId, deleteIfExists: true);
             }
             catch (Exception ex)
             {
@@ -539,7 +356,7 @@ namespace CPS_API.Repositories
             }
             try
             {
-                await _publicationRepository.RemoveFromQueueIfExistsAsync(objectIdentifiersEntity.ObjectId);
+                await _publicationRepository.RemoveFromQueueIfExistsAsync(objectIdentifiers.ObjectId);
             }
             catch (Exception ex)
             {
@@ -547,22 +364,20 @@ namespace CPS_API.Repositories
             }
         }
 
-        #endregion
-
         #region Synchronisation
 
-        private async Task<bool> SynchroniseDocumentsAsync(ObjectIdentifiersEntity objectIdentifiersEntity, SynchronisationType synchronisationType)
+        private async Task<bool> SynchroniseDocumentsAsync(ObjectIdentifiers objectIdentifiers, SynchronisationType synchronisationType)
         {
             bool succeeded;
             var errorMessage = string.Empty;
             if (synchronisationType == SynchronisationType.delete)
             {
-                await DeleteIfExistsFileAndXmlFromFileStorageAsync(objectIdentifiersEntity);
+                await DeleteIfExistsFileAndXmlFromFileStorageAsync(objectIdentifiers);
                 succeeded = true;
             }
             else
             {
-                (succeeded, errorMessage) = await UploadFileAndXmlToFileStorageAsync(objectIdentifiersEntity);
+                (succeeded, errorMessage) = await UploadFileAndXmlToFileStorageAsync(objectIdentifiers);
             }
 
             var traceSynchronisationPart = "Deleted";
@@ -572,66 +387,53 @@ namespace CPS_API.Repositories
             {
                 _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation failed", new Dictionary<string, string>
                 {
-                    { "objectId", objectIdentifiersEntity.ObjectId },
-                    { "driveItemId", objectIdentifiersEntity.DriveItemId },
+                    { nameof(objectIdentifiers.ObjectId), objectIdentifiers.ObjectId },
+                    { nameof(objectIdentifiers.DriveItemId), objectIdentifiers.DriveItemId },
                     { "ErrorMessage", errorMessage }
                 });
                 return false;
             }
 
             // Callback for changed file.
-            await _callbackRepository.CallCallbackAsync(objectIdentifiersEntity.ObjectId, synchronisationType);
+            await _callbackRepository.CallCallbackAsync(objectIdentifiers.ObjectId, synchronisationType);
 
             _telemetryClient.TrackTrace($"{traceSynchronisationPart} document synchronisation succeeded", new Dictionary<string, string>
             {
-                { "objectId", objectIdentifiersEntity.ObjectId },
-                { "driveItemId", objectIdentifiersEntity.DriveItemId }
+                { nameof(objectIdentifiers.ObjectId), objectIdentifiers.ObjectId },
+                { nameof(objectIdentifiers.DriveItemId), objectIdentifiers.DriveItemId }
             });
             return true;
         }
 
         #endregion
 
+
         #region Helpers
 
-        private async Task<ObjectIdentifiersEntity> GetObjectIdentifiersAsync(DeltaDriveItem driveItem)
+        private async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string objectId)
         {
-            var objectIdentifiersEntity = await _objectIdRepository.GetObjectIdentifiersAsync(driveItem.DriveId, driveItem.Id);
-            if (objectIdentifiersEntity == null)
+            var objectIdentifiers = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
+            if (objectIdentifiers == null)
             {
                 throw new CpsException("objectIdentifiersEntity is null");
             }
-            return objectIdentifiersEntity;
+            return objectIdentifiers;
         }
 
-        private async Task<ObjectIdentifiersEntity> GetObjectIdentifiersAsync(string objectId)
-        {
-            var objectIdentifiersEntity = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
-            if (objectIdentifiersEntity == null)
-            {
-                throw new CpsException("objectIdentifiersEntity is null");
-            }
-            return objectIdentifiersEntity;
-        }
-
-        /// <summary>
-        /// Dictionary to string for storage container.
-        /// </summary>
-        private static string GetNewNextToken(DeltaResponse deltaResponse)
-        {
-            return string.Join(";", deltaResponse.DeltaLinks.Select(x => x.Key + "=" + x.Value).ToArray());
-        }
-
-        private void TrackCpsException(Exception exception, string? driveId = null, string? driveItemId = null, string? objectId = null, string? errorMessage = null)
+        private void TrackCpsException(Exception exception, string? siteId = null, string? listId = null, string? listItemId = null, string? objectId = null, string? errorMessage = null)
         {
             var properties = new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(driveId))
+            if (!string.IsNullOrEmpty(siteId))
             {
-                properties.Add(nameof(driveId), driveId);
+                properties.Add(nameof(siteId), siteId);
             }
-            if (!string.IsNullOrEmpty(driveItemId))
+            if (!string.IsNullOrEmpty(listId))
             {
-                properties.Add(nameof(driveItemId), driveItemId);
+                properties.Add(nameof(listId), listId);
+            }
+            if (!string.IsNullOrEmpty(listItemId))
+            {
+                properties.Add(nameof(listItemId), listItemId);
             }
             if (!string.IsNullOrEmpty(objectId))
             {

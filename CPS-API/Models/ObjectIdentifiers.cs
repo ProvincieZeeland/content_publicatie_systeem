@@ -1,59 +1,24 @@
-﻿using System.Text.Json.Serialization;
-using CPS_API.Helpers;
+﻿using CPS_API.Helpers;
 
 namespace CPS_API.Models
 {
-    public class ObjectIdentifiers
+    public partial class ObjectIdentifiers
     {
-        public string? ObjectId { get; set; }
+        public long? Id { get; set; }
 
-        public string? SiteId { get; set; }
-
-        public string? ListId { get; set; }
-
-        public string? ListItemId { get; set; }
-
-        public string? DriveId { get; set; }
-
-        public string? DriveItemId { get; set; }
-
-        public string? ExternalReferenceListId { get; set; }
+        public string ObjectId { get; set; } = string.Empty;
 
         public string? AdditionalObjectId { get; set; }
 
-        [JsonIgnore]
-        public object? this[string fieldname]
-        {
-            get
-            {
-                var property = this.GetType().GetProperty(fieldname);
-                if (property != null)
-                    return property.GetValue(this);
-                else
-                    throw new ArgumentException("Unknown property " + fieldname);
-            }
+        public string DriveId { get; set; } = string.Empty;
 
-            set
-            {
-                FieldPropertyHelper.SetFieldValue(this, fieldname, value);
-            }
-        }
+        public string DriveItemId { get; set; } = string.Empty;
 
-        public ObjectIdentifiers()
-        {
-        }
+        public string SiteId { get; set; } = string.Empty;
 
-        public ObjectIdentifiers(ObjectIdentifiersEntity entity)
-        {
-            ObjectId = entity.ObjectId;
-            SiteId = entity.SiteId;
-            ListId = entity.ListId;
-            ListItemId = entity.ListItemId;
-            DriveId = entity.DriveId;
-            DriveItemId = entity.DriveItemId;
-            ExternalReferenceListId = entity.ExternalReferenceListId;
-            AdditionalObjectId = entity.AdditionalObjectId;
-        }
+        public string ListId { get; set; } = string.Empty;
+
+        public string ListItemId { get; set; } = string.Empty;
 
         public ObjectIdentifiers clone()
         {

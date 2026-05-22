@@ -79,9 +79,6 @@ IHost host = new HostBuilder()
                     )
                 )
                  .UseFunctionsWorkerDefaults();
-
-
-
     })
     .Build();
 

@@ -9,7 +9,6 @@ using Microsoft.Identity.Client;
 using Microsoft.Identity.Web;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.SharePoint.Client;
-using ChangeType = Microsoft.SharePoint.Client.ChangeType;
 using Constants = CPS_API.Models.Constants;
 using ListItem = Microsoft.Graph.Models.ListItem;
 using SharePointClientList = Microsoft.SharePoint.Client.List;
@@ -26,7 +25,7 @@ namespace CPS_API.Repositories
 
         Task<List<ListItem>?> GetListItemsAsync(string siteId, string listId, string fieldName, string fieldValue, bool getAsUser = false);
 
-        Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken);
+        Task<SharePointListItemsDelta> GetListAndChangesAsync(string siteUrl, string listId, string? changeToken);
 
         Task<List<ColumnDefinition>?> GetColumnsAsync(string siteId, string listId, bool getAsUser = false);
     }
@@ -112,7 +111,7 @@ namespace CPS_API.Repositories
             var graphServiceClient = GetGraphServiceClient(getAsUser);
             var response = await graphServiceClient.Sites[siteId].Lists[listId].Items.GetAsync(x =>
             {
-                x.QueryParameters.Expand = new[] { Constants.SelectFields };
+                x.QueryParameters.Expand = new[] { Constants.Selectors.Fields };
                 x.QueryParameters.Filter = $"Fields/{fieldName} eq '{fieldValue}'";
             });
             if (response == null) throw new CpsException($"Error while getting listItems (siteId={siteId}, listId={listId}, fieldName={fieldName}, fieldValue={fieldValue})");
@@ -160,7 +159,7 @@ namespace CPS_API.Repositories
             return list;
         }
 
-        public async Task<SharePointListItemsDelta> GetListAndFilteredChangesAsync(string siteUrl, string listId, string? changeToken)
+        public async Task<SharePointListItemsDelta> GetListAndChangesAsync(string siteUrl, string listId, string? changeToken)
         {
             var certificate = await _certificateService.GetCertificateAsync();
             using var authenticationManager = new PnP.Framework.AuthenticationManager(_globalSettings.ClientId, certificate, _globalSettings.TenantId);
@@ -169,10 +168,9 @@ namespace CPS_API.Repositories
             // Get list
             var list = await GetAndLoadListAsync(context, listId);
 
-            SharePointListItemsDelta changes;
             try
             {
-                changes = await GetDeltaListItemsAndLastChangeToken(context, list, changeToken);
+                return await GetDeltaListItemsAndLastChangeToken(list, changeToken);
             }
             catch (Exception ex)
             {
@@ -185,27 +183,24 @@ namespace CPS_API.Repositories
                 _logger.LogError(ex, "{ErrorMessage}", errorMessage);
                 throw new CpsException(errorMessage);
             }
-
-            // Get correct and unique changes
-            return FilterChangesOnDeletedAndUnique(changes);
         }
 
         private static bool IsValidChangeToken(ServerException serverEx)
         {
             // The Exception that is thrown when ChangeTokenStart is invalid:
             //'Microsoft.SharePoint.Client.ServerException' with the following typeNames and corresponding errorCodes
-            if ((serverEx.ServerErrorTypeName == Constants.InvalidChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidChangeTokenErrorCode)
-            || (serverEx.ServerErrorTypeName == Constants.FormatChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.FormatChangeTokenErrorCode)
-            || (serverEx.ServerErrorTypeName == Constants.InvalidOperationChangeTokenServerErrorTypeName && serverEx.ServerErrorCode == Constants.InvalidOperationChangeTokenErrorCode)
-            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenTimeErrorCode)
-            || ((serverEx.Message.Equals(Constants.InvalidChangeTokenWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.InvalidChangeTokenWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.InvalidChangeTokenWrongObjectErrorCode))
+            if ((serverEx.ServerErrorTypeName == Constants.ChangeTokenErrors.InvalidServerErrorTypeName && serverEx.ServerErrorCode == Constants.ChangeTokenErrors.InvalidErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.ChangeTokenErrors.FormatServerErrorTypeName && serverEx.ServerErrorCode == Constants.ChangeTokenErrors.FormatErrorCode)
+            || (serverEx.ServerErrorTypeName == Constants.ChangeTokenErrors.InvalidOperationServerErrorTypeName && serverEx.ServerErrorCode == Constants.ChangeTokenErrors.InvalidOperationCode)
+            || ((serverEx.Message.Equals(Constants.ChangeTokenErrors.InvalidTimeErrorMessageDutch) || serverEx.Message.Equals(Constants.ChangeTokenErrors.InvalidTimeErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.ChangeTokenErrors.InvalidTimeErrorCode)
+            || ((serverEx.Message.Equals(Constants.ChangeTokenErrors.InvalidWrondObjectErrorMessageDutch) || serverEx.Message.Equals(Constants.ChangeTokenErrors.InvalidWrongObjectErrorMessageEnglish)) && serverEx.ServerErrorCode == Constants.ChangeTokenErrors.InvalidWrongObjectErrorCode))
             {
                 return false;
             }
             return true;
         }
 
-        private static async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(ClientContext context, SharePointClientList list, string? changeToken)
+        private static async Task<SharePointListItemsDelta> GetDeltaListItemsAndLastChangeToken(SharePointClientList list, string? changeToken)
         {
             ChangeCollection changeCollection;
             var changes = new SharePointListItemsDelta
@@ -215,15 +210,24 @@ namespace CPS_API.Repositories
             if (changeToken != null) changes.NewChangeToken = changeToken;
             do
             {
-                changeCollection = await GetListChangesAsync(context, list, changes.NewChangeToken);
+                changeCollection = await GetListChangesAsync(list, changes.NewChangeToken);
                 changes.Items.AddRange(getDeltaListItems(changeCollection));
-                changes.NewChangeToken = changeCollection.LastChangeToken.StringValue;
+
+                if (changeCollection.HasMoreChanges)
+                {
+                    changes.NewChangeToken = changeCollection.LastChangeToken.StringValue;
+                }
+                else if (changeCollection.Count > 0)
+                {
+                    // Baseline token for the next scheduled run
+                    changes.NewChangeToken = changeCollection[changeCollection.Count - 1].ChangeToken.StringValue;
+                }
             }
             while (changeCollection.HasMoreChanges);
             return changes;
         }
 
-        private static async Task<ChangeCollection> GetListChangesAsync(ClientContext context, SharePointClientList list, string lastChangeToken)
+        private static async Task<ChangeCollection> GetListChangesAsync(SharePointClientList list, string lastChangeToken, int pageSize = 200)
         {
             ChangeQuery query = new ChangeQuery(false, false)
             {
@@ -232,7 +236,9 @@ namespace CPS_API.Repositories
                 Update = true,
                 Move = true,
                 DeleteObject = true,
-                SystemUpdate = true
+                SystemUpdate = true,
+                Rename = true,
+                FetchLimit = pageSize
             };
             if (!string.IsNullOrEmpty(lastChangeToken))
             {
@@ -243,22 +249,17 @@ namespace CPS_API.Repositories
             }
 
             var changeCollection = list.GetChanges(query);
-            context.Load(
+            list.Context.Load(
                 changeCollection,
-                cc => cc.LastChangeToken,
                 cc => cc.HasMoreChanges,
+                cc => cc.LastChangeToken,
                 cc => cc.Include(
                     c => ((ChangeItem)c).ItemId,
-                    c => ((ChangeItem)c).UniqueId,
-                    c => ((ChangeItem)c).ContentTypeId,
                     c => ((ChangeItem)c).ChangeType,
-                    c => ((ChangeItem)c).ActivityType,
-                    c => ((ChangeItem)c).Editor,
-                    c => ((ChangeItem)c).EditorLoginName,
-                    c => ((ChangeItem)c).IsRecycleBinOperation
+                    c => ((ChangeItem)c).ChangeToken
                     ));
 
-            await context.ExecuteQueryRetryAsync(1);
+            await list.Context.ExecuteQueryRetryAsync(1);
             return changeCollection;
         }
 
@@ -274,14 +275,6 @@ namespace CPS_API.Repositories
                 }
             }
             return deltaListItems;
-        }
-
-        private static SharePointListItemsDelta FilterChangesOnDeletedAndUnique(SharePointListItemsDelta changes)
-        {
-            var deletedItemIds = changes.Items.Where(d => d.ChangeType == ChangeType.DeleteObject).DistinctBy(d => d.ListItemId).Select(d => d.ListItemId).ToList();
-            var uniqueItems = changes.Items.DistinctBy(d => d.ListItemId).ToList();
-            changes.Items = uniqueItems.Where(d => !deletedItemIds.Contains(d.ListItemId)).ToList();
-            return changes;
         }
 
         #endregion

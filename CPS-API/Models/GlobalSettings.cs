@@ -2,23 +2,7 @@
 {
     public class GlobalSettings
     {
-        public string StorageTableConnectionstring { get; set; } = string.Empty;
-
-        public string JobsStorageTableConnectionstring { get; set; } = string.Empty;
-
         public string FileStorageConnectionstring { get; set; } = string.Empty;
-
-        public string ObjectIdentifiersTableName { get; set; } = string.Empty;
-
-        public string SettingsTableName { get; set; } = string.Empty;
-
-        public string SettingsPartitionKey { get; set; } = string.Empty;
-
-        public string SettingsRowKey { get; set; } = string.Empty;
-
-        public string ToBePublishedTableName { get; set; } = string.Empty;
-
-        public string ToBePublishedPartitionKey { get; set; } = string.Empty;
 
         public string ContentContainerName { get; set; } = string.Empty;
 
@@ -35,8 +19,6 @@
         public List<FieldMapping> DropOffMetadataMapping { get; set; } = new List<FieldMapping>();
 
         public List<LocationMapping> LocationMapping { get; set; } = new List<LocationMapping>();
-
-        public List<string> PublicDriveIds { get; set; } = new List<string>();
 
         public string AdditionalObjectId { get; set; } = string.Empty;
 
@@ -93,16 +75,5 @@
         public bool CreateEnabled { get; set; } = false;
 
         public string ClientState { get; set; } = string.Empty;
-
-        public List<WebHookList> WebHookLists { get; set; } = new List<WebHookList>();
-    }
-
-    public class WebHookList
-    {
-        public string SiteId { get; set; } = string.Empty;
-
-        public string ListId { get; set; } = string.Empty;
-
-        public DropOffType DropOffType { get; set; } = DropOffType.Publications;
     }
 }

@@ -63,7 +63,7 @@ namespace CPS_API.Services
             var graphServiceClient = GetGraphServiceClient(getAsUser);
             var site = await graphServiceClient.Sites[siteId].GetAsync(x =>
             {
-                x.QueryParameters.Select = [Constants.SelectWebUrl];
+                x.QueryParameters.Select = [Constants.Selectors.WebUrl];
             });
             if (site == null) throw new CpsException($"Error while getting site (siteId:{siteId})");
             return site.WebUrl;
@@ -75,7 +75,7 @@ namespace CPS_API.Services
             var siteId = _globalSettings.HostName + ":" + relativeSiteUrl + ":/";
             var site = await graphServiceClient.Sites[siteId].GetAsync(x =>
             {
-                x.QueryParameters.Select = new[] { Constants.SelectSharePointIds, Constants.SelectWebUrl };
+                x.QueryParameters.Select = new[] { Constants.Selectors.SharePointIds, Constants.Selectors.WebUrl };
             });
             if (site == null) throw new CpsException($"Error while getting site (relativeSiteUrl:{relativeSiteUrl})");
             site.Id = site.SharepointIds?.SiteId;

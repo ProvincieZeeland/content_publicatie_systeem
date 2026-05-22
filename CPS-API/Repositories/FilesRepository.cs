@@ -53,14 +53,14 @@ namespace CPS_API.Repositories
 
         public async Task<string?> GetUrlAsync(string objectId, bool getAsUser = false)
         {
-            var objectIdentifiers = await GetObjectIdentifiersAsync(objectId);
+            ObjectIdentifiers objectIdentifiers = await GetObjectIdentifiersAsync(objectId);
             var driveItem = await GetDriveItemAsync(objectId, objectIdentifiers, getAsUser);
             return driveItem.WebUrl;
         }
 
-        private async Task<ObjectIdentifiersEntity> GetObjectIdentifiersAsync(string objectId)
+        private async Task<ObjectIdentifiers> GetObjectIdentifiersAsync(string objectId)
         {
-            ObjectIdentifiersEntity? objectIdentifiers = null;
+            ObjectIdentifiers? objectIdentifiers = null;
             try
             {
                 objectIdentifiers = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
@@ -77,7 +77,7 @@ namespace CPS_API.Repositories
             return objectIdentifiers;
         }
 
-        private async Task<DriveItem> GetDriveItemAsync(string objectId, ObjectIdentifiersEntity objectIdentifiers, bool getAsUser = false)
+        private async Task<DriveItem> GetDriveItemAsync(string objectId, ObjectIdentifiers objectIdentifiers, bool getAsUser = false)
         {
             DriveItem? driveItem = null;
             try
@@ -126,7 +126,6 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateLargeFileAsync(string source, string classification, IFormFile formFile)
         {
-            ArgumentNullException.ThrowIfNull(nameof(formFile));
             var file = GetNewLargeFile(source, classification, formFile);
             return await CreateFileAsync(file.Metadata, formFile: formFile);
         }
@@ -163,19 +162,16 @@ namespace CPS_API.Repositories
 
         public async Task<ObjectIdentifiers> CreateFileByBytesAsync(FileInformation metadata, byte[] content)
         {
-            ArgumentNullException.ThrowIfNull(nameof(content));
             return await CreateFileAsync(metadata, content: content);
         }
 
         public async Task<ObjectIdentifiers> CreateFileByStreamAsync(FileInformation metadata, Stream fileStream)
         {
-            ArgumentNullException.ThrowIfNull(nameof(fileStream));
             return await CreateFileAsync(metadata, fileStream: fileStream);
         }
 
         private async Task<ObjectIdentifiers> CreateFileAsync(FileInformation metadata, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null)
         {
-            ArgumentNullException.ThrowIfNull(nameof(metadata));
             if (metadata.AdditionalMetadata == null) throw new CpsException($"No {nameof(FileInformation.AdditionalMetadata)} found for {nameof(metadata)}");
 
             // Get driveid or site matching classification & source
@@ -195,7 +191,7 @@ namespace CPS_API.Repositories
                     throw new CpsException("Error while adding new file");
                 }
             }
-            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Conflict && ex.Error != null && ex.Error.Code != null && ex.Error.Code.Equals(Constants.NameAlreadyExistsErrorCode, StringComparison.InvariantCultureIgnoreCase))
+            catch (ODataError ex) when (ex.ResponseStatusCode == (int)HttpStatusCode.Conflict && ex.Error != null && ex.Error.Code != null && ex.Error.Code.Equals(Constants.ODataErrors.NameAlreadyExists, StringComparison.InvariantCultureIgnoreCase))
             {
                 throw new NameAlreadyExistsException($"The specified {nameof(metadata.FileName)} ({metadata.FileName}) already exists");
             }
@@ -209,7 +205,7 @@ namespace CPS_API.Repositories
             }
 
             // Get new identifiers.
-            metadata.Ids = await GetNewObjectIdentifiersAsync(driveId, driveItem, locationMapping);
+            metadata.Ids = await GetNewObjectIdentifiersAsync(driveId, driveItem);
 
             // Handle the new file.
             return await HandleCreatedFile(metadata, formFile != null);
@@ -258,12 +254,11 @@ namespace CPS_API.Repositories
             }
         }
 
-        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(string driveId, DriveItem driveItem, LocationMapping locationMapping)
+        private async Task<ObjectIdentifiers> GetNewObjectIdentifiersAsync(string driveId, DriveItem driveItem)
         {
             var ids = new ObjectIdentifiers();
             ids.DriveId = driveId;
-            ids.DriveItemId = driveItem.Id;
-            ids.ExternalReferenceListId = locationMapping.ExternalReferenceListId;
+            ids.DriveItemId = driveItem.Id ?? string.Empty;
             return await _objectIdRepository.FindMissingIds(ids);
         }
 
@@ -366,7 +361,7 @@ namespace CPS_API.Repositories
         private async Task GetIdentifiersAndUpdateContentAsync(string objectId, byte[]? content = null, IFormFile? formFile = null, Stream? fileStream = null, bool getAsUser = false)
         {
             // Get objectIdentifiers
-            ObjectIdentifiersEntity? ids;
+            ObjectIdentifiers? ids;
             try
             {
                 ids = await _objectIdRepository.GetObjectIdentifiersAsync(objectId);
